@@ -21,6 +21,10 @@ static constexpr int PreviewSeconds = 15;
 static constexpr int CheckSeconds = 3;
 // Far enough to show up in Hyprland's answer, too small to matter for three seconds.
 static constexpr int CheckNudgePixels = 8;
+// A rule is applied on a later frame. One read per frame for about a second
+// still finishes well inside the safety timer.
+static constexpr int CheckObserveAttempts = 20;
+static constexpr int CheckObserveIntervalMs = 50;
 
 bool DisplayProvider::isSafeOutputName(const QString &name) {
     // The output name is written into Lua that Hyprland evaluates, and EDID
@@ -643,16 +647,16 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
             }
             emit previewChanged();
             m_countdown.start();
-            refresh();
             if (isCheck) {
                 // The nudge has to be visible in Hyprland's answer. If it is not, the
                 // compositor ignored the change, and a restore would prove nothing.
-                m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this](const CommandResult &query) {
-                    if (query.ok())
-                        setMonitors(parseMonitors(query.out));
-                    m_checkMoved = query.ok() && layoutSignature() != m_checkOriginal;
-                    emit changed();
-                });
+                // The answer does not change in the same turn as the eval: Hyprland
+                // applies the rule on a later frame, and a read that returns with the
+                // eval still shows the old layout. This read is the one that waits;
+                // an immediate refresh would only ever see the old layout.
+                awaitCheckLayout(CheckObserveAttempts, true);
+            } else {
+                refresh();
             }
         });
     });
@@ -838,11 +842,33 @@ void DisplayProvider::finishCheck() {
     FileOps::readFile(m_resultFile, &result);
     const bool restored = result.contains("restored") && !result.contains("restore-failed");
     QFile::remove(m_resultFile);
-    m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this, restored](const CommandResult &query) {
-        const auto monitors = parseMonitors(query.out);
-        if (query.ok())
-            setMonitors(monitors);
-        const bool same = query.ok() && layoutSignature() == m_checkOriginal;
+    awaitCheckLayout(CheckObserveAttempts, false, restored);
+}
+
+void DisplayProvider::awaitCheckLayout(int attempts, bool untilMoved, bool restored) {
+    // A nudge read must not land after the check has already moved on to the restore.
+    if (untilMoved && (!m_isCheck || !m_previewing))
+        return;
+    m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this, attempts, untilMoved, restored](const CommandResult &query) {
+        if (untilMoved && (!m_isCheck || !m_previewing))
+            return;
+        if (query.ok()) {
+            const auto monitors = parseMonitors(query.out);
+            if (signatureOf(monitors) != layoutSignature())
+                setMonitors(monitors);
+        }
+        const bool answered = query.ok() && (untilMoved ? layoutSignature() != m_checkOriginal : layoutSignature() == m_checkOriginal);
+        if (!answered && attempts > 1) {
+            QTimer::singleShot(CheckObserveIntervalMs, this, [this, attempts, untilMoved, restored] { awaitCheckLayout(attempts - 1, untilMoved, restored); });
+            return;
+        }
+        if (untilMoved) {
+            if (answered)
+                m_checkMoved = true;
+            emit changed();
+            return;
+        }
+        const bool same = answered;
         const bool passed = restored && same && m_checkMoved;
         // Say which step failed, then what the layout is now, read back from Hyprland.
         QString reason;
@@ -861,7 +887,7 @@ void DisplayProvider::finishCheck() {
         record["passed"] = passed;
         record["hyprland"] = m_hyprlandVersion;
         record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-        record["monitors"] = monitors.size();
+        record["monitors"] = m_monitors.size();
         if (!passed)
             record["reason"] = reason + " " + verified;
         FileOps::atomicWrite(recoveryCheckPath(), QJsonDocument(record).toJson(), nullptr, 0600);

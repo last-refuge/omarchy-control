@@ -111,6 +111,10 @@ private:
     void applyLayout(const QVariantList &layout, int index, std::function<void(bool, const QString &)> done);
     void waitForWatchdog(const QString &file, const QString &expected, int attempts, std::function<void(bool)> done);
     void finishCheck();
+    // Hyprland 0.56 answers `eval` before the next frame applies the rule.
+    // untilMoved waits until the layout differs from the original (the nudge);
+    // otherwise it waits until the layout matches again (the restore).
+    void awaitCheckLayout(int attempts, bool untilMoved, bool restored = false);
     void failStart(const QString &text, bool isCheck);
     void endPreview(const QString &result);
     void verifyLayout(const QStringList &expected, std::function<void(bool same, bool known)> done);

@@ -6,17 +6,35 @@
 namespace {
 
 // A compositor with one display whose x position lives in a file, moved by eval.
+// If `$root/lag` exists, that many monitors reads after an eval still report the
+// old position. Hyprland 0.56 does this for one frame: eval returns, then the
+// rule lands on the next render.
 const char kStatefulCompositor[] = R"SH(
 root="$(dirname "$HOME")"
 args=("$@"); [ "${args[0]}" = "-j" ] && args=("${args[@]:1}")
 case "${args[0]}" in
   version) echo '{"version":"0.56.2"}';;
-  monitors) printf '[{"name":"eDP-1","width":1920,"height":1200,"refreshRate":60,"x":%s,"y":0,"scale":1,"transform":0,"disabled":false,"focused":true,"mirrorOf":"none","availableModes":["1920x1200@60.00Hz"]}]' "$(cat "$root/x")";;
+  monitors)
+    if [ -f "$root/lag-left" ]; then
+      left=$(cat "$root/lag-left")
+      if [ "$left" -gt 0 ] 2>/dev/null; then
+        printf '%s\n' "$((left - 1))" > "$root/lag-left"
+      elif [ -f "$root/pending" ]; then
+        cat "$root/pending" > "$root/x"
+        rm -f "$root/lag-left" "$root/pending"
+      fi
+    fi
+    printf '[{"name":"eDP-1","width":1920,"height":1200,"refreshRate":60,"x":%s,"y":0,"scale":1,"transform":0,"disabled":false,"focused":true,"mirrorOf":"none","availableModes":["1920x1200@60.00Hz"]}]' "$(cat "$root/x")";;
   eval)
     echo "${args[1]}" >> "$root/hypr-eval"
     if [ "$(cat "$root/obeys")" = "1" ]; then
       x=$(printf '%s' "${args[1]}" | sed -n 's/.*position = "\([0-9-]*\)x.*/\1/p')
-      printf '%s\n' "$x" > "$root/x"
+      if [ -f "$root/lag" ]; then
+        printf '%s\n' "$x" > "$root/pending"
+        cat "$root/lag" > "$root/lag-left"
+      else
+        printf '%s\n' "$x" > "$root/x"
+      fi
     fi;;
 esac
 )SH";

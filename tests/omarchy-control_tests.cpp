@@ -3238,19 +3238,25 @@ esac
     }
     void recoveryCheckEndToEnd_data() {
         QTest::addColumn<bool>("compositorObeys");
+        QTest::addColumn<int>("frameLag");
         QTest::addColumn<bool>("expectPass");
-        QTest::newRow("working compositor") << true << true;
-        QTest::newRow("compositor ignores changes") << false << false;
+        QTest::newRow("working compositor") << true << 0 << true;
+        // The eval returns before the rule lands, so the check's first look is stale.
+        QTest::newRow("compositor applies next frame") << true << 1 << true;
+        QTest::newRow("compositor ignores changes") << false << 0 << false;
     }
     void recoveryCheckEndToEnd() {
         // The whole flow with the real detached watchdog process and a stateful fake
         // compositor. The check passes only if a change really took and really came back.
         QFETCH(bool, compositorObeys);
+        QFETCH(int, frameLag);
         QFETCH(bool, expectPass);
         Sandbox s;
         s.minimalHyprland();
         writeFile(s.dir.path() + "/obeys", compositorObeys ? "1" : "0");
         writeFile(s.dir.path() + "/x", "0");
+        if (frameLag > 0)
+            writeFile(s.dir.path() + "/lag", QByteArray::number(frameLag));
         s.command("hyprctl", kStatefulCompositor);
         Env env = s.env;
         env.selfBinary = QCoreApplication::applicationFilePath();
