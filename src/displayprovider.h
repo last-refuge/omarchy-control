@@ -111,10 +111,14 @@ private:
     void applyLayout(const QVariantList &layout, int index, std::function<void(bool, const QString &)> done);
     void waitForWatchdog(const QString &file, const QString &expected, int attempts, std::function<void(bool)> done);
     void finishCheck();
-    // Hyprland 0.56 answers `eval` before the next frame applies the rule.
-    // untilMoved waits until the layout differs from the original (the nudge);
-    // otherwise it waits until the layout matches again (the restore).
-    void awaitCheckLayout(int attempts, bool untilMoved, bool restored = false);
+    void reportCheck(bool ok, const QVariantList &monitors, bool restored, bool same);
+    // Hyprland 0.56 answers `eval` before a later frame applies the rule, so a read
+    // in the same turn still shows the old layout. This reads Hyprland's displays
+    // until `settled` accepts them or the attempts run out, then hands `done` the
+    // last answer. A failed read ends it at once. `wanted`, when set, drops a read
+    // the flow has already moved past.
+    void readMonitorsUntil(int attempts, std::function<bool()> wanted, std::function<bool(const QVariantList &)> settled,
+                           std::function<void(bool ok, const QVariantList &monitors, bool settled)> done);
     void failStart(const QString &text, bool isCheck);
     void endPreview(const QString &result);
     void verifyLayout(const QStringList &expected, std::function<void(bool same, bool known)> done);
@@ -126,6 +130,7 @@ private:
     QVariantMap stagedRow(const QString &output) const;
     QString runDirectory() const;
     static QStringList signatureOf(const QVariantList &monitors);
+    static bool matchesWherePresent(const QStringList &expected, const QStringList &actual);
     QStringList layoutSignature() const { return signatureOf(m_monitors); }
 
     CommandRunner *m_runner;
@@ -146,6 +151,9 @@ private:
     bool m_isCheck = false;
     bool m_starting = false;
     bool m_checkMoved = false;
+    // The display the check nudges, and where Hyprland has to report it.
+    QString m_checkOutput;
+    int m_checkX = 0;
     QStringList m_checkOriginal;
     QStringList m_previewOriginal;
     QHash<QString, QString> m_startFingerprints;

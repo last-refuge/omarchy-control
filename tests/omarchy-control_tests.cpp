@@ -3288,6 +3288,49 @@ esac
         // Nothing of the run is left behind to be mistaken later for an interrupted one.
         QVERIFY(QDir(env.runtimeDir + "/omarchy-control").entryList({"display-*"}, QDir::Files).isEmpty());
     }
+    void previewWaitsForHyprlandToShowTheLayout_data() {
+        QTest::addColumn<int>("frameLag");
+        QTest::newRow("compositor applies at once") << 0;
+        // The eval returns before the rule lands, so a read in the same turn is stale.
+        QTest::newRow("compositor applies next frame") << 1;
+    }
+    void previewWaitsForHyprlandToShowTheLayout() {
+        // A preview clears the staged edits, so the page draws what Hyprland reports:
+        // it has to be the previewed layout, not the one from before. After Restore,
+        // the check against the old layout must not mistake a late frame for a failure.
+        QFETCH(int, frameLag);
+        Sandbox s;
+        s.minimalHyprland();
+        writeFile(s.dir.path() + "/obeys", "1");
+        writeFile(s.dir.path() + "/x", "0");
+        if (frameLag > 0)
+            writeFile(s.dir.path() + "/lag", QByteArray::number(frameLag));
+        s.command("hyprctl", kStatefulCompositor);
+        Env env = s.env;
+        env.selfBinary = QCoreApplication::applicationFilePath();
+        env.process.insert("OC_TEST_ROOT", s.dir.path());
+        CommandRunner runner(env);
+        ChangeCoordinator coordinator(env);
+        DisplayProvider displays(&runner, &coordinator);
+        displays.refresh();
+        QTRY_VERIFY_WITH_TIMEOUT(displays.monitors().size() == 1, 5000);
+        writeFile(displays.recoveryCheckPath(), R"({"passed":true,"hyprland":"0.56.2"})");
+        QTRY_VERIFY_WITH_TIMEOUT(displays.editingUnlocked(), 3000);
+        displays.stageEdit("eDP-1", "x", 40);
+        displays.previewStaged();
+        QTRY_VERIFY_WITH_TIMEOUT(displays.previewing(), 8000);
+        QTRY_COMPARE_WITH_TIMEOUT(displays.monitors().first().toMap().value("x").toInt(), 40, 5000);
+        QVERIFY(!displays.dirty());
+        QCOMPARE(stagedRow(displays, "eDP-1").value("x").toInt(), 40);
+        displays.revert();
+        QTRY_VERIFY_WITH_TIMEOUT(!displays.previewing(), 8000);
+        QTRY_COMPARE_WITH_TIMEOUT(displays.monitors().first().toMap().value("x").toInt(), 0, 5000);
+        QCOMPARE(readAll(s.dir.path() + "/x").trimmed(), QByteArray("0"));
+        // Let the post-restore read and refresh finish before judging the outcome.
+        QTest::qWait(500);
+        QVERIFY2(displays.outcome().isEmpty(), qPrintable(displays.outcome().value("detail").toString()));
+        QVERIFY(QDir(env.runtimeDir + "/omarchy-control").entryList({"display-*"}, QDir::Files).isEmpty());
+    }
     void recoveryCheckFailsWhenTheWatchdogCannotStart() {
         Sandbox s;
         s.minimalHyprland();

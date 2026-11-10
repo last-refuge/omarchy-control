@@ -21,10 +21,11 @@ static constexpr int PreviewSeconds = 15;
 static constexpr int CheckSeconds = 3;
 // Far enough to show up in Hyprland's answer, too small to matter for three seconds.
 static constexpr int CheckNudgePixels = 8;
-// A rule is applied on a later frame. One read per frame for about a second
-// still finishes well inside the safety timer.
-static constexpr int CheckObserveAttempts = 20;
-static constexpr int CheckObserveIntervalMs = 50;
+// Hyprland applies a rule on a later frame than the one that answers `eval`. Reads
+// 50 ms apart (a few frames at 60 Hz), twenty of them: about a second of waiting,
+// plus however long each hyprctl takes to answer.
+static constexpr int ObserveAttempts = 20;
+static constexpr int ObserveIntervalMs = 50;
 
 bool DisplayProvider::isSafeOutputName(const QString &name) {
     // The output name is written into Lua that Hyprland evaluates, and EDID
@@ -621,7 +622,7 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
         }
         // Keep and Restore only appear once every row has been applied, so neither can
         // race a modeset that is still going on.
-        applyLayout(layout, 0, [this, seconds, isCheck](bool ok, const QString &detail) {
+        applyLayout(layout, 0, [this, layout, seconds, isCheck](bool ok, const QString &detail) {
             m_starting = false;
             if (!ok) {
                 const QString problem = tr("Hyprland refused the layout: %1").arg(detail);
@@ -633,7 +634,10 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
                     QFile::remove(m_resultFile);
                     emit previewChanged();
                     failStart(problem + " " + (restored ? tr("The previous layout was put back.") : tr("The previous layout could not be confirmed. Check your displays.")), isCheck);
-                    refresh();
+                    // The restore lands a frame after the watchdog reports it.
+                    readMonitorsUntil(
+                        ObserveAttempts, {}, [this](const QVariantList &monitors) { return signatureOf(monitors) == m_previewOriginal; },
+                        [this](bool, const QVariantList &, bool) { refresh(); });
                 });
                 return;
             }
@@ -650,13 +654,35 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
             if (isCheck) {
                 // The nudge has to be visible in Hyprland's answer. If it is not, the
                 // compositor ignored the change, and a restore would prove nothing.
-                // The answer does not change in the same turn as the eval: Hyprland
-                // applies the rule on a later frame, and a read that returns with the
-                // eval still shows the old layout. This read is the one that waits;
-                // an immediate refresh would only ever see the old layout.
-                awaitCheckLayout(CheckObserveAttempts, true);
-            } else {
+                // Only the nudged display at its nudged position counts, so a display
+                // plugged in meanwhile is not mistaken for the move. A read that lands
+                // after the check has moved on to the restore is dropped.
+                const QString output = m_checkOutput;
+                const int x = m_checkX;
+                readMonitorsUntil(
+                    ObserveAttempts, [this] { return m_isCheck && m_previewing; },
+                    [output, x](const QVariantList &monitors) {
+                        for (const auto &monitor : monitors) {
+                            const auto m = monitor.toMap();
+                            if (m.value("output").toString() == output)
+                                return m.value("x").toInt() == x;
+                        }
+                        return false;
+                    },
+                    [this](bool ok, const QVariantList &monitors, bool moved) {
+                        if (ok)
+                            setMonitors(monitors);
+                        m_checkMoved = moved;
+                        emit changed();
+                    });
+            } else if (signatureOf(layout) == m_previewOriginal) {
                 refresh();
+            } else {
+                // The staged edits are gone, so the page draws what Hyprland reports.
+                // Read before the layout lands and it would draw the old one.
+                readMonitorsUntil(
+                    ObserveAttempts, {}, [this](const QVariantList &monitors) { return signatureOf(monitors) != m_previewOriginal; },
+                    [this](bool, const QVariantList &, bool) { refresh(); });
             }
         });
     });
@@ -686,27 +712,51 @@ QStringList DisplayProvider::signatureOf(const QVariantList &monitors) {
     return signature;
 }
 
-void DisplayProvider::verifyLayout(const QStringList &expected, std::function<void(bool same, bool known)> done) {
-    m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this, expected, done](const CommandResult &query) {
-        if (!query.ok()) {
-            done(false, false);
+bool DisplayProvider::matchesWherePresent(const QStringList &expected, const QStringList &actual) {
+    // A display unplugged or plugged in meanwhile cannot be held against the
+    // restore; every display present before and after must match.
+    QHash<QString, QString> before;
+    for (const auto &line : expected)
+        before.insert(line.section(' ', 0, 0), line);
+    for (const auto &line : actual) {
+        const QString output = line.section(' ', 0, 0);
+        if (before.contains(output) && before.value(output) != line)
+            return false;
+    }
+    return true;
+}
+
+void DisplayProvider::readMonitorsUntil(int attempts, std::function<bool()> wanted, std::function<bool(const QVariantList &)> settled,
+                                        std::function<void(bool ok, const QVariantList &monitors, bool settled)> done) {
+    if (wanted && !wanted())
+        return;
+    m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this, attempts, wanted, settled, done](const CommandResult &query) {
+        if (wanted && !wanted())
+            return;
+        const QVariantList monitors = query.ok() ? parseMonitors(query.out) : QVariantList();
+        const bool landed = query.ok() && settled(monitors);
+        // A failed read is not a frame behind; waiting would not change it.
+        if (query.ok() && !landed && attempts > 1) {
+            QTimer::singleShot(ObserveIntervalMs, this, [this, attempts, wanted, settled, done] { readMonitorsUntil(attempts - 1, wanted, settled, done); });
             return;
         }
-        setMonitors(parseMonitors(query.out));
-        emit changed();
-        // A display unplugged or plugged in meanwhile cannot be held against the
-        // restore; every display present before and after must match.
-        QHash<QString, QString> before;
-        for (const auto &line : expected)
-            before.insert(line.section(' ', 0, 0), line);
-        bool same = true;
-        for (const auto &line : layoutSignature()) {
-            const QString output = line.section(' ', 0, 0);
-            if (before.contains(output) && before.value(output) != line)
-                same = false;
-        }
-        done(same, true);
+        done(query.ok(), monitors, landed);
     });
+}
+
+void DisplayProvider::verifyLayout(const QStringList &expected, std::function<void(bool same, bool known)> done) {
+    // Called once the watchdog reports its restore, which Hyprland shows a frame later.
+    readMonitorsUntil(
+        ObserveAttempts, {}, [expected](const QVariantList &monitors) { return matchesWherePresent(expected, signatureOf(monitors)); },
+        [this, done](bool ok, const QVariantList &monitors, bool same) {
+            if (!ok) {
+                done(false, false);
+                return;
+            }
+            setMonitors(monitors);
+            emit changed();
+            done(same, true);
+        });
 }
 
 void DisplayProvider::endPreview(const QString &how) {
@@ -818,6 +868,7 @@ void DisplayProvider::runRecoveryCheck() {
     m_checkState = "running";
     m_checkMoved = false;
     m_checkOriginal = layoutSignature();
+    m_checkOutput.clear();
     emit changed();
     emit previewChanged();
     // A real change, or the check would prove nothing: re-applying the same layout
@@ -830,6 +881,8 @@ void DisplayProvider::runRecoveryCheck() {
         auto row = monitor.toMap();
         if (!moved && row.value("enabled").toBool()) {
             row["x"] = row.value("x").toInt() + CheckNudgePixels;
+            m_checkOutput = row.value("output").toString();
+            m_checkX = row.value("x").toInt();
             moved = true;
         }
         nudged << row;
@@ -842,65 +895,48 @@ void DisplayProvider::finishCheck() {
     FileOps::readFile(m_resultFile, &result);
     const bool restored = result.contains("restored") && !result.contains("restore-failed");
     QFile::remove(m_resultFile);
-    awaitCheckLayout(CheckObserveAttempts, false, restored);
+    // The restore lands a frame after the watchdog reports it, so wait for it to show.
+    // A watchdog that reported no restore has failed the check already; one read says
+    // what the layout is now.
+    readMonitorsUntil(
+        restored ? ObserveAttempts : 1, {}, [this](const QVariantList &monitors) { return signatureOf(monitors) == m_checkOriginal; },
+        [this, restored](bool ok, const QVariantList &monitors, bool same) { reportCheck(ok, monitors, restored, same); });
 }
 
-void DisplayProvider::awaitCheckLayout(int attempts, bool untilMoved, bool restored) {
-    // A nudge read must not land after the check has already moved on to the restore.
-    if (untilMoved && (!m_isCheck || !m_previewing))
-        return;
-    m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this, attempts, untilMoved, restored](const CommandResult &query) {
-        if (untilMoved && (!m_isCheck || !m_previewing))
-            return;
-        if (query.ok()) {
-            const auto monitors = parseMonitors(query.out);
-            if (signatureOf(monitors) != layoutSignature())
-                setMonitors(monitors);
-        }
-        const bool answered = query.ok() && (untilMoved ? layoutSignature() != m_checkOriginal : layoutSignature() == m_checkOriginal);
-        if (!answered && attempts > 1) {
-            QTimer::singleShot(CheckObserveIntervalMs, this, [this, attempts, untilMoved, restored] { awaitCheckLayout(attempts - 1, untilMoved, restored); });
-            return;
-        }
-        if (untilMoved) {
-            if (answered)
-                m_checkMoved = true;
-            emit changed();
-            return;
-        }
-        const bool same = answered;
-        const bool passed = restored && same && m_checkMoved;
-        // Say which step failed, then what the layout is now, read back from Hyprland.
-        QString reason;
-        if (!query.ok())
-            reason = tr("Hyprland could not be asked for the layout afterwards.");
-        else if (!m_checkMoved)
-            reason = tr("Hyprland did not report the test move, so a restore would prove nothing.");
-        else if (!restored)
-            reason = tr("The safety timer did not report putting the layout back.");
-        else if (!same)
-            reason = tr("The layout after the check is not the one from before it.");
-        const QString verified = !query.ok() ? tr("The current layout is unknown. Check your displays.")
-                               : same ? tr("Hyprland reports the original layout, so nothing was left changed.")
-                                      : tr("Hyprland reports a different layout than before the check. Check your displays.");
-        QJsonObject record;
-        record["passed"] = passed;
-        record["hyprland"] = m_hyprlandVersion;
-        record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
-        record["monitors"] = m_monitors.size();
-        if (!passed)
-            record["reason"] = reason + " " + verified;
-        FileOps::atomicWrite(recoveryCheckPath(), QJsonDocument(record).toJson(), nullptr, 0600);
-        m_checkState = passed ? "passed" : "failed";
-        if (passed)
-            setOutcome({}, {}, {});
-        else
-            setOutcome("error", tr("The recovery check failed"), reason + " " + verified, "check");
-        emit changed();
-        emit previewChanged();
-        emit checkFinished(passed, passed ? tr("The safety timer restored the layout correctly. Display editing is unlocked.")
-                                          : tr("The recovery check failed, so display editing stays locked. %1").arg(reason));
-    });
+void DisplayProvider::reportCheck(bool ok, const QVariantList &monitors, bool restored, bool same) {
+    if (ok)
+        setMonitors(monitors);
+    const bool passed = restored && same && m_checkMoved;
+    // Say which step failed, then what the layout is now, read back from Hyprland.
+    QString reason;
+    if (!ok)
+        reason = tr("Hyprland could not be asked for the layout afterwards.");
+    else if (!m_checkMoved)
+        reason = tr("Hyprland did not report the test move, so a restore would prove nothing.");
+    else if (!restored)
+        reason = tr("The safety timer did not report putting the layout back.");
+    else if (!same)
+        reason = tr("The layout after the check is not the one from before it.");
+    const QString verified = !ok ? tr("The current layout is unknown. Check your displays.")
+                           : same ? tr("Hyprland reports the original layout, so nothing was left changed.")
+                                  : tr("Hyprland reports a different layout than before the check. Check your displays.");
+    QJsonObject record;
+    record["passed"] = passed;
+    record["hyprland"] = m_hyprlandVersion;
+    record["at"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    record["monitors"] = monitors.size();
+    if (!passed)
+        record["reason"] = reason + " " + verified;
+    FileOps::atomicWrite(recoveryCheckPath(), QJsonDocument(record).toJson(), nullptr, 0600);
+    m_checkState = passed ? "passed" : "failed";
+    if (passed)
+        setOutcome({}, {}, {});
+    else
+        setOutcome("error", tr("The recovery check failed"), reason + " " + verified, "check");
+    emit changed();
+    emit previewChanged();
+    emit checkFinished(passed, passed ? tr("The safety timer restored the layout correctly. Display editing is unlocked.")
+                                      : tr("The recovery check failed, so display editing stays locked. %1").arg(reason));
 }
 
 int DisplayProvider::runWatchdog(const Env &env, const QString &planPath) {
