@@ -136,9 +136,8 @@ Settled November 10, 2026: all five as recommended.
   - **Counts use the language's digits.** Counted strings used `%n`, which Qt writes in Western digits, so Bengali showed "1টি" next to "২৫%". `Translator` now turns `%n` into `%Ln` in counted strings.
   - **Arabic-script text no longer uses monospace.** A monospace font with Arabic glyphs, like the DejaVu Sans Mono in the test container, draws them unjoined: "خاموش" came out as "خا موش". `Translator.cursiveScript` is true for Arabic-script languages (ar, fa, ur), and text that would be monospace uses the interface font instead. Arabic, already shipped, benefits too.
 - **Screenshots** of Overview, Appearance and Displays (the latter at a 720 px width) in each language: right to left mirrors correctly, and the layout holds at the narrow width.
-- **Open follow-ups:**
-  - The footer's "Omarchy 4.5.0" is cut off when the Shortcuts label next to it is long (Japanese, `en-XA`).
-  - Numbers written into labels ("5 minutes") keep Western digits in Bengali and Persian, as the brief asks. Revisit that rule before phase L2.
-  - "The command" is filled into other sentences, so translators had to choose a grammatical gender for it. A full sentence per message would read better.
-  - Native-speaker review of the five pilot languages, through one tracking issue each (§5).
-
+- **Follow-ups, settled the same day:**
+  - **Footer:** "Omarchy 4.5.0" and Shortcuts now stack when a long translation of Shortcuts would cut the version off.
+  - **Digits:** these follow Omarchy now. Bengali and Persian write durations, percentages and limits in prose in their own digits ("৫ মিনিট", "۲٫۵ دقیقه"), as Omarchy's own catalogs do ("গত ৩০ দিন"). Technical values keep Western digits: clock previews, degrees, GHz, names like 1Password. [I18N-BRIEF.md](I18N-BRIEF.md) states the rule.
+  - **"The command":** an unnamed command now gets whole sentences ("The command is not installed."), so no language has to fill a phrase into another sentence.
+- **Still open:** native-speaker review of the pilot languages through one tracking issue each (§5). These will be opened once the languages are on `main`, so reviewers read what ships.

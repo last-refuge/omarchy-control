@@ -866,7 +866,6 @@
  "The association did not change.": "Ассоциация не изменилась.",
  "The built-in display is already enabled.": "Встроенный дисплей уже включён.",
  "The change journal could not be written, so nothing was changed.": "Не удалось записать журнал изменений, поэтому ничего не изменено.",
- "The command": "Исполняемый файл",
  "The connection may already have gone back to the previous one. Check it below.": "Подключение, возможно, уже вернулось к предыдущему. Проверьте ниже.",
  "The copies from this archive will be used in their place.": "Вместо них будут использоваться копии из этого архива.",
  "The copy could not be checked, so nothing was imported.": "Не удалось проверить копию, поэтому ничего не импортировано.",
@@ -2028,5 +2027,11 @@
  "xdph.conf": "xdph.conf",
  "yt-dlp host for Chromium": "Хост yt-dlp для Chromium",
  "{target} has no brightness control Omarchy can reach: no backlight, and no answer over DDC/CI.": "У {target} нет регулировки яркости, доступной Omarchy: нет подсветки и нет ответа по DDC/CI.",
- "Unsecured": "Не защищена"
+ "Unsecured": "Не защищена",
+ "The command is not installed.": "Команда не установлена.",
+ "The command could not be started.": "Не удалось запустить команду.",
+ "The command did not finish in time.": "Команда не завершилась вовремя.",
+ "The command stopped unexpectedly.": "Команда неожиданно завершила работу.",
+ "The command was cancelled.": "Команда отменена.",
+ "The command failed with exit code %1.": "Команда завершилась с кодом ошибки %1."
 }

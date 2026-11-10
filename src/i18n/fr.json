@@ -850,7 +850,6 @@
  "The association did not change.": "L'association n'a pas changé.",
  "The built-in display is already enabled.": "L'écran intégré est déjà activé.",
  "The change journal could not be written, so nothing was changed.": "Impossible d'écrire le journal des modifications, rien n'a donc été modifié.",
- "The command": "Le programme",
  "The connection may already have gone back to the previous one. Check it below.": "La connexion est peut-être déjà revenue à la précédente. Vérifiez-la ci-dessous.",
  "The copies from this archive will be used in their place.": "Les copies de cette archive seront utilisées à leur place.",
  "The copy could not be checked, so nothing was imported.": "Impossible de vérifier la copie, rien n'a donc été importé.",
@@ -2012,5 +2011,11 @@
  "xdph.conf": "xdph.conf",
  "yt-dlp host for Chromium": "Hôte yt-dlp pour Chromium",
  "{target} has no brightness control Omarchy can reach: no backlight, and no answer over DDC/CI.": "{target} n'a aucun réglage de luminosité accessible à Omarchy : pas de rétroéclairage, et aucune réponse via DDC/CI.",
- "Unsecured": "Non sécurisé"
+ "Unsecured": "Non sécurisé",
+ "The command is not installed.": "La commande n'est pas installée.",
+ "The command could not be started.": "La commande n'a pas pu être lancée.",
+ "The command did not finish in time.": "La commande ne s'est pas terminée à temps.",
+ "The command stopped unexpectedly.": "La commande s'est arrêtée de façon inattendue.",
+ "The command was cancelled.": "La commande a été annulée.",
+ "The command failed with exit code %1.": "La commande a échoué avec le code de sortie %1."
 }

@@ -274,7 +274,6 @@
  "The app stopped while applying this, and the file was left as it is.": "توقف التطبيق أثناء تطبيق هذا، وتُرك الملف كما هو.",
  "The app stopped while applying this. Check the current value.": "توقف التطبيق أثناء تطبيق هذا. تحقق من القيمة الحالية.",
  "The association did not change.": "لم يتغير الارتباط.",
- "The command": "الأمر",
  "The device did not become the default.": "لم يصبح الجهاز هو الافتراضي.",
  "The device did not respond. Check that it is on and in range.": "لم يستجب الجهاز. تأكد من أنه قيد التشغيل وضمن النطاق.",
  "The display layout could not be confirmed. Check your displays.": "تعذّر تأكيد تخطيط الشاشة. تحقق من شاشاتك.",
@@ -2060,5 +2059,11 @@
  "Very strong": "قوي جدًا",
  "Where see-through surfaces blur what is behind them.": "أين تموّه الأسطح الشفافة ما خلفها.",
  "Your own Hyprland config turns blur on.": "إعدادات Hyprland الخاصة بك تشغّل التمويه.",
- "Unsecured": "غير مؤمَّن"
+ "Unsecured": "غير مؤمَّن",
+ "The command is not installed.": "الأمر غير مثبّت.",
+ "The command could not be started.": "تعذّر تشغيل الأمر.",
+ "The command did not finish in time.": "لم ينتهِ الأمر في الوقت المحدد.",
+ "The command stopped unexpectedly.": "توقف الأمر بشكل غير متوقع.",
+ "The command was cancelled.": "تم إلغاء الأمر.",
+ "The command failed with exit code %1.": "فشل الأمر برمز الخروج %1."
 }

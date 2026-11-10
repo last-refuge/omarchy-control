@@ -18,7 +18,11 @@ Translate as if the interface had been written in your language: short, natural,
 - Technical tokens: DNS, DHCP, VPN, SSH, GPU, CPU, USB, HDMI, AUR, VRR, Lua, JSON, PATH, URLs, file paths, and commands.
 - Key names: Super, Alt, Ctrl, Shift, Enter, Esc, Tab, F1 to F12.
 - Placeholders: `%1`, `%2`, `%L1`, and `%n`. Every placeholder in the English must appear in the translation. Their order may change to suit the grammar. Markup such as `<b>` and `&amp;` stays as is.
-- Numbers, times, and units in examples ("14:30", "25%", "8 px"): the app formats real values for the language itself. Translate month and weekday words in clock previews, and nothing else in them.
+- Technical values: clock and date previews ("14:30", "Sun 3 May"), degrees, frequencies ("2.4 GHz"), version and model numbers, values the user types, and names with digits ("1Password", "GTK 4"). Translate month and weekday words in clock previews, and nothing else in them.
+
+## Digits
+
+The app formats live values (volume, brightness, counts) in your language's digits by itself. Digits written into a string follow Omarchy: where its registry gives your language its own digits (`bn` ০–৯, `fa` ۰–۹), write numbers in prose and in choice labels in those digits: durations ("৫ মিনিট"), percentages ("১২৫%"), and limits in sentences ("up to ۱۲۰ characters"). Persian also uses `٫` as the decimal sign ("۲٫۵"). The technical values listed above keep Western digits in every language. Every other language, including Arabic, uses Western digits throughout.
 
 ## Counted strings
 

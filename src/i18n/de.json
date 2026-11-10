@@ -274,7 +274,6 @@
  "The app stopped while applying this, and the file was left as it is.": "Die App wurde beim Anwenden beendet; die Datei blieb unverändert.",
  "The app stopped while applying this. Check the current value.": "Die App wurde beim Anwenden beendet. Prüfen Sie den aktuellen Wert.",
  "The association did not change.": "Die Zuordnung wurde nicht geändert.",
- "The command": "Der Befehl",
  "The device did not become the default.": "Das Gerät wurde nicht zum Standard.",
  "The device did not respond. Check that it is on and in range.": "Das Gerät hat nicht geantwortet. Prüfen Sie, ob es eingeschaltet und in Reichweite ist.",
  "The display layout could not be confirmed. Check your displays.": "Die Bildschirmanordnung konnte nicht bestätigt werden. Prüfen Sie Ihre Bildschirme.",
@@ -1996,5 +1995,11 @@
  "Very strong": "Sehr stark",
  "Where see-through surfaces blur what is behind them.": "Wo durchsichtige Flächen das Dahinterliegende weichzeichnen.",
  "Your own Hyprland config turns blur on.": "Ihre eigene Hyprland-Konfiguration schaltet die Unschärfe ein.",
- "Unsecured": "Ungesichert"
+ "Unsecured": "Ungesichert",
+ "The command is not installed.": "Der Befehl ist nicht installiert.",
+ "The command could not be started.": "Der Befehl konnte nicht gestartet werden.",
+ "The command did not finish in time.": "Der Befehl wurde nicht rechtzeitig fertig.",
+ "The command stopped unexpectedly.": "Der Befehl wurde unerwartet beendet.",
+ "The command was cancelled.": "Der Befehl wurde abgebrochen.",
+ "The command failed with exit code %1.": "Der Befehl ist mit Exit-Code %1 fehlgeschlagen."
 }

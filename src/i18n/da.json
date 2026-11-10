@@ -274,7 +274,6 @@
  "The app stopped while applying this, and the file was left as it is.": "Appen stoppede under anvendelsen, og filen blev efterladt, som den er.",
  "The app stopped while applying this. Check the current value.": "Appen stoppede under anvendelsen. Tjek den nuværende værdi.",
  "The association did not change.": "Tilknytningen blev ikke ændret.",
- "The command": "Kommandoen",
  "The device did not become the default.": "Enheden blev ikke standard.",
  "The device did not respond. Check that it is on and in range.": "Enheden svarede ikke. Tjek, at den er tændt og inden for rækkevidde.",
  "The display layout could not be confirmed. Check your displays.": "Skærmopsætningen kunne ikke bekræftes. Tjek dine skærme.",
@@ -1996,5 +1995,11 @@
  "Very strong": "Meget stærk",
  "Where see-through surfaces blur what is behind them.": "Hvor gennemsigtige flader slører det, der ligger bag dem.",
  "Your own Hyprland config turns blur on.": "Din egen Hyprland-konfiguration slår sløring til.",
- "Unsecured": "Usikret"
+ "Unsecured": "Usikret",
+ "The command is not installed.": "Kommandoen er ikke installeret.",
+ "The command could not be started.": "Kommandoen kunne ikke startes.",
+ "The command did not finish in time.": "Kommandoen blev ikke færdig i tide.",
+ "The command stopped unexpectedly.": "Kommandoen stoppede uventet.",
+ "The command was cancelled.": "Kommandoen blev annulleret.",
+ "The command failed with exit code %1.": "Kommandoen mislykkedes med afslutningskode %1."
 }

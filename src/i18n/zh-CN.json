@@ -1516,7 +1516,6 @@
   "The app did not move to that output.": "该应用未切换到该输出设备。",
   "The association did not change.": "关联未改变。",
   "The built-in display is already enabled.": "内置显示器已启用。",
-  "The command": "该命令",
   "The device did not become the default.": "该设备没有成为默认设备。",
   "The file is not valid JSON near byte %1.": "第 %1 字节附近不是有效的 JSON。",
   "The folder for %1 could not be created.": "无法创建 %1 的文件夹。",
@@ -1995,5 +1994,11 @@
   "Very strong": "很强",
   "Where see-through surfaces blur what is behind them.": "半透明表面在哪些地方模糊其背后的内容。",
   "Your own Hyprland config turns blur on.": "你自己的 Hyprland 配置开启了模糊。",
-  "Unsecured": "未加密"
+  "Unsecured": "未加密",
+  "The command is not installed.": "该命令未安装。",
+  "The command could not be started.": "该命令无法启动。",
+  "The command did not finish in time.": "该命令未在限定时间内完成。",
+  "The command stopped unexpectedly.": "该命令意外停止。",
+  "The command was cancelled.": "该命令已取消。",
+  "The command failed with exit code %1.": "该命令失败，退出码 %1。"
 }

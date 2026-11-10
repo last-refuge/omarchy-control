@@ -8,18 +8,25 @@
 #include <QTimer>
 
 QString CommandResult::describe(const QString &program) const {
-    const QString name = program.isEmpty() ? QCoreApplication::translate("CommandRunner", "The command") : program;
+    // Whole sentences for an unnamed command: "%1" filled with "The command" would
+    // force one grammatical gender and case on every language.
+    const bool named = !program.isEmpty();
     switch (failure) {
     case NotFound:
-        return QCoreApplication::translate("CommandRunner", "%1 is not installed.").arg(name);
+        return named ? QCoreApplication::translate("CommandRunner", "%1 is not installed.").arg(program)
+                     : QCoreApplication::translate("CommandRunner", "The command is not installed.");
     case FailedToStart:
-        return QCoreApplication::translate("CommandRunner", "%1 could not be started.").arg(name);
+        return named ? QCoreApplication::translate("CommandRunner", "%1 could not be started.").arg(program)
+                     : QCoreApplication::translate("CommandRunner", "The command could not be started.");
     case Timeout:
-        return QCoreApplication::translate("CommandRunner", "%1 did not finish in time.").arg(name);
+        return named ? QCoreApplication::translate("CommandRunner", "%1 did not finish in time.").arg(program)
+                     : QCoreApplication::translate("CommandRunner", "The command did not finish in time.");
     case Crashed:
-        return QCoreApplication::translate("CommandRunner", "%1 stopped unexpectedly.").arg(name);
+        return named ? QCoreApplication::translate("CommandRunner", "%1 stopped unexpectedly.").arg(program)
+                     : QCoreApplication::translate("CommandRunner", "The command stopped unexpectedly.");
     case Cancelled:
-        return QCoreApplication::translate("CommandRunner", "%1 was cancelled.").arg(name);
+        return named ? QCoreApplication::translate("CommandRunner", "%1 was cancelled.").arg(program)
+                     : QCoreApplication::translate("CommandRunner", "The command was cancelled.");
     case None:
         break;
     }
@@ -28,7 +35,8 @@ QString CommandResult::describe(const QString &program) const {
     const QString detail = QString::fromUtf8(err).trimmed();
     if (!detail.isEmpty())
         return detail.left(400);
-    return QCoreApplication::translate("CommandRunner", "%1 failed with exit code %2.").arg(name).arg(exitCode);
+    return named ? QCoreApplication::translate("CommandRunner", "%1 failed with exit code %2.").arg(program).arg(exitCode)
+                 : QCoreApplication::translate("CommandRunner", "The command failed with exit code %1.").arg(exitCode);
 }
 
 CommandRunner::CommandRunner(const Env &env, QObject *parent) : QObject(parent), m_env(env) {}

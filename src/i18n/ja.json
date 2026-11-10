@@ -819,7 +819,6 @@
  "The association did not change.": "関連付けは変更されませんでした。",
  "The built-in display is already enabled.": "内蔵ディスプレイはすでに有効です。",
  "The change journal could not be written, so nothing was changed.": "変更記録を書き込めなかったため、何も変更していません。",
- "The command": "コマンド",
  "The connection may already have gone back to the previous one. Check it below.": "接続はすでに以前のものに戻っている可能性があります。下で確認してください。",
  "The copies from this archive will be used in their place.": "このアーカイブのコピーが代わりに使用されます。",
  "The copy could not be checked, so nothing was imported.": "コピーを確認できなかったため、何もインポートしませんでした。",
@@ -1980,5 +1979,11 @@
  "xdph.conf": "xdph.conf",
  "yt-dlp host for Chromium": "Chromium 用 yt-dlp ホスト",
  "{target} has no brightness control Omarchy can reach: no backlight, and no answer over DDC/CI.": "{target} には Omarchy が制御できる明るさ調整がありません。バックライトがなく、DDC/CI でも応答がありません。",
- "Unsecured": "保護なし"
+ "Unsecured": "保護なし",
+ "The command is not installed.": "コマンドはインストールされていません。",
+ "The command could not be started.": "コマンドを起動できませんでした。",
+ "The command did not finish in time.": "コマンドが時間内に完了しませんでした。",
+ "The command stopped unexpectedly.": "コマンドが予期せず停止しました。",
+ "The command was cancelled.": "コマンドはキャンセルされました。",
+ "The command failed with exit code %1.": "コマンドが終了コード %1 で失敗しました。"
 }
