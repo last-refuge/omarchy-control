@@ -3446,7 +3446,7 @@
   "type": "action",
   "domain": "C20",
   "integration": "omarchy-wizard",
-  "description": "Install and launch Geforce Now.",
+  "description": "Install and launch GeForce NOW.",
   "keywords": [
    "nvidia geforce now"
   ],
@@ -4010,7 +4010,7 @@
    ]
   },
   "confirm": "destructive",
-  "confirmText": "Remove Package from this computer."
+  "confirmText": "Remove a package from this computer."
  },
  {
   "id": "remove.theme",

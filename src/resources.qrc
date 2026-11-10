@@ -13,5 +13,10 @@
         <file alias="i18n/de.json">i18n/de.json</file>
         <file alias="i18n/ar.json">i18n/ar.json</file>
         <file alias="i18n/zh-CN.json">i18n/zh-CN.json</file>
+        <file alias="i18n/fr.json">i18n/fr.json</file>
+        <file alias="i18n/ru.json">i18n/ru.json</file>
+        <file alias="i18n/ja.json">i18n/ja.json</file>
+        <file alias="i18n/fa.json">i18n/fa.json</file>
+        <file alias="i18n/bn.json">i18n/bn.json</file>
     </qresource>
 </RCC>

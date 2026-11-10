@@ -597,7 +597,7 @@
  "Simplified Chinese": "الصينية المبسّطة",
  "Skip the lock and screensaver timers until you turn this off.": "تخطّي مؤقتات القفل وحافظ الشاشة حتى تُوقف هذا.",
  "Snapshots and recovery": "اللقطات والاسترداد",
- "Solid, blurred, or clear.": "ممتلئ أو ضبابي أو صافٍ.",
+ "Solid, blurred, or transparent.": "ممتلئ أو ضبابي أو شفاف.",
  "Sound & devices": "الصوت والأجهزة",
  "Sound tools": "أدوات الصوت",
  "Space between windows.": "المسافة بين النوافذ.",
@@ -615,7 +615,7 @@
  "Synchronized": "متزامن",
  "System & maintenance": "النظام والصيانة",
  "Tap to click": "النقر باللمس",
- "Tell you when a program crashes, with a route to diagnose it.": "يُعلمك عند تعطّل برنامج، مع طريقة لتشخيصه.",
+ "Tells you when a program crashes, with a route to diagnose it.": "يُعلمك عند تعطّل برنامج، مع طريقة لتشخيصه.",
  "Terminal": "الطرفية",
  "Text": "النص",
  "Text editor": "محرر النصوص",
@@ -960,7 +960,7 @@
  "Install a theme from Git": "تثبيت سمة من Git",
  "Install a theme from a git repository": "تثبيت سمة من مستودع git",
  "Install a tool with mise": "تثبيت أداة باستخدام mise",
- "Install and launch Geforce Now.": "تثبيت Geforce Now وتشغيله.",
+ "Install and launch GeForce NOW.": "تثبيت GeForce NOW وتشغيله.",
  "Install and start the Dropbox service. Must then be authenticated via the web.": "تثبيت خدمة Dropbox وتشغيلها. يجب بعد ذلك المصادقة عبر الويب.",
  "Install from Arch or the Omarchy repo": "التثبيت من Arch أو من مستودع Omarchy",
  "Install from the AUR": "التثبيت من AUR",
@@ -1105,7 +1105,7 @@
  "Remove Ollama along with every model it pulled.": "إزالة Ollama مع كل نموذج سحبه.",
  "Remove OpenClaw": "إزالة OpenClaw",
  "Remove PHP": "إزالة PHP",
- "Remove Package from this computer.": "إزالة الحزمة من هذا الحاسوب.",
+ "Remove a package from this computer.": "إزالة حزمة من هذا الحاسوب.",
  "Remove Perplexity": "إزالة Perplexity",
  "Remove Phoenix": "إزالة Phoenix",
  "Remove Python": "إزالة Python",
@@ -2059,5 +2059,6 @@
  "To save this, Omarchy Control adds one marked line to hyprland.lua and keeps your blur choices in omarchy-control-blur.lua. It loads after Omarchy's toggles, because Glassy sets every blur value as it loads. Nothing else in your config changes.": "لحفظ هذا، يضيف Omarchy Control سطرًا واحدًا معلَّمًا إلى hyprland.lua ويحتفظ باختيارات التمويه في omarchy-control-blur.lua. يُحمَّل بعد مفاتيح التبديل في Omarchy، لأن «زجاجي» يضبط كل قيم التمويه عند تحميله. لا يتغير أي شيء آخر في إعداداتك.",
  "Very strong": "قوي جدًا",
  "Where see-through surfaces blur what is behind them.": "أين تموّه الأسطح الشفافة ما خلفها.",
- "Your own Hyprland config turns blur on.": "إعدادات Hyprland الخاصة بك تشغّل التمويه."
+ "Your own Hyprland config turns blur on.": "إعدادات Hyprland الخاصة بك تشغّل التمويه.",
+ "Unsecured": "غير مؤمَّن"
 }

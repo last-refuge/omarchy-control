@@ -148,7 +148,7 @@ ColumnLayout {
                         secondary: true
                         mono: true
                         scale_: 0.88
-                        text: qsTr("%1%").arg(row.network.signal || 0) + " · " + (row.network.secured ? qsTr("Secured") : qsTr("Open"))
+                        text: qsTr("%1%").arg(row.network.signal || 0) + " · " + (row.network.secured ? qsTr("Secured") : qsTr("Unsecured"))
                     }
                     Rectangle {
                         visible: !!row.network.active

@@ -573,7 +573,7 @@
  "Simplified Chinese": "Vereinfachtes Chinesisch",
  "Skip the lock and screensaver timers until you turn this off.": "Sperr- und Bildschirmschoner-Timer überspringen, bis Sie dies ausschalten.",
  "Snapshots and recovery": "Snapshots und Wiederherstellung",
- "Solid, blurred, or clear.": "Einfarbig, unscharf oder klar.",
+ "Solid, blurred, or transparent.": "Einfarbig, unscharf oder transparent.",
  "Sound & devices": "Ton und Geräte",
  "Sound tools": "Tonwerkzeuge",
  "Space between windows.": "Abstand zwischen Fenstern.",
@@ -591,7 +591,7 @@
  "Synchronized": "Synchronisiert",
  "System & maintenance": "System und Wartung",
  "Tap to click": "Tippen zum Klicken",
- "Tell you when a program crashes, with a route to diagnose it.": "Meldet Ihnen, wenn ein Programm abstürzt, und bietet einen Weg zur Diagnose.",
+ "Tells you when a program crashes, with a route to diagnose it.": "Meldet Ihnen, wenn ein Programm abstürzt, und bietet einen Weg zur Diagnose.",
  "Terminal": "Terminal",
  "Text": "Text",
  "Text editor": "Texteditor",
@@ -936,7 +936,7 @@
  "Install a theme from Git": "Ein Design aus Git installieren",
  "Install a theme from a git repository": "Ein Design aus einem Git-Repository installieren",
  "Install a tool with mise": "Ein Werkzeug mit mise installieren",
- "Install and launch Geforce Now.": "Geforce Now installieren und starten.",
+ "Install and launch GeForce NOW.": "GeForce NOW installieren und starten.",
  "Install and start the Dropbox service. Must then be authenticated via the web.": "Den Dropbox-Dienst installieren und starten. Anschließend muss die Authentifizierung über das Web erfolgen.",
  "Install from Arch or the Omarchy repo": "Aus Arch oder dem Omarchy-Repo installieren",
  "Install from the AUR": "Aus dem AUR installieren",
@@ -1081,7 +1081,7 @@
  "Remove Ollama along with every model it pulled.": "Ollama samt alle heruntergeladenen Modelle entfernen.",
  "Remove OpenClaw": "OpenClaw entfernen",
  "Remove PHP": "PHP entfernen",
- "Remove Package from this computer.": "Das Paket von diesem Computer entfernen.",
+ "Remove a package from this computer.": "Ein Paket von diesem Computer entfernen.",
  "Remove Perplexity": "Perplexity entfernen",
  "Remove Phoenix": "Phoenix entfernen",
  "Remove Python": "Python entfernen",
@@ -1995,5 +1995,6 @@
  "To save this, Omarchy Control adds one marked line to hyprland.lua and keeps your blur choices in omarchy-control-blur.lua. It loads after Omarchy's toggles, because Glassy sets every blur value as it loads. Nothing else in your config changes.": "Zum Speichern fügt Omarchy Control eine markierte Zeile zu hyprland.lua hinzu und hält Ihre Auswahl zur Unschärfe in omarchy-control-blur.lua fest. Sie wird nach den Schaltern von Omarchy geladen, weil „Glasig“ beim Laden jeden Unschärfewert setzt. Sonst ändert sich nichts an Ihrer Konfiguration.",
  "Very strong": "Sehr stark",
  "Where see-through surfaces blur what is behind them.": "Wo durchsichtige Flächen das Dahinterliegende weichzeichnen.",
- "Your own Hyprland config turns blur on.": "Ihre eigene Hyprland-Konfiguration schaltet die Unschärfe ein."
+ "Your own Hyprland config turns blur on.": "Ihre eigene Hyprland-Konfiguration schaltet die Unschärfe ein.",
+ "Unsecured": "Ungesichert"
 }

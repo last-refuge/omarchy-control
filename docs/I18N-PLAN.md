@@ -1,6 +1,6 @@
 # All of Omarchy's languages
 
-Status: decisions settled by Jason on November 10, 2026, all as recommended (see [§8](#8-decisions)). L0 implemented the same day (see [§9](#9-as-built)). Written November 10, 2026, against Omarchy v4.5.0 and the 50-language registry on `basecamp/omarchy` main (added October 14, 2026, in basecamp/omarchy#15326).
+Status: decisions settled by Jason on November 10, 2026, all as recommended (see [§8](#8-decisions)). L0 and the L1 pilot were implemented the same day (see [§9](#9-as-built)): Control now speaks 10 of Omarchy's 50 languages. Written November 10, 2026, against Omarchy v4.5.0 and the 50-language registry on `basecamp/omarchy` main (added October 14, 2026, in basecamp/omarchy#15326).
 
 Control speaks 5 of the 50 languages Omarchy ships: English, Arabic, Danish, German and Simplified Chinese, all four translations complete. Pick French under **Setup › Language** and the menu, the shell and Omarchy's notifications all switch, but Control stays in English. Control's own **Language** setting already offers all 50, because it lists Omarchy's registry.
 
@@ -124,4 +124,21 @@ Settled November 10, 2026: all five as recommended.
 - **`tests/fixtures/omarchy-locales.json`** is a copy of Omarchy's registry. `tools/make-sandbox.sh` installs it, so a sandbox can run in any of the 50 languages.
 - **`en-XA`** makes every string accented, about 40% longer, and bracketed, with placeholders and markup left intact. It isn't in the registry, so the picker never offers it.
 - **`.github/workflows/test.yml`** runs `bin/test` and the coverage report on every pull request and on `main`, with Noto fonts installed.
+
+### L1: pilot (November 10, 2026)
+
+- **New languages:** `fr`, `ru`, `ja`, `fa` and `bn`, each complete under `--strict`: 882 interface strings and 1,068 catalog strings. Each started with about 130 strings seeded from Omarchy. One agent per language translated the rest from [I18N-BRIEF.md](I18N-BRIEF.md), the glossary and each string's context, then reviewed the seeded strings. Each agent corrected between 2 and 10 seeds. Most were Omarchy nouns that are verbs on Control's buttons: Restart, Lock, Capture, Mirror. The Bengali agent also translated "Windows" (the Appearance section) as windows.
+- **Source strings the translators showed were ambiguous or wrong,** now fixed in the English and in all ten catalogs:
+  - "Open" was both a button and a Wi-Fi network's security state. The state is now "Unsecured".
+  - "Clear" was both a button and the bar background choice. The choice is now "Transparent", which already existed.
+  - "Remove Package", "Geforce Now" and "Tell you" are now "Remove a package", "GeForce NOW" and "Tells you".
+- **Rendering fixes found by screenshots:**
+  - **Counts use the language's digits.** Counted strings used `%n`, which Qt writes in Western digits, so Bengali showed "1টি" next to "২৫%". `Translator` now turns `%n` into `%Ln` in counted strings.
+  - **Arabic-script text no longer uses monospace.** A monospace font with Arabic glyphs, like the DejaVu Sans Mono in the test container, draws them unjoined: "خاموش" came out as "خا موش". `Translator.cursiveScript` is true for Arabic-script languages (ar, fa, ur), and text that would be monospace uses the interface font instead. Arabic, already shipped, benefits too.
+- **Screenshots** of Overview, Appearance and Displays (the latter at a 720 px width) in each language: right to left mirrors correctly, and the layout holds at the narrow width.
+- **Open follow-ups:**
+  - The footer's "Omarchy 4.5.0" is cut off when the Shortcuts label next to it is long (Japanese, `en-XA`).
+  - Numbers written into labels ("5 minutes") keep Western digits in Bengali and Persian, as the brief asks. Revisit that rule before phase L2.
+  - "The command" is filled into other sentences, so translators had to choose a grammatical gender for it. A full sentence per message would read better.
+  - Native-speaker review of the five pilot languages, through one tracking issue each (§5).
 

@@ -573,7 +573,7 @@
  "Simplified Chinese": "Forenklet kinesisk",
  "Skip the lock and screensaver timers until you turn this off.": "Spring lås- og pauseskærmtimerne over, indtil du slår dette fra.",
  "Snapshots and recovery": "Snapshots og gendannelse",
- "Solid, blurred, or clear.": "Ensfarvet, sløret eller klar.",
+ "Solid, blurred, or transparent.": "Ensfarvet, sløret eller gennemsigtig.",
  "Sound & devices": "Lyd og enheder",
  "Sound tools": "Lydværktøjer",
  "Space between windows.": "Afstand mellem vinduer.",
@@ -591,7 +591,7 @@
  "Synchronized": "Synkroniseret",
  "System & maintenance": "System og vedligeholdelse",
  "Tap to click": "Tryk for at klikke",
- "Tell you when a program crashes, with a route to diagnose it.": "Giver dig besked, når et program går ned, med en vej til at fejlfinde det.",
+ "Tells you when a program crashes, with a route to diagnose it.": "Giver dig besked, når et program går ned, med en vej til at fejlfinde det.",
  "Terminal": "Terminal",
  "Text": "Tekst",
  "Text editor": "Teksteditor",
@@ -936,7 +936,7 @@
  "Install a theme from Git": "Installer et tema fra Git",
  "Install a theme from a git repository": "Installer et tema fra et git-repository",
  "Install a tool with mise": "Installer et værktøj med mise",
- "Install and launch Geforce Now.": "Installer og start Geforce Now.",
+ "Install and launch GeForce NOW.": "Installer og start GeForce NOW.",
  "Install and start the Dropbox service. Must then be authenticated via the web.": "Installer og start Dropbox-tjenesten. Skal derefter godkendes via nettet.",
  "Install from Arch or the Omarchy repo": "Installer fra Arch eller Omarchy-repoet",
  "Install from the AUR": "Installer fra AUR",
@@ -1081,7 +1081,7 @@
  "Remove Ollama along with every model it pulled.": "Fjern Ollama sammen med alle modeller, det har hentet.",
  "Remove OpenClaw": "Fjern OpenClaw",
  "Remove PHP": "Fjern PHP",
- "Remove Package from this computer.": "Fjern pakken fra denne computer.",
+ "Remove a package from this computer.": "Fjern en pakke fra denne computer.",
  "Remove Perplexity": "Fjern Perplexity",
  "Remove Phoenix": "Fjern Phoenix",
  "Remove Python": "Fjern Python",
@@ -1995,5 +1995,6 @@
  "To save this, Omarchy Control adds one marked line to hyprland.lua and keeps your blur choices in omarchy-control-blur.lua. It loads after Omarchy's toggles, because Glassy sets every blur value as it loads. Nothing else in your config changes.": "For at gemme dette tilføjer Omarchy Control én markeret linje til hyprland.lua og beholder dine sløringsvalg i omarchy-control-blur.lua. Den indlæses efter Omarchys til/fra-indstillinger, fordi Glasagtig sætter alle sløringsværdier, når den indlæses. Intet andet i din konfiguration ændres.",
  "Very strong": "Meget stærk",
  "Where see-through surfaces blur what is behind them.": "Hvor gennemsigtige flader slører det, der ligger bag dem.",
- "Your own Hyprland config turns blur on.": "Din egen Hyprland-konfiguration slår sløring til."
+ "Your own Hyprland config turns blur on.": "Din egen Hyprland-konfiguration slår sløring til.",
+ "Unsecured": "Usikret"
 }
