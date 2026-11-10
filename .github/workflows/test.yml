@@ -1,0 +1,36 @@
+# Runs the test suite and the translation check on every pull request and on main,
+# in the same Arch container the release builds in.
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      # Noto covers the scripts of every language Omarchy ships, so text renders
+      # in tests the way it does on a desktop.
+      - name: Install build tools
+        run: >-
+          pacman -Syu --noconfirm --needed
+          git python ttf-dejavu noto-fonts noto-fonts-cjk
+          qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
+
+      - uses: actions/checkout@v4
+
+      # Not as root: some tests check file permissions, which root ignores.
+      - name: Test
+        run: |
+          useradd -m builder
+          chown -R builder:builder .
+          sudo -u builder bin/test
+
+      - name: Translation coverage
+        run: sudo -u builder python3 -I tools/i18n-report.py

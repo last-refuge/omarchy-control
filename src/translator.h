@@ -13,6 +13,12 @@
 // qsTr("Save") and C++ keeps tr("Save"). A counted string,
 // qsTr("%n clips", "", count), maps to an object of plural forms keyed by
 // CLDR category ({"one": "%n klip", "other": "%n klip"}).
+//
+// en-XA is a pseudo-language for finding layout problems before a real
+// translation exists: every string comes out accented, about 40% longer, and
+// bracketed, so clipped, overlapping, or untranslated text stands out. It is not
+// in Omarchy's registry, so the language picker never offers it; write it to the
+// language file by hand, in a sandbox or for screenshots.
 class Translator : public QTranslator {
     Q_OBJECT
     Q_PROPERTY(QString language READ language NOTIFY changed)
@@ -30,6 +36,8 @@ public:
 
     static QString readLanguage(const QString &path);
     static QString pluralCategory(const QString &language, long long count);
+    static constexpr const char *PseudoLanguage = "en-XA";
+    static QString pseudo(const QString &text);
     QLocale formatLocale(const QString &language) const;
 
 signals:

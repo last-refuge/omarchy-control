@@ -195,10 +195,13 @@ tools/package-check.sh     # Install, upgrade, and remove in a disposable pacman
 tools/installer-check.sh   # install.sh against real release files in a disposable root
 tools/gen-compat.py        # Re-pin commands after reviewing a changed script
 bin/coverage               # Regenerates docs/coverage-ledger.json
-tools/i18n-report.py       # Translation coverage per language
+tools/i18n-report.py       # Translation coverage per language; --check, --prune, --context
+tools/i18n-seed.py         # Start a language from Omarchy's own translations
 ```
 
 Tests run in a temporary root with fake commands. `tools/make-sandbox.sh` builds a synthetic machine, and `tools/screens` screenshots the real QML against it.
+
+To check a layout for translation, write `en-XA` to the sandbox's `~/.config/omarchy/language`. That pseudo-language makes every string accented, about 40% longer, and bracketed, so clipped or untranslated text stands out. [docs/I18N-PLAN.md](docs/I18N-PLAN.md) covers adding a language.
 
 **Releasing:** pushing a version tag tests the code, builds the package, and publishes it.
 
