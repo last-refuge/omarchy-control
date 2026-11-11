@@ -939,7 +939,7 @@ void SettingsEngine::applyCommand(const CatalogEntry &entry, const QJsonObject &
     });
 }
 
-void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallback callback, const QString &kind) {
+void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallback callback, const QString &kind, const QString &runId) {
     const CatalogEntry *entry = m_catalog->find(id);
     if (!entry) {
         Transaction tx;
@@ -950,7 +950,7 @@ void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallbac
     }
     // The value is rechecked against a fresh list on every apply, including one
     // from the CLI, so a stale plan cannot pass something no longer offered.
-    readChoices(id, [this, id, value, callback, kind, entry](const QVariantList &choices) {
+    readChoices(id, [this, id, value, callback, kind, entry, runId](const QVariantList &choices) {
         m_lastChoices.insert(id, choices);
         const ChangePlan plan = this->plan(id, value, choices);
         if (!plan.ok) {
@@ -962,7 +962,7 @@ void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallbac
             callback(tx);
             return;
         }
-        read(id, [this, id, entry, plan, callback, kind](const ReadResult &current) {
+        read(id, [this, id, entry, plan, callback, kind, runId](const ReadResult &current) {
             const bool known = current.status == QLatin1String("ok") || current.status == QLatin1String("custom");
             const QString writeKind = entry->write.value("kind").toString();
             if (writeKind == QLatin1String("icons")) {
@@ -973,11 +973,11 @@ void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallbac
             if (writeKind == QLatin1String("hypr")) {
                 const QString after = plan.normalized;
                 const bool remove = after.isEmpty();
-                submitHypr(*entry, after, current.value, !current.isOverride, remove, kind, callback);
+                submitHypr(*entry, after, current.value, !current.isOverride, remove, kind, callback, runId);
                 return;
             }
             if (writeKind == QLatin1String("json")) {
-                submitJson(*entry, plan.normalized, current.value, !current.isOverride, false, kind, callback);
+                submitJson(*entry, plan.normalized, current.value, !current.isOverride, false, kind, callback, runId);
                 return;
             }
             // Offering undo means promising the old value can be set again. Some cannot:
@@ -991,6 +991,7 @@ void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallbac
             request.after = plan.normalized;
             request.recovery = restorable ? entry->recovery : QStringLiteral("no-undo");
             request.beforeWasDefault = !current.isOverride && !entry->reset.isEmpty();
+            request.runId = runId;
             for (const auto &file : plan.files)
                 request.files << file;
             const QJsonObject write = entry->write;
@@ -1071,7 +1072,7 @@ static QJsonValue typedValue(const CatalogEntry &entry, const QString &value) {
 }
 
 void SettingsEngine::submitJson(const CatalogEntry &entry, const QString &value, const QString &before, bool beforeWasDefault, bool remove,
-                                const QString &kind, ApplyCallback callback) {
+                                const QString &kind, ApplyCallback callback, const QString &runId) {
     const Env &env = m_runner->env();
     const QString file = env.expand(entry.write.value("file").toString());
     QStringList path;
@@ -1085,6 +1086,7 @@ void SettingsEngine::submitJson(const CatalogEntry &entry, const QString &value,
     request.after = value;
     request.recovery = entry.recovery;
     request.beforeWasDefault = beforeWasDefault;
+    request.runId = runId;
     request.files << file;
     const QJsonObject write = entry.write;
     const QString fallback = entry.read.value("fallbackFile").toString();
@@ -1192,7 +1194,7 @@ void SettingsEngine::reloadHyprland(ChangeCoordinator::Done done, const QStringL
 }
 
 void SettingsEngine::submitHypr(const CatalogEntry &entry, const QString &value, const QString &before, bool beforeWasDefault, bool remove,
-                                const QString &kind, ApplyCallback callback) {
+                                const QString &kind, ApplyCallback callback, const QString &runId) {
     const QList<HyprEdit> edits = hyprEdits(entry, value, remove);
     for (const auto &edit : edits) {
         for (const auto &part : edit.path) {
@@ -1217,6 +1219,7 @@ void SettingsEngine::submitHypr(const CatalogEntry &entry, const QString &value,
     request.after = value;
     request.recovery = entry.recovery;
     request.beforeWasDefault = beforeWasDefault;
+    request.runId = runId;
     request.files << probe.path() << probe.hyprlandPath();
     const QString id = entry.id;
 
@@ -1282,7 +1285,7 @@ void SettingsEngine::submitHypr(const CatalogEntry &entry, const QString &value,
     m_coordinator->submit(std::move(request), callback);
 }
 
-void SettingsEngine::reset(const QString &id, ApplyCallback callback) {
+void SettingsEngine::reset(const QString &id, ApplyCallback callback, const QString &runId) {
     const CatalogEntry *entry = m_catalog->find(id);
     Transaction failed;
     failed.settingId = id;
@@ -1295,10 +1298,10 @@ void SettingsEngine::reset(const QString &id, ApplyCallback callback) {
     failed.label = entry->label;
     const QString writeKind = entry->write.value("kind").toString();
     if (writeKind == QLatin1String("icons")) {
-        apply(id, QString::fromLatin1(IconThemeProvider::FollowTheme), std::move(callback), QStringLiteral("reset"));
+        apply(id, QString::fromLatin1(IconThemeProvider::FollowTheme), std::move(callback), QStringLiteral("reset"), runId);
         return;
     }
-    read(id, [this, id, entry, writeKind, callback, failed](const ReadResult &current) {
+    read(id, [this, id, entry, writeKind, callback, failed, runId](const ReadResult &current) {
         if (writeKind == QLatin1String("hypr")) {
             HyprModule module(m_runner->env(), slotOf(*entry));
             if (module.state() == HyprModule::ModifiedByUser) {
@@ -1314,11 +1317,11 @@ void SettingsEngine::reset(const QString &id, ApplyCallback callback) {
                 callback(tx);
                 return;
             }
-            submitHypr(*entry, {}, current.value, false, true, "reset", callback);
+            submitHypr(*entry, {}, current.value, false, true, "reset", callback, runId);
             return;
         }
         if (writeKind == QLatin1String("json")) {
-            submitJson(*entry, {}, current.value, false, true, "reset", callback);
+            submitJson(*entry, {}, current.value, false, true, "reset", callback, runId);
             return;
         }
         if (entry->reset.isEmpty()) {
@@ -1333,6 +1336,7 @@ void SettingsEngine::reset(const QString &id, ApplyCallback callback) {
         request.kind = "reset";
         request.before = current.value;
         request.recovery = entry->recovery;
+        request.runId = runId;
         QStringList argv;
         for (const auto &part : entry->reset)
             argv << part.toString();
@@ -1416,6 +1420,35 @@ void SettingsEngine::undo(const QString &transactionId, ApplyCallback callback) 
         else
             apply(original.settingId, original.before, finish, "undo");
     });
+}
+
+QString SettingsEngine::hyprOrigin(const CatalogEntry &entry) const {
+    HyprModule module(m_runner->env(), slotOf(entry));
+    if (module.state() == HyprModule::ModifiedByUser)
+        return QStringLiteral("custom");
+    if (module.load() && anySet(module, entry))
+        return QStringLiteral("control");
+    QString source;
+    const QStringList path = pathOf(entry.write.value("path").toArray());
+    // configuredHyprValue reports the user's files before Omarchy's, so "Your config"
+    // means an assignment of their own exists, whatever Omarchy's default is.
+    const QString value = configuredHyprValue(entry, path, &source);
+    if (!value.isEmpty() && source == QCoreApplication::translate("SettingsEngine", "Your config"))
+        return QStringLiteral("user");
+    return QStringLiteral("omarchy");
+}
+
+QString SettingsEngine::hyprModuleValue(const CatalogEntry &entry) const {
+    HyprModule module(m_runner->env(), slotOf(entry));
+    const QStringList path = pathOf(entry.write.value("path").toArray());
+    if (path.isEmpty() || module.state() == HyprModule::ModifiedByUser || !module.load() || !module.hasOption(path))
+        return {};
+    const QJsonValue value = module.option(path);
+    if (value.isBool())
+        return value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+    if (value.isDouble())
+        return plainNumber(QString::number(value.toDouble(), 'f', 6));
+    return value.toString();
 }
 
 QString SettingsEngine::displayValue(const CatalogEntry &entry, const QString &value, const QVariantList &choices) const {

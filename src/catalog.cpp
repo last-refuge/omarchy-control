@@ -252,6 +252,7 @@ void Catalog::load(const QString &path) {
         e.link = o.value("link").toObject();
         e.tones = o.value("tones").toObject();
         e.discloses = toStrings(o.value("discloses"));
+        e.profile = o.value("profile").toObject();
         m_index.insert(e.id, m_entries.size());
         m_entries << e;
     }

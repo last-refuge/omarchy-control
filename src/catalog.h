@@ -37,6 +37,9 @@ struct CatalogEntry {
     // Rows of the same section kept behind this one until opened, as a strength keeps
     // its finer parts. Search and the CLI still reach them directly.
     QStringList discloses;
+    // Whether a saved profile may carry this setting to another computer, and how it is
+    // restored there. Reviewed per setting: being editable does not make a value portable.
+    QJsonObject profile;
 
     bool isAction() const { return type == QLatin1String("action"); }
     bool isSetting() const { return !isAction(); }

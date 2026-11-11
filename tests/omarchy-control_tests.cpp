@@ -317,6 +317,93 @@ QString importPack(IconThemeImporter &importer, const QString &folder) {
     return importer.state();
 }
 
+// ---- My Omarchy profile helpers ------------------------------------------------------
+
+// A fake Omarchy machine: its omarchy commands, Hyprland, installed browsers, and a
+// shell.json holding a key of the user's own beside the idle timers.
+struct ProfileMachine {
+    Sandbox s;
+    ProfileMachine() {
+        s.minimalHyprland();
+        s.command("hyprctl", kProfileHyprctl);
+        s.omarchy(kProfileOmarchy);
+        s.command("firefox", "exit 0");
+        s.command("chromium", "exit 0");
+        writeFile(s.env.omarchyPath + "/config/omarchy/shell.json", "{\"idle\":{\"lock\":300,\"screensaver\":150},\"bar\":{\"position\":\"top\"}}\n");
+        writeFile(config(), "{\n  \"bar\": {\"position\": \"top\"},\n  \"idle\": {\"lock\": 300, \"screensaver\": 150},\n  \"mine\": {\"keep\": true}\n}\n");
+    }
+    QString config() const { return s.env.configHome + "/omarchy/shell.json"; }
+    QString state(const QString &name) const { return s.env.home + "/.fake-omarchy/" + name; }
+};
+
+ProfileCapture::Result captureProfile(AppCore &core, const Profile *existing, const ProfileCapture::Selection &selection) {
+    ProfileCapture::Result result;
+    bool done = false;
+    core.profileCapture.capture(existing, selection, [&](const ProfileCapture::Result &r) { result = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 30000))
+        result.error = "capture timed out";
+    return result;
+}
+
+bool saveProfile(AppCore &core, const QString &directory, const ProfileCapture::Selection &selection) {
+    bool exists = false;
+    const ProfileModel::Parsed saved = ProfileModel::load(directory, &exists);
+    const ProfileCapture::Result result = captureProfile(core, exists ? &saved.profile : nullptr, selection);
+    QString error;
+    return result.ok && core.profileCapture.save(directory, result, &error);
+}
+
+ProfilePlan planProfile(AppCore &core, const QString &directory, const ProfilePlanner::Options &options = {}) {
+    ProfilePlan plan;
+    bool done = false;
+    core.profilePlanner.plan(directory, options, [&](const ProfilePlan &p) { plan = p; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 30000))
+        plan.errors << "plan timed out";
+    return plan;
+}
+
+ProfileRun runPlan(AppCore &core, const ProfilePlan &plan) {
+    ProfileRun run;
+    bool done = false;
+    core.profileRunner.apply(plan, [&](const ProfileRun &r) { run = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 60000))
+        run.message = "restore timed out";
+    return run;
+}
+
+ProfileRun resumeRun(AppCore &core, const QString &id) {
+    ProfileRun run;
+    bool done = false;
+    core.profileRunner.resume(id, [&](const ProfileRun &r) { run = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 60000))
+        run.message = "resume timed out";
+    return run;
+}
+
+ProfilePlanItem planned(const ProfilePlan &plan, const QString &target) {
+    for (const ProfilePlanItem &item : plan.items)
+        if (item.target == target)
+            return item;
+    return {};
+}
+
+void writeProfile(const QString &directory, const QJsonObject &settings, const QString &name = "Test profile") {
+    writeFile(ProfileModel::manifestPath(directory),
+              QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", name}, {"settings", settings}}).toJson());
+}
+
+QJsonObject setTo(const QString &value) {
+    return QJsonObject{{"mode", "set"}, {"value", value}};
+}
+
+int changesBy(const ChangeCoordinator &coordinator, const QString &runId) {
+    int count = 0;
+    for (const Transaction &tx : coordinator.history())
+        if (tx.runId == runId)
+            ++count;
+    return count;
+}
+
 }  // namespace
 
 class OmarchyControlTests : public QObject {
@@ -7699,6 +7786,616 @@ esac)SH");
         QMetaObject::invokeMethod(named("iconImportButton").first(), "clicked");
         QTest::qWait(100);
         QAccessible::setActive(false);
+    }
+
+    // ---- My Omarchy: profiles -------------------------------------------------------
+    void profileAcceptsValidFixtures_data() {
+        QTest::addColumn<QString>("path");
+        const QDir dir(PROJECT_ROOT "/tests/fixtures/profiles/valid");
+        for (const QString &name : dir.entryList({"*.json"}, QDir::Files, QDir::Name))
+            QTest::newRow(qPrintable(name)) << dir.filePath(name);
+    }
+    void profileAcceptsValidFixtures() {
+        QFETCH(QString, path);
+        const ProfileModel::Parsed parsed = ProfileModel::parse(readAll(path));
+        QVERIFY2(parsed.ok, qPrintable(parsed.errors.join("\n")));
+        // Canonical bytes read back as the same profile, and write the same bytes again.
+        const QByteArray canonical = parsed.profile.serialize();
+        const ProfileModel::Parsed again = ProfileModel::parse(canonical);
+        QVERIFY(again.ok);
+        QCOMPARE(again.profile.serialize(), canonical);
+        QCOMPARE(again.profile.digest(), parsed.profile.digest());
+    }
+    void profileRefusesInvalidFixtures_data() {
+        QTest::addColumn<QString>("path");
+        QTest::addColumn<QString>("expected");
+        const QHash<QString, QString> expected{
+            {"not-json", "not valid JSON"}, {"comments", "not valid JSON"}, {"trailing-comma", "not valid JSON"},
+            {"array-root", "one object"}, {"newer-schema", "newer Omarchy Control"}, {"schema-zero", "schemaVersion"},
+            {"schema-text", "schemaVersion"}, {"schema-fraction", "schemaVersion"}, {"missing-name", "needs name"},
+            {"blank-name", "needs a name"}, {"duplicate-key", "name appears twice"}, {"duplicate-setting", "settings.power.idle.lock appears twice"},
+            {"unknown-section", "unknown field, hooks"}, {"source-home-path", "unknown field, home"}, {"bad-mode", "mode must be"},
+            {"inherit-with-value", "cannot also have a value"}, {"set-without-value", "needs value"}, {"setting-number-value", "must be text"},
+            {"bad-setting-id", "not a setting id"}, {"setting-extra-field", "unknown field, command"}, {"control-character", "no control characters"},
+            {"package-both-ways", "Package firefox appears twice"}, {"package-bad-name", "not a package name"}, {"package-bad-source", "source must be"},
+            {"package-bad-intent", "intent must be"}, {"package-install-command", "unknown field, install"},
+            {"unknown-file-adapter", "zshrc file adapter"}, {"file-path-traversal", "plain file name"}, {"file-hidden-name", "plain file name"},
+            {"file-duplicate", "ghostty/config appears twice"}, {"asset-bad-digest", "SHA-256"}, {"asset-oversized", "25 MiB"},
+            {"profile-too-large", "100 MiB"}, {"dock-duplicate", "pinned twice"}, {"dock-not-desktop-id", "not an app id"},
+            {"shortcut-missing-command", "needs command"}, {"shortcut-duplicate-id", "Shortcut a appears twice"},
+            {"window-rule-unknown-action", "not a window rule"}, {"launcher-changes-nothing", "changes nothing"}, {"deeply-nested", "nested too deeply"},
+        };
+        const QDir dir(PROJECT_ROOT "/tests/fixtures/profiles/invalid");
+        const QStringList files = dir.entryList({"*.json"}, QDir::Files, QDir::Name);
+        QCOMPARE(files.size(), expected.size());
+        for (const QString &name : files) {
+            QVERIFY2(expected.contains(name.chopped(5)), qPrintable(name + " has no expected error"));
+            QTest::newRow(qPrintable(name)) << dir.filePath(name) << expected.value(name.chopped(5));
+        }
+    }
+    void profileRefusesInvalidFixtures() {
+        QFETCH(QString, path);
+        QFETCH(QString, expected);
+        const ProfileModel::Parsed parsed = ProfileModel::parse(readAll(path));
+        QVERIFY(!parsed.ok);
+        QVERIFY2(parsed.errors.join("\n").contains(expected), qPrintable(parsed.errors.join("\n")));
+    }
+    void profileSchemaMatchesTheValidator() {
+        // The published schema and the validator describe one contract: the same sections,
+        // record fields, and closed sets of values.
+        const QJsonObject schema = QJsonDocument::fromJson(readAll(PROJECT_ROOT "/docs/profile.schema.json")).object();
+        QVERIFY(!schema.isEmpty());
+        QCOMPARE(schema.value("additionalProperties").toBool(true), false);
+        const QJsonObject properties = schema.value("properties").toObject();
+        const QStringList sections = properties.keys();
+        QCOMPARE(QSet<QString>(sections.begin(), sections.end()),
+                 (QSet<QString>{"schemaVersion", "name", "source", "settings", "packages", "desktop", "files", "assets"}));
+        QCOMPARE(properties.value("schemaVersion").toObject().value("maximum").toInt(), Profile::SchemaVersion);
+        const auto enumOf = [](const QJsonValue &value) {
+            QStringList out;
+            for (const QJsonValue &item : value.toObject().value("enum").toArray())
+                out << item.toString();
+            return out;
+        };
+        const QJsonObject file = properties.value("files").toObject().value("items").toObject().value("properties").toObject();
+        QCOMPARE(enumOf(file.value("adapter")), ProfileModel::fileAdapters());
+        const QJsonObject package = properties.value("packages").toObject().value("items").toObject().value("properties").toObject();
+        QCOMPARE(enumOf(package.value("source")), (QStringList{"repository", "aur", "manual"}));
+        QCOMPARE(enumOf(package.value("intent")), (QStringList{"present", "absent"}));
+        const QStringList desktop = properties.value("desktop").toObject().value("properties").toObject().keys();
+        QCOMPARE(QSet<QString>(desktop.begin(), desktop.end()),
+                 (QSet<QString>{"dockPins", "launchers", "associations", "shortcuts", "windowRules"}));
+        QCOMPARE(schema.value("$defs").toObject().value("size").toObject().value("maximum").toInteger(), ProfileModel::MaxFileBytes);
+        // Every id the catalog has fits the pattern the schema gives setting ids.
+        const QRegularExpression id(properties.value("settings").toObject().value("propertyNames").toObject().value("pattern").toString());
+        const Catalog catalog;
+        for (const CatalogEntry &entry : catalog.entries())
+            if (entry.isEditable())
+                QVERIFY2(id.match(entry.id).hasMatch() && ProfileModel::isSettingId(entry.id), qPrintable(entry.id));
+    }
+    void profileBytesAreCanonical() {
+        // The same choices written in any order give the same file, and where they were
+        // saved from is not a choice.
+        const auto a = ProfileModel::parse(R"({"name":"P","schemaVersion":1,"settings":{"power.idle.lock":{"value":"600","mode":"set"},"appearance.theme":{"mode":"set","value":"Nord"}},
+            "packages":[{"name":"zed","source":"repository","intent":"present"},{"name":"btop","source":"repository","intent":"present"}]})");
+        const auto b = ProfileModel::parse(R"({"schemaVersion":1,"settings":{"appearance.theme":{"mode":"set","value":"Nord"},"power.idle.lock":{"mode":"set","value":"600"}},"name":"P",
+            "source":{"omarchy":"4.5.0-3"},"packages":[{"intent":"present","name":"btop","source":"repository"},{"name":"zed","source":"repository","intent":"present"}]})");
+        QVERIFY(a.ok && b.ok);
+        QVERIFY(a.profile.sameChoices(b.profile));
+        QVERIFY(a.profile.serialize() != b.profile.serialize());
+        Profile c = b.profile;
+        c.source = QJsonObject();
+        QCOMPARE(c.serialize(), a.profile.serialize());
+        QVERIFY(a.profile.serialize().indexOf("btop") < a.profile.serialize().indexOf("zed"));
+        // Saving refuses what it could not read back, and never follows a link.
+        QTemporaryDir dir;
+        Profile bad = a.profile;
+        bad.settings.insert("not an id", ProfileSetting{"set", "x"});
+        QString error;
+        QVERIFY(!ProfileModel::save(dir.path(), bad, &error));
+        QVERIFY(!QFile::exists(ProfileModel::manifestPath(dir.path())));
+        writeFile(dir.path() + "/elsewhere.json", "{}");
+        QVERIFY(QFile::link(dir.path() + "/elsewhere.json", ProfileModel::manifestPath(dir.path())));
+        QVERIFY(!ProfileModel::save(dir.path(), a.profile, &error));
+        QVERIFY(!ProfileModel::load(dir.path()).ok);
+        QCOMPARE(readAll(dir.path() + "/elsewhere.json"), QByteArray("{}"));
+    }
+    void profileMetadataCoversEveryEditableSetting() {
+        // Being editable does not make a setting portable: every one is reviewed either way,
+        // so a new setting cannot travel, or vanish from a capture, without a decision.
+        const Catalog catalog;
+        QHash<QString, int> order;
+        for (int i = 0; i < catalog.entries().size(); ++i)
+            order.insert(catalog.entries()[i].id, i);
+        int portable = 0;
+        for (const CatalogEntry &entry : catalog.entries()) {
+            const ProfileTraits traits = ProfileTraits::of(entry);
+            if (!entry.isEditable()) {
+                QVERIFY2(entry.profile.isEmpty(), qPrintable(entry.id));
+                continue;
+            }
+            QVERIFY2(QStringList({"portable", "later", "machine", "runtime"}).contains(traits.portability), qPrintable(entry.id));
+            QVERIFY2(!traits.category.isEmpty(), qPrintable(entry.id));
+            if (!traits.portable()) {
+                QVERIFY2(!traits.reason.isEmpty(), qPrintable(entry.id + " needs a reason"));
+                QVERIFY2(!traits.hasStock && !traits.inherit, qPrintable(entry.id));
+                continue;
+            }
+            ++portable;
+            QVERIFY2(ProfileTraits::categories().contains(traits.category), qPrintable(entry.id));
+            QVERIFY2(entry.target.isEmpty(), qPrintable(entry.id + " belongs to one device"));
+            // "Use the default" only where returning to it is reliable.
+            const QString kind = entry.write.value("kind").toString();
+            if (traits.inherit)
+                QVERIFY2(kind == "json" || kind == "hypr" || !entry.reset.isEmpty(), qPrintable(entry.id));
+            for (const QString &before : traits.after) {
+                QVERIFY2(order.contains(before), qPrintable(entry.id + " is after an unknown " + before));
+                QVERIFY2(order.value(before) < order.value(entry.id), qPrintable(entry.id + " comes before " + before));
+            }
+            for (const ProfileTraits::Overlap &overlap : traits.overlaps)
+                QVERIFY2(catalog.find(overlap.setting), qPrintable(entry.id));
+            for (const QString &key : traits.activation)
+                QVERIFY2(ProfileTraits::describeActivation(key) != key, qPrintable(entry.id + ": " + key));
+        }
+        QCOMPARE(portable, 35);
+    }
+    void profileRoundTripsBetweenMachines() {
+        QTemporaryDir store;
+        const QString dir = store.path() + "/my-omarchy";
+        // Machine A: someone's own choices, made the usual ways.
+        {
+            ProfileMachine a;
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            QCOMPARE(applySetting(core.engine, "appearance.theme", "Catppuccin").phase, QString("committed"));
+            QCOMPARE(applySetting(core.engine, "power.idle.lock", "600").phase, QString("committed"));
+            QCOMPARE(applySetting(core.engine, "input.repeat_rate", "31").phase, QString("committed"));
+            QCOMPARE(applySetting(core.engine, "apps.default.browser", "firefox").phase, QString("committed"));
+            ProfileCapture::Selection selection;
+            selection.settings = {"appearance.theme", "power.idle.lock", "power.idle.screensaver", "input.repeat_rate", "apps.default.browser"};
+            const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+            QVERIFY2(result.ok, qPrintable(result.error));
+            QVERIFY(result.changed);
+            QString error;
+            QVERIFY2(core.profileCapture.save(dir, result, &error), qPrintable(error));
+            const ProfileModel::Parsed saved = ProfileModel::load(dir);
+            QVERIFY2(saved.ok, qPrintable(saved.errors.join("\n")));
+            QCOMPARE(saved.profile.settings.size(), 5);
+            QCOMPARE(saved.profile.settings.value("appearance.theme"), (ProfileSetting{"set", "Catppuccin"}));
+            QCOMPARE(saved.profile.settings.value("power.idle.lock"), (ProfileSetting{"set", "600"}));
+            QCOMPARE(saved.profile.settings.value("power.idle.screensaver"), (ProfileSetting{"set", "150"}));
+            QCOMPARE(saved.profile.settings.value("input.repeat_rate"), (ProfileSetting{"set", "31"}));
+            QCOMPARE(saved.profile.settings.value("apps.default.browser"), (ProfileSetting{"set", "firefox"}));
+            QCOMPARE(saved.profile.source.value("hyprland").toString(), QString("0.56.2"));
+            // Nothing of this computer's home folder travels in it.
+            QVERIFY(!readAll(ProfileModel::manifestPath(dir)).contains(a.s.env.home.toUtf8()));
+            // Capturing the same choices again writes nothing at all.
+            const QByteArray bytes = readAll(ProfileModel::manifestPath(dir));
+            const ProfileCapture::Result again = captureProfile(core, &saved.profile, {});
+            QVERIFY(again.ok);
+            QVERIFY(!again.changed);
+            QVERIFY(core.profileCapture.save(dir, again, &error));
+            QCOMPARE(readAll(ProfileModel::manifestPath(dir)), bytes);
+        }
+
+        // Machine B: a fresh installation, with another home folder.
+        ProfileMachine b;
+        QVERIFY(b.s.dir.path() != store.path());
+        const QByteArray shellJson = readAll(b.config());
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, dir);
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "appearance.theme").status, QString("ready"));
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("ready"));
+        QCOMPARE(planned(plan, "power.idle.screensaver").status, QString("unchanged"));
+        QCOMPARE(planned(plan, "input.repeat_rate").status, QString("ready"));
+        QVERIFY(planned(plan, "input.repeat_rate").needsOwnership);
+        // Nothing shows whether this computer's browser was chosen, so it is a decision.
+        QCOMPARE(planned(plan, "apps.default.browser").status, QString("conflict"));
+        QVERIFY(!planned(plan, "apps.default.browser").willRun());
+        // Planning changed nothing.
+        QCOMPARE(readAll(b.config()), shellJson);
+        QVERIFY(!QFile::exists(b.state("theme")));
+
+        ProfilePlanner::Options options;
+        options.useSaved = {"apps.default.browser"};
+        const ProfilePlan decided = planProfile(core, dir, options);
+        QVERIFY(planned(decided, "apps.default.browser").willRun());
+        QCOMPARE(decided.leftOut(), 0);
+        // Restoring follows the reviewed order: the theme before anything else.
+        QCOMPARE(decided.items.first().target, QString("appearance.theme"));
+        QString error;
+        QVERIFY(core.profilePlanner.save(decided, &error));
+        const ProfilePlan reloaded = core.profilePlanner.load(decided.id, &error);
+        QCOMPARE(reloaded.items.size(), decided.items.size());
+
+        const ProfileRun run = runPlan(core, reloaded);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(run.count("verified"), 4);
+        QCOMPARE(readSetting(core.engine, "appearance.theme").value, QString("Catppuccin"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+        QCOMPARE(readSetting(core.engine, "input.repeat_rate").value, QString("31"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("firefox"));
+        // Only the restored value changed; the user's own key and the rest stay as they were.
+        QCOMPARE(readAll(b.config()), QByteArray(shellJson).replace("\"lock\": 300", "\"lock\": 600"));
+        QVERIFY(readAll(b.s.env.configHome + "/hypr/hyprland.lua").contains("hypr.mine"));
+        // Each change went through the journal, tied to this restore, and can be undone alone.
+        QCOMPARE(changesBy(core.coordinator, run.id), 4);
+        for (const Transaction &tx : core.coordinator.history())
+            if (tx.runId == run.id)
+                QVERIFY2(tx.undoable() || tx.recovery == "best-effort", qPrintable(tx.settingId));
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+        QVERIFY(core.coordinator.leaseRun().isEmpty());
+
+        // A second restore of the same profile does nothing at all.
+        const ProfilePlan second = planProfile(core, dir);
+        QCOMPARE(second.count("ready") + second.count("conflict"), 0);
+        QCOMPARE(second.count("unchanged"), 5);
+        const int journal = core.coordinator.history().size();
+        const ProfileRun noop = runPlan(core, second);
+        QCOMPARE(noop.state, QString("completed"));
+        QVERIFY(noop.items.isEmpty());
+        QCOMPARE(core.coordinator.history().size(), journal);
+        QCOMPARE(QString::fromUtf8(readAll(b.state("theme-sets"))).count('\n'), 1);
+    }
+    void profileCaptureListsWhatItCannotCarry() {
+        ProfileMachine m;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.categories = {"input"};
+        selection.settings = {"displays.scale", "no.such.setting", "appearance.background"};
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QHash<QString, ProfileCapture::Item> items;
+        for (const ProfileCapture::Item &item : result.items)
+            items.insert(item.id, item);
+        // Shown with a reason, never dropped quietly: the device toggles and dictation.
+        QCOMPARE(items.value("input.touchpad").change, QString("excluded"));
+        QVERIFY(items.value("input.touchpad").reason.contains("touchpad"));
+        QCOMPARE(items.value("input.dictation.mode").change, QString("excluded"));
+        QCOMPARE(items.value("displays.scale").change, QString("excluded"));
+        QCOMPARE(items.value("appearance.background").change, QString("excluded"));
+        QCOMPARE(items.value("no.such.setting").change, QString("excluded"));
+        QCOMPARE(items.value("input.repeat_rate").change, QString("added"));
+        QVERIFY(!result.profile.settings.contains("input.touchpad"));
+        // Touchpad choices cannot be read without a touchpad, so they are shown, not saved.
+        QCOMPARE(items.value("input.tp_natural").change, QString("excluded"));
+        QVERIFY(items.value("input.tp_natural").reason.contains("touchpad"));
+        QCOMPARE(result.profile.settings.size(), 7);
+        // A category that does not exist is refused, not guessed at.
+        selection = {};
+        selection.categories = {"everything"};
+        QVERIFY(!captureProfile(core, nullptr, selection).ok);
+        // So is a first capture that finds nothing to remember.
+        selection = {};
+        selection.settings = {"displays.scale"};
+        QVERIFY(!captureProfile(core, nullptr, selection).ok);
+        // "Use the default" only where that is reliable.
+        selection = {};
+        selection.inherit = {"appearance.theme", "power.idle.lock"};
+        const ProfileCapture::Result inherit = captureProfile(core, nullptr, selection);
+        QVERIFY(inherit.ok);
+        QCOMPARE(inherit.profile.settings.value("power.idle.lock"), (ProfileSetting{"inherit", QString()}));
+        QVERIFY(!inherit.profile.settings.contains("appearance.theme"));
+    }
+    void profileSuggestionsFollowProvenance() {
+        ProfileMachine m;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        // Stock everywhere: nothing to suggest but what nothing can tell about.
+        ProfileCapture::Selection selection;
+        selection.suggested = true;
+        const ProfileCapture::Result stock = captureProfile(core, nullptr, selection);
+        QVERIFY(!stock.profile.settings.contains("appearance.theme"));
+        QVERIFY(!stock.profile.settings.contains("power.idle.lock"));
+        QVERIFY(!stock.profile.settings.contains("input.repeat_rate"));
+        QVERIFY(!stock.profile.settings.contains("apps.default.browser"));
+        QCOMPARE(applySetting(core.engine, "appearance.theme", "Everforest").phase, QString("committed"));
+        QCOMPARE(applySetting(core.engine, "power.idle.lock", "900").phase, QString("committed"));
+        QCOMPARE(applySetting(core.engine, "input.repeat_rate", "35").phase, QString("committed"));
+        const ProfileCapture::Result changed = captureProfile(core, nullptr, selection);
+        QVERIFY(changed.ok);
+        QCOMPARE(changed.profile.settings.value("appearance.theme").value, QString("Everforest"));
+        QCOMPARE(changed.profile.settings.value("power.idle.lock").value, QString("900"));
+        QCOMPARE(changed.profile.settings.value("input.repeat_rate").value, QString("35"));
+        QVERIFY(!changed.profile.settings.contains("power.idle.screensaver"));
+    }
+    void profileCaptureKeepsWhatItCannotRead() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"appearance.theme", setTo("Catppuccin")}, {"power.idle.lock", setTo("600")}, {"future.setting", setTo("x")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        writeFile(m.state("theme-unreadable"), "");
+        const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+        QVERIFY(saved.ok);
+        const ProfileCapture::Result result = captureProfile(core, &saved.profile, {});
+        QVERIFY(result.ok);
+        // A failed read never turns into forgetting the choice, or into a different one.
+        QCOMPARE(result.profile.settings.value("appearance.theme"), (ProfileSetting{"set", "Catppuccin"}));
+        QCOMPARE(result.profile.settings.value("future.setting"), (ProfileSetting{"set", "x"}));
+        QCOMPARE(result.profile.settings.value("power.idle.lock"), (ProfileSetting{"set", "300"}));
+        bool attention = false;
+        for (const ProfileCapture::Item &item : result.items) {
+            if (item.id == "appearance.theme") {
+                QCOMPARE(item.change, QString("kept"));
+                attention = item.attention;
+            }
+            if (item.id == "power.idle.lock")
+                QCOMPARE(item.change, QString("modified"));
+        }
+        QVERIFY(attention);
+        // Forgetting is explicit, and only then does a choice leave the profile.
+        ProfileCapture::Selection forget;
+        forget.forget = {"appearance.theme"};
+        const ProfileCapture::Result forgotten = captureProfile(core, &saved.profile, forget);
+        QVERIFY(!forgotten.profile.settings.contains("appearance.theme"));
+    }
+    void profilePlanFindsLocalEdits() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        // No record of an agreed value, and this computer has its own: a decision.
+        QCOMPARE(applySetting(core.engine, "power.idle.lock", "900").phase, QString("committed"));
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}});
+        ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("conflict"));
+        QVERIFY(!planned(plan, "power.idle.lock").willRun());
+        ProfilePlanner::Options keep;
+        keep.keepLocal = {"all"};
+        QCOMPARE(planned(planProfile(core, store.path(), keep), "power.idle.lock").resolution, QString("keep-local"));
+        ProfilePlanner::Options use;
+        use.useSaved = {"power.idle.lock"};
+        plan = planProfile(core, store.path(), use);
+        QVERIFY(planned(plan, "power.idle.lock").willRun());
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+
+        // Restored, so this computer agrees. A new saved value is safe to restore...
+        writeProfile(store.path(), {{"power.idle.lock", setTo("1200")}});
+        QCOMPARE(planned(planProfile(core, store.path()), "power.idle.lock").status, QString("ready"));
+        // ...unless the value was changed here since, outside this app.
+        writeFile(m.config(), QByteArray(readAll(m.config())).replace("600", "1800"));
+        plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("conflict"));
+        QVERIFY(planned(plan, "power.idle.lock").reason.contains("Changed on this computer"));
+    }
+    void profileApplyRefusesAStalePlan() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}, {"appearance.theme", setTo("Catppuccin")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("ready"));
+        // Edited after the review: the plan no longer describes this computer.
+        writeFile(m.config(), QByteArray(readAll(m.config())).replace("300", "450"));
+        const QByteArray edited = readAll(m.config());
+        const ProfileRun refused = runPlan(core, plan);
+        QVERIFY(refused.state.isEmpty());
+        QVERIFY2(refused.message.contains("Lock after"), qPrintable(refused.message));
+        QCOMPARE(readAll(m.config()), edited);
+        QVERIFY(!QFile::exists(m.state("theme")));
+        QVERIFY(core.coordinator.leaseRun().isEmpty());
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+
+        // So is a plan whose profile changed after it was made.
+        const ProfilePlan fresh = planProfile(core, store.path());
+        writeProfile(store.path(), {{"power.idle.lock", setTo("60")}});
+        const ProfileRun changed = runPlan(core, fresh);
+        QVERIFY(changed.state.isEmpty());
+        QVERIFY(changed.message.contains("profile changed"));
+        QCOMPARE(readAll(m.config()), edited);
+    }
+    void profileRefusesABrokenProfileBeforeAnything() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeFile(ProfileModel::manifestPath(store.path()), R"({"schemaVersion": 7, "name": "From the future"})");
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY(!plan.valid);
+        QVERIFY(plan.items.isEmpty());
+        QVERIFY(plan.errors.join(" ").contains("newer"));
+        const ProfileRun run = runPlan(core, plan);
+        QVERIFY(run.state.isEmpty());
+        QCOMPARE(core.coordinator.history().size(), 0);
+        // A capture never overwrites a profile it cannot read.
+        QCOMPARE(Cli::run(m.s.env, {"profile", "capture", store.path(), "--category", "idle"}), 1);
+        QVERIFY(readAll(ProfileModel::manifestPath(store.path())).contains("From the future"));
+    }
+    void profilePlanHoldsBackMaskedAndUnsupportedItems() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        const QJsonObject settings{{"appearance.gaps", setTo("false")},
+                                   {"appearance.gaps_in", setTo("12")},
+                                   {"appearance.background", setTo("/home/someone/Pictures/x.png")},
+                                   {"displays.scale", setTo("2")},
+                                   {"future.setting", setTo("x")},
+                                   {"appearance.theme", setTo("Not Installed Here")},
+                                   {"input.repeat_rate", QJsonObject{{"mode", "inherit"}}}};
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Mixed"}, {"settings", settings},
+                                            {"packages", QJsonArray{QJsonObject{{"name", "firefox"}, {"source", "repository"}, {"intent", "present"}}}}})
+                      .toJson());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY(plan.valid);
+        QCOMPARE(planned(plan, "appearance.gaps").status, QString("ready"));
+        QCOMPARE(planned(plan, "appearance.gaps_in").status, QString("blocked"));
+        QVERIFY(planned(plan, "appearance.gaps_in").reason.contains("Window gaps"));
+        QCOMPARE(planned(plan, "appearance.background").status, QString("manual"));
+        QCOMPARE(planned(plan, "displays.scale").status, QString("manual"));
+        QCOMPARE(planned(plan, "future.setting").status, QString("manual"));
+        QCOMPARE(planned(plan, "appearance.theme").status, QString("blocked"));
+        QCOMPARE(planned(plan, "input.repeat_rate").status, QString("unchanged"));
+        QCOMPARE(planned(plan, "packages").status, QString("manual"));
+        QCOMPARE(plan.leftOut(), 6);
+        // A restore that leaves things out says so, and is never called complete.
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("partial"));
+        QCOMPARE(run.leftOut, 6);
+        QVERIFY(QFile::exists(m.s.env.stateHome + "/omarchy/toggles/hypr/window-no-gaps.lua"));
+        QVERIFY(!readAll(m.s.env.configHome + "/hypr/omarchy-control.lua").contains("gaps_in"));
+    }
+    void profileInheritRemovesAnOverride() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        QCOMPARE(applySetting(core.engine, "input.repeat_rate", "31").phase, QString("committed"));
+        // Saved here as this computer's default, after being set: the capture is the agreement.
+        ProfileCapture::Selection selection;
+        selection.settings = {"input.repeat_rate"};
+        QVERIFY(saveProfile(core, store.path(), selection));
+        writeProfile(store.path(), {{"input.repeat_rate", QJsonObject{{"mode", "inherit"}}}});
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "input.repeat_rate").status, QString("ready"));
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(readSetting(core.engine, "input.repeat_rate").value, QString("40"));
+        QVERIFY(!readSetting(core.engine, "input.repeat_rate").isOverride);
+        QCOMPARE(planned(planProfile(core, store.path()), "input.repeat_rate").status, QString("unchanged"));
+    }
+    void profileRunResumesAfterACrash() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}, {"power.idle.screensaver", setTo("60")}, {"appearance.theme", setTo("Catppuccin")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(plan.count("ready"), 3);
+
+        // The record a run leaves when its process dies partway: the theme landed but was
+        // not yet confirmed, the lock never started, and the screensaver was underway and
+        // then changed by someone else.
+        ProfileRun run;
+        run.id = "run-0123456789ab";
+        run.planId = plan.id;
+        run.directory = plan.directory;
+        run.profileName = plan.profileName;
+        run.profileDigest = plan.profileDigest;
+        run.state = "running";
+        run.startedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        for (const ProfilePlanItem &item : plan.items) {
+            ProfileRunItem step;
+            step.id = item.id;
+            step.kind = item.kind;
+            step.target = item.target;
+            step.label = item.label;
+            step.mode = item.mode;
+            step.desired = item.desired;
+            step.planned = item.current;
+            step.state = item.target == "power.idle.lock" ? "pending" : "running";
+            run.items << step;
+        }
+        writeFile(ProfileStore::runsDir(m.s.env) + "/" + run.id + ".json", QJsonDocument(run.toJson()).toJson());
+        writeFile(m.state("theme"), "Catppuccin\n");
+        writeFile(m.config(), QByteArray(readAll(m.config())).replace("150", "90"));
+        Transaction underway;
+        underway.id = "crashed00001";
+        underway.settingId = "appearance.theme";
+        underway.label = "Theme";
+        underway.phase = "applying";
+        underway.runId = run.id;
+        writeFile(core.coordinator.journalPath(), QJsonDocument(underway.toJson()).toJson(QJsonDocument::Compact) + "\n");
+
+        const ProfileRun resumed = resumeRun(core, run.id);
+        QCOMPARE(resumed.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : resumed.items)
+            items.insert(item.target, item);
+        // Found done by reading it, so it is not run again.
+        QCOMPARE(items.value("appearance.theme").state, QString("verified"));
+        QVERIFY(!QFile::exists(m.state("theme-sets")));
+        // Never started, still as planned: done now.
+        QCOMPARE(items.value("power.idle.lock").state, QString("verified"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+        // Neither planned nor wanted: someone else's value, left for a person to check.
+        QCOMPARE(items.value("power.idle.screensaver").state, QString("interrupted"));
+        QCOMPARE(readSetting(core.engine, "power.idle.screensaver").value, QString("90"));
+        // The coordinator settled its own record of the interrupted change too.
+        QCOMPARE(core.coordinator.transaction("crashed00001").phase, QString("interrupted"));
+        QCOMPARE(core.coordinator.transaction("crashed00001").runId, run.id);
+        // A finished run has nothing left to resume.
+        QVERIFY(resumeRun(core, run.id).state.isEmpty());
+        QVERIFY(resumeRun(core, "../../etc/passwd").message.contains("not a restore id"));
+    }
+    void profileLeaseExcludesOtherChanges() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        {
+            // Another process holds the lease: a restore is running there.
+            QLockFile other(core.coordinator.leasePath());
+            QVERIFY(other.tryLock(0));
+            QVERIFY(core.coordinator.leaseHeldElsewhere());
+            const Transaction refused = applySetting(core.engine, "power.idle.screensaver", "60");
+            QCOMPARE(refused.phase, QString("failed"));
+            QVERIFY(refused.message.contains("restore is running"));
+            QCOMPARE(Cli::run(m.s.env, {"apply", "power.idle.screensaver", "60"}), 1);
+            // Nor can a second restore start.
+            const ProfileRun second = runPlan(core, plan);
+            QVERIFY(second.state.isEmpty());
+            QVERIFY(second.message.contains("Another restore"));
+            QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("300"));
+        }
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+        QCOMPARE(applySetting(core.engine, "power.idle.screensaver", "60").phase, QString("committed"));
+
+        // While this process holds it, only the run's own changes go ahead.
+        QVERIFY(core.coordinator.acquireLease("run-aaaaaaaaaaaa"));
+        QCOMPARE(applySetting(core.engine, "power.idle.screensaver", "120").phase, QString("failed"));
+        Transaction own;
+        bool done = false;
+        core.engine.apply("power.idle.screensaver", "120", [&](const Transaction &tx) { own = tx; done = true; }, "set", "run-aaaaaaaaaaaa");
+        QTRY_VERIFY_WITH_TIMEOUT(done, 8000);
+        QCOMPARE(own.phase, QString("committed"));
+        QCOMPARE(own.runId, QString("run-aaaaaaaaaaaa"));
+        core.coordinator.releaseLease();
+        // A change claiming a run that holds no lease is refused too.
+        done = false;
+        core.engine.apply("power.idle.screensaver", "150", [&](const Transaction &tx) { own = tx; done = true; }, "set", "run-aaaaaaaaaaaa");
+        QTRY_VERIFY_WITH_TIMEOUT(done, 8000);
+        QCOMPARE(own.phase, QString("failed"));
+    }
+    void profileCliRoundTrip() {
+        ProfileMachine a;
+        QTemporaryDir store;
+        const QString dir = store.path() + "/profile";
+        QCOMPARE(Cli::run(a.s.env, {"apply", "power.idle.lock", "600"}), 0);
+        // A first capture needs a choice of what to remember.
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir}), 1);
+        QVERIFY(!QFile::exists(ProfileModel::manifestPath(dir)));
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir, "--setting", "power.idle.lock", "--dry-run"}), 0);
+        QVERIFY(!QFile::exists(ProfileModel::manifestPath(dir)));
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir, "--category", "idle", "--name", "Laptop"}), 0);
+        QVERIFY(ProfileModel::load(dir).ok);
+        QCOMPARE(ProfileModel::load(dir).profile.name, QString("Laptop"));
+        QCOMPARE(Cli::run(a.s.env, {"profile", "inspect", dir, "--json"}), 0);
+
+        ProfileMachine b;
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", dir}), 0);
+        const QStringList plans = QDir(ProfileStore::plansDir(b.s.env)).entryList({"plan-*.json"}, QDir::Files);
+        QCOMPARE(plans.size(), 1);
+        const QString planId = plans.first().chopped(5);
+        // Nothing happens without --yes, and nothing changed by planning.
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", planId}), 1);
+        QVERIFY(readAll(b.config()).contains("\"lock\": 300"));
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", planId, "--yes"}), 0);
+        QVERIFY(readAll(b.config()).contains("\"lock\": 600"));
+        QCOMPARE(Cli::run(b.s.env, {"profile", "status", "--json"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", "plan-nothere00000", "--yes"}), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "resume", "not-a-run"}), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "frobnicate"}), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile"}), 0);
     }
 
 };

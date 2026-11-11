@@ -8,6 +8,9 @@
 #include "env.h"
 #include "iconthemeprovider.h"
 #include "launchereditor.h"
+#include "profilecapture.h"
+#include "profileplanner.h"
+#include "profilerunner.h"
 #include "settingsengine.h"
 
 // The reviewed backend, shared by the window and the headless CLI so both apply
@@ -22,6 +25,10 @@ struct AppCore {
     IconThemeProvider icons;
     LauncherEditor launchers;
     SettingsEngine engine;
+    // My Omarchy: saving this computer's choices to a profile and restoring them.
+    ProfileCapture profileCapture;
+    ProfilePlanner profilePlanner;
+    ProfileRunner profileRunner;
 
     explicit AppCore(const Env &environment, const QString &catalogDirectory = QStringLiteral(":/data"))
         : env(environment),
@@ -32,7 +39,10 @@ struct AppCore {
           compat(env, catalogDirectory),
           icons(&runner, &coordinator),
           launchers(env, &coordinator, &icons),
-          engine(&catalog, &runner, &capabilities, &coordinator, &compat) {
+          engine(&catalog, &runner, &capabilities, &coordinator, &compat),
+          profileCapture(&catalog, &engine, &capabilities, env),
+          profilePlanner(&catalog, &engine, &capabilities, env),
+          profileRunner(&catalog, &engine, &coordinator, env) {
         engine.setIconThemes(&icons);
         engine.setLaunchers(&launchers);
     }

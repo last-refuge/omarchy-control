@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "x",
+  "assets": [
+    {
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 26214401,
+      "kind": "background",
+      "name": "huge.mp4"
+    }
+  ]
+}

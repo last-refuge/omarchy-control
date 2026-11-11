@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "x",
+  "desktop": {
+    "shortcuts": [
+      {
+        "id": "a",
+        "keys": "SUPER + A"
+      }
+    ]
+  }
+}

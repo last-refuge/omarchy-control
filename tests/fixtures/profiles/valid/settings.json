@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "name": "Settings",
+  "settings": {
+    "appearance.theme": {
+      "mode": "set",
+      "value": "Catppuccin"
+    },
+    "power.idle.lock": {
+      "mode": "set",
+      "value": "600"
+    },
+    "input.repeat_rate": {
+      "mode": "inherit"
+    },
+    "future.setting": {
+      "mode": "set",
+      "value": "kept, though unknown here"
+    }
+  }
+}

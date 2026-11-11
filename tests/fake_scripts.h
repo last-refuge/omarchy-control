@@ -205,3 +205,71 @@ case "$*" in
   *"connection show"*) [ -f "$(dirname "$HOME")/up" ] && echo 'Cafe:11111111-1111-1111-1111-111111111111:802-11-wireless:yes';;
 esac
 exit 0)SH";
+
+// An Omarchy machine for profile tests: each setting a test restores keeps its state in
+// the sandbox, so a value read back is the value the last command left.
+const char kProfileOmarchy[] = R"SH(
+S="$HOME/.fake-omarchy"; mkdir -p "$S"
+kv() { if [ -f "$S/$1" ]; then cat "$S/$1"; else echo "$2"; fi; }
+setkv() { printf '%s\n' "$2" > "$S/$1"; }
+case "$*" in
+  version) echo 4.5.0-3;;
+  "shell shell ping") echo ok;;
+  "shell -q "*) ;;
+  "theme current") [ -f "$S/theme-unreadable" ] && exit 1; kv theme "Tokyo Night";;
+  "theme list") printf 'Catppuccin\nEverforest\nTokyo Night\n';;
+  "theme set "*)
+    t="${*:3}"
+    case "$t" in
+      Catppuccin|Everforest|"Tokyo Night") setkv theme "$t"; echo "$t" >> "$S/theme-sets";;
+      *) echo "Theme '$t' does not exist"; exit 1;;
+    esac;;
+  "hyprland corners") kv corners theme;;
+  "hyprland corners "*) setkv corners "$3";;
+  "hyprland toggle "*)
+    f="$HOME/.local/state/omarchy/toggles/hypr/$3.lua"
+    if [ "$4" = on ]; then mkdir -p "$(dirname "$f")"; echo '-- toggle' > "$f"; else rm -f "$f"; fi;;
+  "font current") echo "JetBrainsMono Nerd Font";;
+  "font list") printf 'JetBrainsMono Nerd Font\n';;
+  "font cjk") echo default;;
+  "default browser") kv browser chromium;;
+  "default browser "*) setkv browser "$3";;
+  "default terminal") kv terminal alacritty;;
+  "default editor") kv editor nvim;;
+esac
+exit 0
+)SH";
+
+// Hyprland as profile tests need it: an option reads what this app's module sets, and
+// turning window gaps off zeroes the gaps whatever the module says, as Omarchy's toggle does.
+const char kProfileHyprctl[] = R"SH(
+args=("$@"); [ "${args[0]}" = "--instance" ] && args=("${args[@]:2}"); [ "${args[0]}" = "-j" ] && args=("${args[@]:1}")
+mod="$HOME/.config/hypr/omarchy-control.lua"
+nogaps="$HOME/.local/state/omarchy/toggles/hypr/window-no-gaps.lua"
+case "${args[0]}" in
+  version) echo '{"version":"0.56.2"}';;
+  devices) echo '{"mice":[],"touch":[]}';;
+  configerrors) echo '[""]';;
+  reload) ;;
+  getoption)
+    opt="${args[1]}"; key="${opt##*:}"
+    case "$opt" in
+      input:repeat_rate) type=int; v=40;;
+      input:repeat_delay) type=int; v=250;;
+      input:sensitivity) type=float; v=0;;
+      general:gaps_in) type=css; v=5;;
+      general:gaps_out) type=css; v=10;;
+      *) type=bool; v=false;;
+    esac
+    set=$(sed -n "s/^ *$key = \([^,]*\),\$/\1/p" "$mod" 2>/dev/null | head -n 1)
+    [ -n "$set" ] && v=$set
+    [ -f "$nogaps" ] && [ "${opt%%:*}" = general ] && v=0
+    case $type in
+      int) echo "{\"int\":$v}";;
+      float) echo "{\"float\":$v}";;
+      css) echo "{\"css\":\"$v $v $v $v\"}";;
+      bool) echo "{\"bool\":$v}";;
+    esac;;
+esac
+exit 0
+)SH";

@@ -36,6 +36,10 @@ HEADERS += \
     $$PWD/src/windowrulesprovider.h \
     $$PWD/src/updater.h \
     $$PWD/src/compat.h \
+    $$PWD/src/profilemodel.h \
+    $$PWD/src/profilecapture.h \
+    $$PWD/src/profileplanner.h \
+    $$PWD/src/profilerunner.h \
     $$PWD/src/appcore.h \
     $$PWD/src/backend.h \
     $$PWD/src/coverage.h \
@@ -74,6 +78,10 @@ SOURCES += \
     $$PWD/src/windowrulesprovider.cpp \
     $$PWD/src/updater.cpp \
     $$PWD/src/compat.cpp \
+    $$PWD/src/profilemodel.cpp \
+    $$PWD/src/profilecapture.cpp \
+    $$PWD/src/profileplanner.cpp \
+    $$PWD/src/profilerunner.cpp \
     $$PWD/src/backend.cpp \
     $$PWD/src/coverage.cpp \
     $$PWD/src/cli.cpp \

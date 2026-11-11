@@ -28,6 +28,7 @@ struct Transaction {
     QString undoneBy;
     QJsonObject files;  // path -> {before, after, backup}
     QJsonObject extra;  // What a setting needs to go back that files cannot hold, such as GSettings.
+    QString runId;      // The restore this change belongs to, recorded before it starts.
 
     bool finished() const;
     bool undoable() const;
@@ -54,6 +55,8 @@ public:
         QJsonObject extra;  // Kept on the transaction, for undoing it later.
         // For an action with no earlier value, where a failure has nothing to report but itself.
         bool nothingToRestore = false;
+        // The restore run making this change. While a run holds the lease, nothing else runs.
+        QString runId;
         Step apply;
         Step verify;
         Step rollback;  // Beyond restoring `files`; optional.
@@ -79,7 +82,19 @@ public:
 
     QString journalPath() const;
     QString backupDirectory() const;
-    bool busy() const { return m_running; }
+    bool busy() const { return m_running || !m_queue.isEmpty(); }
+
+    // A restore makes many changes, and none of anything else may land between them: not
+    // from this window, another one, or the CLI. The run holds one lease across all of
+    // them, and while it does, only changes carrying its run id go ahead. The lease is a
+    // lock file, so a run that dies releases it with its process, and is then resumed.
+    bool acquireLease(const QString &runId, QString *error = nullptr);
+    void releaseLease();
+    QString leaseRun() const { return m_leaseRun; }
+    bool leaseHeldElsewhere() const;
+    QString leasePath() const;
+    // Waits for a change that began just before the lease was taken, here or elsewhere.
+    bool waitUntilIdle(int timeoutMs);
 
 signals:
     void historyChanged();
@@ -105,4 +120,6 @@ private:
     QList<Queued> m_queue;
     bool m_running = false;
     std::unique_ptr<QLockFile> m_lock;
+    std::unique_ptr<QLockFile> m_lease;
+    QString m_leaseRun;
 };
