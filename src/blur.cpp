@@ -51,9 +51,9 @@ QString status(const Toggles &toggles, bool enabled) {
 
 QString statusReason(const Toggles &toggles, bool enabled) {
     if (enabled && toggles.windows && toggles.noAnimations)
-        return QCoreApplication::translate("Blur", "Animations and blur is off, but Glassy windows keep their blur.");
+        return QCoreApplication::translate("Blur", "With Animations and blur off, Glassy windows still keep their blur.");
     if (!enabled && toggles.bar && toggles.noAnimations)
-        return QCoreApplication::translate("Blur", "Animations and blur is off, so the Glassy bar is not blurred.");
+        return QCoreApplication::translate("Blur", "With Animations and blur off, the Glassy bar is not blurred.");
     if (!enabled)
         return QCoreApplication::translate("Blur", "Blur shows behind Glassy windows or a Glassy bar. Choose Glassy for Window transparency, or for Bar background on the Desktop page. Choices made here apply when it comes on.");
     if (!toggles.windows && !toggles.bar)

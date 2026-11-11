@@ -388,7 +388,8 @@ ApplicationWindow {
                                     objectName: "nav_" + modelData.id
                                     y: parent.gap
                                     width: parent.width
-                                    height: Math.round(theme.fontSize * 2.7)
+                                    // A long translation wraps to a second line rather than being cut off.
+                                    height: Math.max(Math.round(theme.fontSize * 2.7), navLabel.implicitHeight + Math.round(theme.fontSize))
                                     hoverEnabled: true
                                     focusPolicy: Qt.StrongFocus
                                     readonly property bool selected: win.currentPage === modelData.id
@@ -434,10 +435,13 @@ ApplicationWindow {
                                             opacity: navButton.selected ? 1 : 0.8
                                         }
                                         AppText {
+                                            id: navLabel
                                             visible: !win.narrow
                                             Layout.fillWidth: true
                                             text: qsTranslate("catalog", modelData.label)
                                             color: theme.foreground
+                                            wrapMode: Text.WordWrap
+                                            maximumLineCount: 2
                                         }
                                     }
                                 }

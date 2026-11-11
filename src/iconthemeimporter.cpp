@@ -381,7 +381,7 @@ IconThemeImporter::Inspection IconThemeImporter::inspect(const QString &folder) 
         if (nested.size() == 1)
             result.error = tr("The pack is inside this folder, in %1. Choose that folder instead.").arg(nested.first());
         else if (nested.size() > 1)
-            result.error = tr("This folder holds %1 packs. Choose one of them: %2.").arg(nested.size()).arg(nested.mid(0, 6).join(", "));
+            result.error = tr("This folder holds %n packs. Choose one of them: %1.", "", int(nested.size())).arg(nested.mid(0, 6).join(", "));
         else
             result.error = tr("This folder has no index.theme, so it is not an icon pack.");
         return result;

@@ -21,7 +21,7 @@
 
 <br>
 
-Omarchy Control is a native app that puts your settings behind one search box. It follows your Omarchy theme and language, reuses Omarchy's own commands, and confirms each change by reading the value back. Anything that can be undone has an undo.
+Omarchy Control is a native app that puts your settings behind one search box. It follows your Omarchy theme and language, in all 50 of the languages Omarchy ships, reuses Omarchy's own commands, and confirms each change by reading the value back. Anything that can be undone has an undo.
 
 ## Install
 
@@ -104,7 +104,7 @@ Check for a new version and install it from the About page, where <code>pacman</
 
 Any app can be renamed, given another icon, or hidden from the launcher, through a copy of its launcher that notices package updates and leaves the package's own untouched. It also covers services, startup apps, storage, plugins, shortcuts, window rules, file associations, typed Superwhisper settings, and guided firewall routes. Every other Omarchy workflow is one search away, handing off to the right panel, wizard, app, or config file.
 
-The window follows your theme and language live, works by keyboard alone, and mirrors for right-to-left languages. While it runs, its icon sits in the bar's tray: closing the window keeps it there, and a click brings the window back to the workspace you are on. Quit from the tray's menu, or with <kbd>Q</kbd>. Without a tray, closing quits. Screenshots use a synthetic machine with fictional values.
+The window follows your theme and language live, works by keyboard alone, and mirrors for right-to-left languages. Its translations were made with AI agents, starting from Omarchy's own, and are open to review by native speakers. While it runs, its icon sits in the bar's tray: closing the window keeps it there, and a click brings the window back to the workspace you are on. Quit from the tray's menu, or with <kbd>Q</kbd>. Without a tray, closing quits. Screenshots use a synthetic machine with fictional values.
 
 ### Coverage
 

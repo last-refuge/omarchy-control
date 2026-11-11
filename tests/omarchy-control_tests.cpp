@@ -547,8 +547,9 @@ private slots:
     }
     void shippedCatalogsKeepPlaceholders() {
         // A translation that drops %1 shows the wrong text with no error anywhere.
+        // {target} is filled in at runtime the same way.
         const QDir dir(PROJECT_ROOT "/src/i18n");
-        static const QRegularExpression placeholder("%[0-9n]");
+        static const QRegularExpression placeholder("%[0-9n]|\\{target\\}");
         for (const auto &name : dir.entryList({"*.json"})) {
             const auto object = QJsonDocument::fromJson(readAll(dir.filePath(name))).object();
             QVERIFY2(!object.isEmpty(), qPrintable(name));
@@ -591,6 +592,10 @@ private slots:
         // file only ever holds a code from the registry.
         const QJsonObject registry = omarchyRegistry();
         QCOMPARE(registry.size(), 50);
+        // Every language Omarchy can be set to has a catalog, so picking any of
+        // them under Setup > Language changes this window too.
+        for (const auto &code : registry.keys())
+            QVERIFY2(shippedLanguages().contains(code), qPrintable(code + " has no catalog"));
         for (const auto &code : shippedLanguages()) {
             QVERIFY2(registry.contains(code), qPrintable(code));
             // Listed by hand in resources.qrc, so a new file can ship without loading.

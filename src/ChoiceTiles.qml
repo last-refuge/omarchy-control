@@ -160,7 +160,7 @@ Column {
     AppButton {
         visible: root.choices.length > root.limit
         style: "flat"
-        text: root.showAll ? qsTr("Show fewer") : qsTr("Show all %1").arg(root.choices.length)
+        text: root.showAll ? qsTr("Show fewer") : qsTr("Show all %n", "", root.choices.length)
         iconName: "chevron"
         iconRotation: root.showAll ? 180 : 0
         onClicked: root.showAll = !root.showAll
