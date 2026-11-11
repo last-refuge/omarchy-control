@@ -2,7 +2,7 @@
 
 A native control center for Omarchy: one searchable place to understand the machine, change its settings, and open the right specialist tool.
 
-Version 0.3.1 is built, tested, and verified on real Hyprland in an isolated nested session, but has not yet changed anything on a real desktop session. See [what has and has not been verified](LIVE-CHECKS.md). The plan is grounded in a read-only audit of the local Omarchy 4.5 installation on November 5, 2026.
+Version 0.4.0 is built, tested, and verified on real Hyprland in an isolated nested session, but has not yet changed anything on a real desktop session. See [what has and has not been verified](LIVE-CHECKS.md). The plan is grounded in a read-only audit of the local Omarchy 4.5 installation on November 5, 2026.
 
 - [Implementation plan](PLAN.md): product direction, native design, architecture, change handling, milestones, and acceptance criteria.
 - [Icon theme plan](ICON-THEMES-PLAN.md): installed icon pack selection, previews, persistent overrides, local folder import, and verification gates.
