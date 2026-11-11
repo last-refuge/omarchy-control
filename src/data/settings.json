@@ -1411,7 +1411,7 @@
   "type": "choice",
   "domain": "C02",
   "integration": "native",
-  "description": "Solid, blurred, or clear.",
+  "description": "Solid, blurred, or transparent.",
   "keywords": [
    "transparent bar",
    "glass bar"
@@ -1447,7 +1447,7 @@
    },
    {
     "value": "none",
-    "label": "Clear"
+    "label": "Transparent"
    }
   ],
   "recovery": "auto-undo",
@@ -1837,7 +1837,7 @@
   "type": "toggle",
   "domain": "C13",
   "integration": "native",
-  "description": "Tell you when a program crashes, with a route to diagnose it.",
+  "description": "Tells you when a program crashes, with a route to diagnose it.",
   "keywords": [
    "core dump",
    "segfault"

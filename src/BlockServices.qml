@@ -41,7 +41,9 @@ AppPanel {
     }
     function act(service, action) {
         if (systemScope && (action === "stop" || action === "disable" || action === "restart")) {
-            confirm.open_(qsTr("%1 %2?").arg(verb(action)).arg(service.unit),
+            // A whole question per action, so each language can order it naturally.
+            var question = action === "stop" ? qsTr("Stop %1?") : action === "restart" ? qsTr("Restart %1?") : qsTr("Disable %1?")
+            confirm.open_(question.arg(service.unit),
                           qsTr("This is a system service, and other things may depend on it. Stopping the wrong one can disconnect or freeze this computer.") + " " + consequence(action),
                           [], verb(action), true, function () {
                 root.services.serviceAction(service.unit, action, true)

@@ -388,7 +388,8 @@ ApplicationWindow {
                                     objectName: "nav_" + modelData.id
                                     y: parent.gap
                                     width: parent.width
-                                    height: Math.round(theme.fontSize * 2.7)
+                                    // A long translation wraps to a second line rather than being cut off.
+                                    height: Math.max(Math.round(theme.fontSize * 2.7), navLabel.implicitHeight + Math.round(theme.fontSize))
                                     hoverEnabled: true
                                     focusPolicy: Qt.StrongFocus
                                     readonly property bool selected: win.currentPage === modelData.id
@@ -434,19 +435,29 @@ ApplicationWindow {
                                             opacity: navButton.selected ? 1 : 0.8
                                         }
                                         AppText {
+                                            id: navLabel
                                             visible: !win.narrow
                                             Layout.fillWidth: true
                                             text: qsTranslate("catalog", modelData.label)
                                             color: theme.foreground
+                                            wrapMode: Text.WordWrap
+                                            maximumLineCount: 2
                                         }
                                     }
                                 }
                             }
                         }
-                        RowLayout {
+                        // Side by side, or stacked when a long translation of
+                        // "Shortcuts" would otherwise cut off the version.
+                        GridLayout {
+                            id: footer
+                            readonly property bool stacked: !win.narrow && footerVersion.implicitWidth + footerShortcuts.implicitWidth + columnSpacing > width
                             Layout.fillWidth: true
                             Layout.margins: win.narrow ? 0 : 6
+                            columns: stacked ? 1 : 2
+                            rowSpacing: 2
                             AppText {
+                                id: footerVersion
                                 visible: !win.narrow
                                 Layout.fillWidth: true
                                 text: backend.omarchyVersion ? qsTr("Omarchy %1").arg(backend.omarchyVersion.split("-")[0]) : ""
@@ -455,6 +466,7 @@ ApplicationWindow {
                                 scale_: 0.88
                             }
                             AppButton {
+                                id: footerShortcuts
                                 style: "flat"
                                 Layout.fillWidth: win.narrow
                                 text: win.narrow ? "" : qsTr("Shortcuts")

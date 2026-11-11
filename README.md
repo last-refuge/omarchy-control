@@ -21,7 +21,7 @@
 
 <br>
 
-Omarchy Control is a native app that puts your settings behind one search box. It follows your Omarchy theme and language, reuses Omarchy's own commands, and confirms each change by reading the value back. Anything that can be undone has an undo.
+Omarchy Control is a native app that puts your settings behind one search box. It follows your Omarchy theme and language, in all 50 of the languages Omarchy ships, reuses Omarchy's own commands, and confirms each change by reading the value back. Anything that can be undone has an undo.
 
 ## Install
 
@@ -104,7 +104,7 @@ Check for a new version and install it from the About page, where <code>pacman</
 
 Any app can be renamed, given another icon, or hidden from the launcher, through a copy of its launcher that notices package updates and leaves the package's own untouched. It also covers services, startup apps, storage, plugins, shortcuts, window rules, file associations, typed Superwhisper settings, and guided firewall routes. Every other Omarchy workflow is one search away, handing off to the right panel, wizard, app, or config file.
 
-The window follows your theme and language live, works by keyboard alone, and mirrors for right-to-left languages. While it runs, its icon sits in the bar's tray: closing the window keeps it there, and a click brings the window back to the workspace you are on. Quit from the tray's menu, or with <kbd>Q</kbd>. Without a tray, closing quits. Screenshots use a synthetic machine with fictional values.
+The window follows your theme and language live, works by keyboard alone, and mirrors for right-to-left languages. Its translations were made with AI agents, starting from Omarchy's own, and are open to review by native speakers. While it runs, its icon sits in the bar's tray: closing the window keeps it there, and a click brings the window back to the workspace you are on. Quit from the tray's menu, or with <kbd>Q</kbd>. Without a tray, closing quits. Screenshots use a synthetic machine with fictional values.
 
 ### Coverage
 
@@ -195,10 +195,13 @@ tools/package-check.sh     # Install, upgrade, and remove in a disposable pacman
 tools/installer-check.sh   # install.sh against real release files in a disposable root
 tools/gen-compat.py        # Re-pin commands after reviewing a changed script
 bin/coverage               # Regenerates docs/coverage-ledger.json
-tools/i18n-report.py       # Translation coverage per language
+tools/i18n-report.py       # Translation coverage per language; --check, --prune, --context
+tools/i18n-seed.py         # Start a language from Omarchy's own translations
 ```
 
 Tests run in a temporary root with fake commands. `tools/make-sandbox.sh` builds a synthetic machine, and `tools/screens` screenshots the real QML against it.
+
+To check a layout for translation, write `en-XA` to the sandbox's `~/.config/omarchy/language`. That pseudo-language makes every string accented, about 40% longer, and bracketed, so clipped or untranslated text stands out. [docs/I18N-PLAN.md](docs/I18N-PLAN.md) covers adding a language.
 
 **Releasing:** pushing a version tag tests the code, builds the package, and publishes it.
 

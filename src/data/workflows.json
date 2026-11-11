@@ -882,7 +882,7 @@
   "type": "action",
   "domain": "C18",
   "integration": "omarchy-wizard",
-  "description": "Toggle dedicated vs integrated GPU mode via supergfxd (for hybrid gpu laptops, like Asus G14).",
+  "description": "Toggle dedicated vs integrated GPU mode via supergfxd (for hybrid GPU laptops, like Asus G14).",
   "keywords": [
    "switch to hybrid gpu"
   ],
@@ -3446,7 +3446,7 @@
   "type": "action",
   "domain": "C20",
   "integration": "omarchy-wizard",
-  "description": "Install and launch Geforce Now.",
+  "description": "Install and launch GeForce NOW.",
   "keywords": [
    "nvidia geforce now"
   ],
@@ -4010,7 +4010,7 @@
    ]
   },
   "confirm": "destructive",
-  "confirmText": "Remove Package from this computer."
+  "confirmText": "Remove a package from this computer."
  },
  {
   "id": "remove.theme",
@@ -5432,7 +5432,7 @@
   "type": "action",
   "domain": "C18",
   "integration": "omarchy-wizard",
-  "description": "Update system firmware using fwupd. Ensures the fwupd EFI binary is installed",
+  "description": "Update system firmware using fwupd. Ensures the fwupd EFI binary is installed.",
   "keywords": [
    "firmware"
   ],
@@ -5792,7 +5792,7 @@
   "type": "action",
   "domain": "C22",
   "integration": "omarchy-wizard",
-  "description": "Unblock and restart the bluetooth service.",
+  "description": "Unblock and restart the Bluetooth service.",
   "keywords": [
    "bluetooth"
   ],
@@ -7101,7 +7101,7 @@
   "type": "action",
   "domain": "C05",
   "integration": "external-helper",
-  "description": "Fcitx for Chinese, Japanese, Korean, and other typing.",
+  "description": "Fcitx, for typing Chinese, Japanese, Korean, and other languages.",
   "keywords": [
    "ime",
    "pinyin"
@@ -8510,7 +8510,7 @@
   "id": "share.qr.note",
   "page": "network",
   "section": "Sharing",
-  "label": "Print Wi-Fi details",
+  "label": "Show Wi-Fi details",
   "type": "action",
   "domain": "C10",
   "integration": "omarchy-panel",
@@ -8534,7 +8534,7 @@
   "id": "diagnostics.debug",
   "page": "advanced",
   "section": "Developer environment",
-  "label": "Print debugging information",
+  "label": "Show debugging information",
   "type": "action",
   "domain": "C22",
   "integration": "omarchy-wizard",

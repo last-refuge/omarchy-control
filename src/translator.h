@@ -13,15 +13,25 @@
 // qsTr("Save") and C++ keeps tr("Save"). A counted string,
 // qsTr("%n clips", "", count), maps to an object of plural forms keyed by
 // CLDR category ({"one": "%n klip", "other": "%n klip"}).
+//
+// en-XA is a pseudo-language for finding layout problems before a real
+// translation exists: every string comes out accented, about 40% longer, and
+// bracketed, so clipped, overlapping, or untranslated text stands out. It is not
+// in Omarchy's registry, so the language picker never offers it; write it to the
+// language file by hand, in a sandbox or for screenshots.
 class Translator : public QTranslator {
     Q_OBJECT
     Q_PROPERTY(QString language READ language NOTIFY changed)
+    // Arabic script joins its letters, and a monospace font that has Arabic glyphs
+    // draws them unjoined; text that would be monospace uses the interface font.
+    Q_PROPERTY(bool cursiveScript READ cursiveScript NOTIFY changed)
 
 public:
     explicit Translator(const QString &languageFile = {}, const QString &catalogDirectory = ":/i18n",
                         const QString &registryFile = {}, QObject *parent = nullptr);
 
     QString language() const { return m_language; }
+    bool cursiveScript() const { return m_cursiveScript; }
     bool isEmpty() const override { return m_strings.isEmpty(); }
     QString translate(const char *context, const char *sourceText, const char *disambiguation = nullptr,
                       int n = -1) const override;
@@ -30,6 +40,8 @@ public:
 
     static QString readLanguage(const QString &path);
     static QString pluralCategory(const QString &language, long long count);
+    static constexpr const char *PseudoLanguage = "en-XA";
+    static QString pseudo(const QString &text);
     QLocale formatLocale(const QString &language) const;
 
 signals:
@@ -42,6 +54,7 @@ private:
     QString m_catalogDirectory;
     QString m_registryFile;
     QString m_language;
+    bool m_cursiveScript = false;
     QHash<QString, QJsonValue> m_strings;
     QFileSystemWatcher m_watcher;
     QTimer m_debounce;

@@ -93,7 +93,7 @@ Item {
     // For sizing a dropdown to its longest choice, in the font dropdowns use for values.
     FontMetrics {
         id: choiceMetrics
-        font.family: "monospace"
+        font.family: translator.cursiveScript ? theme.uiFont : "monospace"
         font.pixelSize: theme.fontSize
     }
     HoverHandler {

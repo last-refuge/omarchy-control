@@ -18,6 +18,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QLockFile>
 #include <QStyleHints>
 #include <QTemporaryDir>
@@ -546,8 +547,9 @@ private slots:
     }
     void shippedCatalogsKeepPlaceholders() {
         // A translation that drops %1 shows the wrong text with no error anywhere.
+        // {target} is filled in at runtime the same way.
         const QDir dir(PROJECT_ROOT "/src/i18n");
-        static const QRegularExpression placeholder("%[0-9n]");
+        static const QRegularExpression placeholder("%[0-9n]|\\{target\\}");
         for (const auto &name : dir.entryList({"*.json"})) {
             const auto object = QJsonDocument::fromJson(readAll(dir.filePath(name))).object();
             QVERIFY2(!object.isEmpty(), qPrintable(name));
@@ -571,6 +573,121 @@ private slots:
                 }
             }
         }
+    }
+
+    // Omarchy's language registry, copied from default/i18n/locales.json; refresh it
+    // when Omarchy changes its roster.
+    static QJsonObject omarchyRegistry() {
+        return QJsonDocument::fromJson(readAll(PROJECT_ROOT "/tests/fixtures/omarchy-locales.json")).object();
+    }
+    // The language codes Control has a catalog for, English included.
+    static QStringList shippedLanguages() {
+        QStringList codes;
+        for (const auto &name : QDir(PROJECT_ROOT "/src/i18n").entryList({"*.json"}))
+            codes << name.chopped(5);
+        return codes;
+    }
+    void shippedCatalogsAreOmarchyLanguages() {
+        // A catalog only loads when Omarchy's language file names its code, and the
+        // file only ever holds a code from the registry.
+        const QJsonObject registry = omarchyRegistry();
+        QCOMPARE(registry.size(), 50);
+        // Every language Omarchy can be set to has a catalog, so picking any of
+        // them under Setup > Language changes this window too.
+        for (const auto &code : registry.keys())
+            QVERIFY2(shippedLanguages().contains(code), qPrintable(code + " has no catalog"));
+        for (const auto &code : shippedLanguages()) {
+            QVERIFY2(registry.contains(code), qPrintable(code));
+            // Listed by hand in resources.qrc, so a new file can ship without loading.
+            QVERIFY2(QFile::exists(":/i18n/" + code + ".json"), qPrintable(code + ".json is not in resources.qrc"));
+        }
+    }
+    void pluralFormsCoverEachLanguage() {
+        // Each counted string carries every form its language's counts reach: a
+        // missing form falls back to `other`, which reads wrong (Arabic "two files"
+        // as "files"). The categories come from the same rules the app uses.
+        for (const auto &code : shippedLanguages()) {
+            if (code == QLatin1String("en"))
+                continue;
+            QSet<QString> reached{"other"};
+            for (long long n = 0; n <= 1200; ++n)
+                reached << Translator::pluralCategory(code, n);
+            reached << Translator::pluralCategory(code, 1000000);
+            const auto object = QJsonDocument::fromJson(readAll(QString(PROJECT_ROOT "/src/i18n/") + code + ".json")).object();
+            for (auto it = object.begin(); it != object.end(); ++it) {
+                if (!it.value().isObject())
+                    continue;
+                const auto forms = it.value().toObject();
+                for (const auto &category : reached)
+                    QVERIFY2(!forms.value(category).toString().isEmpty(), qPrintable(code + ": " + it.key() + " has no " + category));
+            }
+        }
+    }
+    void numbersFormatTheWayOmarchyDoes() {
+        // The app formats with each language's formatLocale; its digits and decimal
+        // sign have to be the ones Omarchy's registry promises the desktop uses.
+        const QJsonObject registry = omarchyRegistry();
+        QStringList wrong;
+        for (auto it = registry.begin(); it != registry.end(); ++it) {
+            const auto entry = it.value().toObject();
+            const QLocale locale(entry.value("formatLocale").toString());
+            if (locale.zeroDigit() != entry.value("zeroDigit").toString() || locale.decimalPoint() != entry.value("decimal").toString())
+                wrong << QString("%1 (%2): Qt gives %3 and %4, Omarchy %5 and %6").arg(it.key(), entry.value("formatLocale").toString(), locale.zeroDigit(), locale.decimalPoint(),
+                                                                                       entry.value("zeroDigit").toString(), entry.value("decimal").toString());
+        }
+        QVERIFY2(wrong.isEmpty(), qPrintable(wrong.join('\n')));
+    }
+    void shippedCatalogsMatchTheSource() {
+        // Catalogs are keyed by the English, so rewording a string strands its
+        // translations. The report finds those, and broken plural forms, from the
+        // same extraction the coverage numbers use.
+        const QString python = QStandardPaths::findExecutable("python3");
+        if (python.isEmpty())
+            QSKIP("python3 is not installed");
+        QProcess report;
+        report.start(python, {"-I", PROJECT_ROOT "/tools/i18n-report.py", "--check"});
+        QVERIFY(report.waitForFinished(60000));
+        QVERIFY2(report.exitCode() == 0, report.readAllStandardError().constData());
+    }
+    void countsUseTheLanguagesDigits() {
+        // Qt writes %n in Western digits; %Ln uses the language's, as the rest of
+        // the window does (Bengali ২৫%), so a count matches the numbers around it.
+        QTemporaryDir dir;
+        writeFile(dir.filePath("language"), "bn\n");
+        writeFile(dir.filePath("bn.json"), R"json({"%n file(s)": {"one": "%nটি ফাইল", "other": "%nটি ফাইল"}})json");
+        const QLocale before;
+        {
+            Translator translator(dir.filePath("language"), dir.path(), PROJECT_ROOT "/tests/fixtures/omarchy-locales.json");
+            QCoreApplication::installTranslator(&translator);
+            QCOMPARE(QCoreApplication::translate("x", "%n file(s)", nullptr, 25), QString::fromUtf8("২৫টি ফাইল"));
+            QCoreApplication::removeTranslator(&translator);
+            QVERIFY(!translator.cursiveScript());
+        }
+        writeFile(dir.filePath("language"), "fa\n");
+        Translator persian(dir.filePath("language"), dir.path(), PROJECT_ROOT "/tests/fixtures/omarchy-locales.json");
+        QVERIFY(persian.cursiveScript());
+        QLocale::setDefault(before);
+        QGuiApplication::setLayoutDirection(Qt::LeftToRight);
+    }
+    void pseudoLanguageMarksEveryString() {
+        QTemporaryDir dir;
+        writeFile(dir.filePath("language"), "en-XA\n");
+        writeFile(dir.filePath("en.json"), R"json({"%n file(s)": {"one": "%n file", "other": "%n files"}})json");
+        Translator translator(dir.filePath("language"), dir.path());
+        QCOMPARE(translator.language(), QString("en-XA"));
+        // Accented, bracketed, and longer, with placeholders and markup left working.
+        const QString save = translator.translate("x", "Save %1 of %2 <b>now</b>");
+        QVERIFY2(save.startsWith(QString::fromUtf8("⟦")) && save.endsWith(QString::fromUtf8("⟧")), qPrintable(save));
+        QVERIFY(save.contains("%1") && save.contains("%2") && save.contains("<b>") && save.contains("</b>"));
+        QVERIFY2(!save.contains(QRegularExpression("Save|now")), qPrintable(save));
+        QVERIFY(save.size() >= QString("Save %1 of %2 <b>now</b>").size() + 4);
+        // Counted strings take the English form first, so the count still gets its number.
+        QVERIFY(translator.translate("x", "%n file(s)", nullptr, 2).contains("%Ln"));
+        QVERIFY(translator.translate("x", "%n file(s)", nullptr, 2).contains(QString::fromUtf8("ƒîļéš")));
+        QVERIFY(Translator::pseudo(QString()).isEmpty());
+        // Never offered: the picker lists Omarchy's registry.
+        QVERIFY(!omarchyRegistry().contains(Translator::PseudoLanguage));
+        QCOMPARE(translator.formatLocale(translator.language()).name(), QString("en_US"));
     }
 
     // ---- Owned Lua module -----------------------------------------------------
@@ -3977,7 +4094,9 @@ esac
         QCOMPARE(verb("update.check"), QString("Check"));
         QCOMPARE(verb("panel.power"), QString("Open"));
         // Every verb a row can show is translated wherever the app claims to be.
-        for (const char *language : {"da", "de", "ar"}) {
+        for (const auto &language : shippedLanguages()) {
+            if (language == QLatin1String("en"))
+                continue;
             const auto strings = QJsonDocument::fromJson(readAll(QString(PROJECT_ROOT "/src/i18n/") + language + ".json")).object();
             for (const auto &entry : catalog.entries())
                 if (entry.isAction())

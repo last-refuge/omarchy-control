@@ -423,8 +423,8 @@ Item {
                                             Layout.fillWidth: true
                                             wrapMode: Text.Wrap
                                             text: root.spec.files
-                                                  ? (root.showAll ? qsTr("Show fewer files") : qsTr("Show all %1 files").arg(root.allRows.length))
-                                                  : (root.showAll ? qsTr("Show fewer") : qsTr("Show all %1").arg(root.allRows.length))
+                                                  ? (root.showAll ? qsTr("Show fewer files") : qsTr("Show all %n files", "", root.allRows.length))
+                                                  : (root.showAll ? qsTr("Show fewer") : qsTr("Show all %n", "", root.allRows.length))
                                         }
                                         AppIcon {
                                             name: "chevron"
