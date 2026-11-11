@@ -644,6 +644,26 @@ private slots:
         QVERIFY(report.waitForFinished(60000));
         QVERIFY2(report.exitCode() == 0, report.readAllStandardError().constData());
     }
+    void countsUseTheLanguagesDigits() {
+        // Qt writes %n in Western digits; %Ln uses the language's, as the rest of
+        // the window does (Bengali ২৫%), so a count matches the numbers around it.
+        QTemporaryDir dir;
+        writeFile(dir.filePath("language"), "bn\n");
+        writeFile(dir.filePath("bn.json"), R"json({"%n file(s)": {"one": "%nটি ফাইল", "other": "%nটি ফাইল"}})json");
+        const QLocale before;
+        {
+            Translator translator(dir.filePath("language"), dir.path(), PROJECT_ROOT "/tests/fixtures/omarchy-locales.json");
+            QCoreApplication::installTranslator(&translator);
+            QCOMPARE(QCoreApplication::translate("x", "%n file(s)", nullptr, 25), QString::fromUtf8("২৫টি ফাইল"));
+            QCoreApplication::removeTranslator(&translator);
+            QVERIFY(!translator.cursiveScript());
+        }
+        writeFile(dir.filePath("language"), "fa\n");
+        Translator persian(dir.filePath("language"), dir.path(), PROJECT_ROOT "/tests/fixtures/omarchy-locales.json");
+        QVERIFY(persian.cursiveScript());
+        QLocale::setDefault(before);
+        QGuiApplication::setLayoutDirection(Qt::LeftToRight);
+    }
     void pseudoLanguageMarksEveryString() {
         QTemporaryDir dir;
         writeFile(dir.filePath("language"), "en-XA\n");
@@ -656,8 +676,8 @@ private slots:
         QVERIFY(save.contains("%1") && save.contains("%2") && save.contains("<b>") && save.contains("</b>"));
         QVERIFY2(!save.contains(QRegularExpression("Save|now")), qPrintable(save));
         QVERIFY(save.size() >= QString("Save %1 of %2 <b>now</b>").size() + 4);
-        // Counted strings take the English form first, so %n still gets its number.
-        QVERIFY(translator.translate("x", "%n file(s)", nullptr, 2).contains("%n"));
+        // Counted strings take the English form first, so the count still gets its number.
+        QVERIFY(translator.translate("x", "%n file(s)", nullptr, 2).contains("%Ln"));
         QVERIFY(translator.translate("x", "%n file(s)", nullptr, 2).contains(QString::fromUtf8("ƒîļéš")));
         QVERIFY(Translator::pseudo(QString()).isEmpty());
         // Never offered: the picker lists Omarchy's registry.

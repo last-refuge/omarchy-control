@@ -22,12 +22,16 @@
 class Translator : public QTranslator {
     Q_OBJECT
     Q_PROPERTY(QString language READ language NOTIFY changed)
+    // Arabic script joins its letters, and a monospace font that has Arabic glyphs
+    // draws them unjoined; text that would be monospace uses the interface font.
+    Q_PROPERTY(bool cursiveScript READ cursiveScript NOTIFY changed)
 
 public:
     explicit Translator(const QString &languageFile = {}, const QString &catalogDirectory = ":/i18n",
                         const QString &registryFile = {}, QObject *parent = nullptr);
 
     QString language() const { return m_language; }
+    bool cursiveScript() const { return m_cursiveScript; }
     bool isEmpty() const override { return m_strings.isEmpty(); }
     QString translate(const char *context, const char *sourceText, const char *disambiguation = nullptr,
                       int n = -1) const override;
@@ -50,6 +54,7 @@ private:
     QString m_catalogDirectory;
     QString m_registryFile;
     QString m_language;
+    bool m_cursiveScript = false;
     QHash<QString, QJsonValue> m_strings;
     QFileSystemWatcher m_watcher;
     QTimer m_debounce;

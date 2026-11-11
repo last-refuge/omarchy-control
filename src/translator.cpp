@@ -92,6 +92,8 @@ QString Translator::translate(const char *, const char *sourceText, const char *
         const QJsonObject forms = value.toObject();
         const QString form = forms.value(n < 0 ? "other" : pluralCategory(m_language, n)).toString();
         result = form.isEmpty() ? forms.value("other").toString() : form;
+        // %Ln is the count in the language's own digits and grouping (২৫, ۲۵, 1 234).
+        result.replace(QLatin1String("%n"), QLatin1String("%Ln"));
     }
     if (m_language == QLatin1String(PseudoLanguage))
         return pseudo(result.isNull() ? QString::fromUtf8(sourceText) : result);
@@ -105,7 +107,7 @@ QString Translator::pseudo(const QString &text) {
         return text;
     static const QString upper = QString::fromUtf8("ÅƁÇĐÉƑĜĤÎĴĶĻṀÑÖÞǪŘŠŦÛṼŴẊÝŽ");
     static const QString lower = QString::fromUtf8("åƀçđéƒĝĥîĵķļṁñöþǫřšŧûṽŵẋýž");
-    static const QRegularExpression kept("%L?[0-9]+|%n|<[^>]*>|&[A-Za-z0-9#]+;");
+    static const QRegularExpression kept("%L?[0-9]+|%L?n|<[^>]*>|&[A-Za-z0-9#]+;");
     QString out = QString::fromUtf8("⟦");
     int letters = 0, at = 0;
     auto accent = [&](QStringView part) {
@@ -167,6 +169,7 @@ void Translator::reload() {
 
     m_language = language;
     m_strings = strings;
+    m_cursiveScript = QLocale(language).script() == QLocale::ArabicScript;
     // Dates, numbers, and Qt's own day and month names follow the language
     // too, and right-to-left languages mirror the window.
     const QLocale locale = formatLocale(language);

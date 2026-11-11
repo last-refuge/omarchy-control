@@ -17,7 +17,7 @@ ComboBox {
     readonly property bool hasLeading: leadingIcon.length > 0 || leadingImage.length > 0
     implicitHeight: Math.round(theme.fontSize * 2.2) + 2
     implicitWidth: 220
-    font.family: proportional ? theme.uiFont : "monospace"
+    font.family: proportional || translator.cursiveScript ? theme.uiFont : "monospace"
     font.pixelSize: theme.fontSize
     Accessible.name: label
     Material.roundedScale: theme.controlRadius
