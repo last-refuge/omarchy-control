@@ -1641,7 +1641,9 @@
   "%1 names an icon theme more than once, so it was left as it is.": "%1 多次命名同一个图标主题，因此保持原样。",
   "%1 was edited in the meantime, so it was left as it is.": "%1 在此期间被编辑过，因此保持原样。",
   "%1 was not made by Omarchy Control, so it was left alone.": "%1 不是由 Omarchy Control 创建的，因此保持原样。",
-  "%n special files, such as devices, were left out.": "%n 个特殊文件（例如设备）已被跳过。",
+  "%n special files, such as devices, were left out.": {
+    "other": "%n 个特殊文件（例如设备）已被跳过。"
+  },
   "A backup of %1 could not be saved, so nothing was changed.": "%1 的备份无法保存，因此没有做任何更改。",
   "A display has a name that cannot be used safely.": "显示器的名称无法安全使用。",
   "A folder called %1 cannot be used as a pack's name, so it was left out.": "名为 %1 的文件夹不能用作图标包名称，因此被跳过。",

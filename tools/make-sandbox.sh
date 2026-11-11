@@ -99,7 +99,9 @@ return function()
 end
 T
 printf -- 'dofile("x")\nrequire("default.hypr.omarchy")\nrequire("hypr.monitors")\nrequire("hypr.autostart")\nrequire("default.hypr.toggles")\n' >"$H/.config/hypr/hyprland.lua"
-printf '{"en":{"name":"English","englishName":"English","formatLocale":"en-US"},"da":{"name":"Dansk","englishName":"Danish","formatLocale":"da-DK"},"ar":{"name":"العربية","englishName":"Arabic","formatLocale":"ar-AE"},"de":{"name":"Deutsch","englishName":"German","formatLocale":"de-DE"}}\n' >"$ROOT/omarchy/default/i18n/locales.json"
+# Omarchy's language registry, so a sandbox can run in any of its languages
+# (or en-XA, the pseudo-language, written to ~/.config/omarchy/language).
+cp "$HERE/../tests/fixtures/omarchy-locales.json" "$ROOT/omarchy/default/i18n/locales.json"
 printf '[Desktop Entry]\nType=Application\nName=Sync Client\nComment=Keeps a folder in sync\nExec=sync-client\n' >"$H/.config/autostart/sync-client.desktop"
 # Things the system starts at login, one of them turned off here, more than fit at first look.
 X="$ROOT/sys-root/etc/xdg/autostart"
