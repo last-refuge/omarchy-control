@@ -62,5 +62,17 @@
   "%n apps have no icon anywhere.": {
     "one": "%n app has no icon anywhere.",
     "other": "%n apps have no icon anywhere."
+  },
+  "Show all %n": {
+    "one": "Show %n",
+    "other": "Show all %n"
+  },
+  "Show all %n files": {
+    "one": "Show %n file",
+    "other": "Show all %n files"
+  },
+  "This folder holds %n packs. Choose one of them: %1.": {
+    "one": "This folder holds %n pack: %1.",
+    "other": "This folder holds %n packs. Choose one of them: %1."
   }
 }

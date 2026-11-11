@@ -17,7 +17,7 @@ Translate as if the interface had been written in your language: short, natural,
 - Product and brand names: Omarchy, Omarchy Control, Hyprland, Walker, Waybar, NetworkManager, Bluetooth, Wi-Fi, app, font, and theme names.
 - Technical tokens: DNS, DHCP, VPN, SSH, GPU, CPU, USB, HDMI, AUR, VRR, Lua, JSON, PATH, URLs, file paths, and commands.
 - Key names: Super, Alt, Ctrl, Shift, Enter, Esc, Tab, F1 to F12.
-- Placeholders: `%1`, `%2`, `%L1`, and `%n`. Every placeholder in the English must appear in the translation. Their order may change to suit the grammar. Markup such as `<b>` and `&amp;` stays as is.
+- Placeholders: `%1`, `%2`, `%L1`, `%n`, and `{target}`, which the app fills with a display's name. Every placeholder in the English must appear in the translation. Their order may change to suit the grammar. Markup such as `<b>` and `&amp;` stays as is.
 - Technical values: clock and date previews ("14:30", "Sun 3 May"), degrees, frequencies ("2.4 GHz"), version and model numbers, values the user types, and names with digits ("1Password", "GTK 4"). Translate month and weekday words in clock previews, and nothing else in them.
 
 ## Digits

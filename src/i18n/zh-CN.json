@@ -192,7 +192,6 @@
  "Factory reset this computer": "恢复出厂设置",
  "Factory-reset this machine back to its freshly-installed state": "把这台机器恢复到刚安装好的状态",
  "Failed": "失败",
- "Fcitx for Chinese, Japanese, Korean, and other typing.": "Fcitx：用于中文、日文、韩文及其他输入。",
  "File associations.": "文件关联。",
  "Firefox": "Firefox",
  "Firewall": "防火墙",
@@ -876,7 +875,6 @@
  "Time zone": "时区",
  "Tmux": "Tmux",
  "Tmux session": "Tmux 会话",
- "Toggle dedicated vs integrated GPU mode via supergfxd (for hybrid gpu laptops, like Asus G14).": "通过 supergfxd 在独显/核显模式之间切换（适用于华硕 G14 等双显卡笔记本）。",
  "Toggle passwordless sudo for the current user.": "为当前用户切换免密码 sudo。",
  "Tools": "工具",
  "Tools, sessions, hooks, and debugging.": "工具、会话、钩子和调试。",
@@ -905,7 +903,6 @@
  "Two-finger click for right click": "双指点击为右键",
  "Typing": "输入",
  "Unblock and restart the Wi-Fi service.": "解除阻止并重启 Wi-Fi 服务。",
- "Unblock and restart the bluetooth service.": "解除阻止并重启蓝牙服务。",
  "Update AUR packages": "更新 AUR 软件包",
  "Update Omarchy Control": "更新 Omarchy Control",
  "Update Omarchy and packages": "更新 Omarchy 与软件包",
@@ -915,7 +912,6 @@
  "Update firmware": "更新固件",
  "Update mise tools": "更新 mise 工具",
  "Update plugins": "更新插件",
- "Update system firmware using fwupd. Ensures the fwupd EFI binary is installed": "使用 fwupd 更新系统固件。会确保安装 fwupd EFI 程序",
  "Update user-installed git themes": "更新用户安装的 git 主题",
  "Updates terminal configs and fontconfig.": "更新终端配置和 fontconfig。",
  "Updates, storage, snapshots, startup, services, language, and time.": "更新、存储、快照、启动、服务、语言和时间。",
@@ -1459,8 +1455,6 @@
  "Shortcut saved": "快捷键已保存",
  "Shortcuts": "快捷键",
  "Show": "显示",
- "Show all %1": "显示全部 %1",
- "Show all %1 files": "显示全部 %1 文件",
  "Show all history (%1)": "显示全部历史记录（%1）",
  "Show all startup apps (%1)": "显示全部启动项（%1）",
  "Show fewer": "显示更少",
@@ -1834,7 +1828,6 @@
  "This does not apply: no built-in display was detected.": "这不适用：未检测到内置显示器。",
  "This folder has no index.theme, so it is not an icon pack.": "该文件夹没有 index.theme，因此不是图标包。",
  "This folder has too many files to be an icon pack.": "该文件夹文件太多，无法作为图标包。",
- "This folder holds %1 packs. Choose one of them: %2.": "该文件夹包含 %1 个图标包。请选择其中一个：%2。",
  "This folder is too large to be an icon pack.": "该文件夹太大，无法作为图标包。",
  "This is a file. Choose the folder that holds the pack's index.theme, or a .zip, .tar, or .7z archive.": "这是一个文件。请选择包含图标包 index.theme 的文件夹，或 .zip、.tar、.7z 压缩包。",
  "This is a system service, and other things may depend on it. Stopping the wrong one can disconnect or freeze this computer.": "这是系统服务，其他内容可能依赖它。停止错误的服务可能导致这台电脑断网或卡死。",
@@ -1942,8 +1935,6 @@
   "other": "除非保留当前布局，%n 秒后会回到上一个布局。"
  },
  "%1 px × %2": "%1 px × %2",
- "Animations and blur is off, but Glassy windows keep their blur.": "「动画与模糊」已关闭，但玻璃窗口仍保留模糊。",
- "Animations and blur is off, so the Glassy bar is not blurred.": "「动画与模糊」已关闭，因此玻璃顶栏不会模糊。",
  "Behind Glassy windows and menus": "玻璃窗口和菜单之后",
  "Behind the bar": "顶栏之后",
  "Blur": "模糊",
@@ -1999,5 +1990,20 @@
  "Restart %1?": "重启 %1？",
  "Stop %1?": "停止 %1？",
  "Show Wi-Fi details": "显示 Wi-Fi 详情",
- "Show debugging information": "显示调试信息"
+ "Show debugging information": "显示调试信息",
+ "Show all %n": {
+  "other": "显示全部 %n 项"
+ },
+ "Show all %n files": {
+  "other": "显示全部 %n 个文件"
+ },
+ "This folder holds %n packs. Choose one of them: %1.": {
+  "other": "此文件夹包含 %n 个图标包。请选择其中一个：%1。"
+ },
+ "With Animations and blur off, Glassy windows still keep their blur.": "关闭「动画与模糊」后，玻璃窗口仍会保留模糊效果。",
+ "With Animations and blur off, the Glassy bar is not blurred.": "关闭「动画与模糊」后，玻璃顶栏不会模糊。",
+ "Fcitx, for typing Chinese, Japanese, Korean, and other languages.": "Fcitx，用于输入中文、日文、韩文及其他语言。",
+ "Toggle dedicated vs integrated GPU mode via supergfxd (for hybrid GPU laptops, like Asus G14).": "通过 supergfxd 切换独立与集成 GPU 模式（适用于混合 GPU 笔记本，如 Asus G14）。",
+ "Unblock and restart the Bluetooth service.": "解除屏蔽并重启蓝牙服务。",
+ "Update system firmware using fwupd. Ensures the fwupd EFI binary is installed.": "使用 fwupd 更新系统固件。确保已安装 fwupd EFI 二进制文件。"
 }

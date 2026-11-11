@@ -1,6 +1,6 @@
 # All of Omarchy's languages
 
-Status: decisions settled by Jason on November 10, 2026, all as recommended (see [§8](#8-decisions)). L0, the L1 pilot and L2 were implemented the same day (see [§9](#9-as-built)): Control now speaks 21 of Omarchy's 50 languages. Written November 10, 2026, against Omarchy v4.5.0 and the 50-language registry on `basecamp/omarchy` main (added October 14, 2026, in basecamp/omarchy#15326).
+Status: decisions settled by Jason on November 10, 2026, all as recommended (see [§8](#8-decisions)). L0 to L3 were implemented the same day (see [§9](#9-as-built)): Control speaks all 50 of Omarchy's languages. L4 runs on each English change; native review is the open item. Written November 10, 2026, against Omarchy v4.5.0 and the 50-language registry on `basecamp/omarchy` main (added October 14, 2026, in basecamp/omarchy#15326).
 
 Control speaks 5 of the 50 languages Omarchy ships: English, Arabic, Danish, German and Simplified Chinese, all four translations complete. Pick French under **Setup › Language** and the menu, the shell and Omarchy's notifications all switch, but Control stays in English. Control's own **Language** setting already offers all 50, because it lists Omarchy's registry.
 
@@ -152,4 +152,27 @@ Settled November 10, 2026: all five as recommended.
 - **The first sync:** those seven strings reached all 20 catalogs through one agent working from `tools/i18n-pending.py`. That's the L4 process: export what's pending, translate it with each catalog's own words, import, then `--strict`.
 - **Fixed:** zh-CN translated "Polish", the language, as 润色, "polish text". The zh-TW agent caught it, and it's now 波兰语.
 - **Screenshots:** Hebrew (right to left), Korean, Traditional Chinese and Polish render cleanly; the longest Polish sidebar entry fits.
+
+### L3: the rest (November 10, 2026)
+
+- **New languages:** `bg`, `ca`, `cs`, `el`, `et`, `fi`, `fil`, `ga`, `hi`, `hr`, `hu`, `id`, `is`, `lt`, `lv`, `ms`, `no`, `ro`, `si`, `sk`, `sl`, `sr`, `sv`, `sw`, `ta`, `th`, `ur`, `uz` and `vi`, made the same way in three batches of parallel agents. Every registry code now has a complete catalog, and `shippedCatalogsAreOmarchyLanguages` fails if Omarchy adds a language without one.
+- **Seeds the agents caught:**
+  - Estonian "Google" had been seeded as "Mineogle", a stray replacement of "Go" in Omarchy's own catalog.
+  - Irish "Font" was seeded as *Clú*, which means "reputation"; it's now *Cló*.
+  - Filipino "Keyboard" was seeded in Spanish (*Teclado*).
+  - Uzbek seeds used the wrong apostrophe characters.
+
+  These are worth reporting to Omarchy too.
+- **English fixed, from the agents' notes,** with all 49 catalogs synced in three sync passes:
+  - "Animations and blur is off, …" is now "With Animations and blur off, …".
+  - "Show all %1", "Show all %1 files" and "This folder holds %1 packs" put a number into text that has no plural forms. They're now counted strings.
+  - "bluetooth", "hybrid gpu", a missing full stop, and the Fcitx description are corrected.
+- **`{target}`,** which the app fills with a display's name, is now guarded like `%1` by the report, the pending tool and `shippedCatalogsKeepPlaceholders`. Every catalog had kept it, but nothing enforced it.
+- **Sidebar:** a sidebar entry now wraps to a second line instead of being cut off. Screenshots showed Tamil's "Input & accessibility" and "Apps & defaults" elided. Thai, Urdu, Finnish, Hindi and Irish lay out cleanly.
+- **Kept as Omarchy has them:** "VSCode", "Victor Code" and "Chromium Account" are Omarchy's own menu labels.
+
+### Still open
+
+- **Native-speaker review:** one tracking issue per language (§5), opened once the languages are on `main`. The agents flagged where they were least sure: Irish mutations after counts, the Sinhala, Tamil, Swahili and Urdu technical descriptions, and Icelandic terms for GPU and EFI.
+- **Report seed errors upstream:** the bad seeds above come from Omarchy's own catalogs, so Omarchy should hear about them.
 

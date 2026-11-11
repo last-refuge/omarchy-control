@@ -22,7 +22,7 @@ import collections, importlib.util, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOGS = ["menu", "shell", "cli", "keybindings"]   # In order of precedence on a tie.
-PLACEHOLDER = re.compile(r"%L?[0-9]|%n")
+PLACEHOLDER = re.compile(r"%L?[0-9]|%n|\{target\}")
 
 sys.dont_write_bytecode = True   # Importing the report would leave tools/__pycache__.
 spec = importlib.util.spec_from_file_location("i18n_report", os.path.join(ROOT, "tools", "i18n-report.py"))

@@ -18,7 +18,7 @@ a translator who finds one wrong for its context puts the fix in a done file too
 import glob, importlib.util, json, os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PLACEHOLDER = re.compile(r"%L?[0-9]|%n")
+PLACEHOLDER = re.compile(r"%L?[0-9]|%n|\{target\}")
 
 sys.dont_write_bytecode = True   # Importing the report would leave tools/__pycache__.
 spec = importlib.util.spec_from_file_location("i18n_report", os.path.join(ROOT, "tools", "i18n-report.py"))

@@ -21,7 +21,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src")
 REGISTRY = os.path.join(ROOT, "tests", "fixtures", "omarchy-locales.json")
 CATEGORIES = {"zero", "one", "two", "few", "many", "other"}
-PLACEHOLDER = re.compile(r"%L?[0-9]|%n")
+PLACEHOLDER = re.compile(r"%L?[0-9]|%n|\{target\}")
 
 
 def strings():
