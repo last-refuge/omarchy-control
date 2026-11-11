@@ -51,16 +51,16 @@
     "one": "Going back to the previous one in %n second.",
     "other": "Going back to the previous one in %n seconds."
   },
-  "%n use their own icon, since the pack has none for them.": {
-    "one": "%n uses its own icon, since the pack has none for it.",
-    "other": "%n use their own icon, since the pack has none for them."
-  },
-  "%n have no icon anywhere.": {
-    "one": "%n has no icon anywhere.",
-    "other": "%n have no icon anywhere."
-  },
   "%n special files, such as devices, were left out.": {
     "one": "%n special file, such as a device, was left out.",
     "other": "%n special files, such as devices, were left out."
+  },
+  "%n apps use their own icon, since the pack has none for them.": {
+    "one": "%n app uses its own icon, since the pack has none for it.",
+    "other": "%n apps use their own icon, since the pack has none for them."
+  },
+  "%n apps have no icon anywhere.": {
+    "one": "%n app has no icon anywhere.",
+    "other": "%n apps have no icon anywhere."
   }
 }

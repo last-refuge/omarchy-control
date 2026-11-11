@@ -143,10 +143,6 @@
   "one": "%n ناموفق",
   "other": "%n ناموفق"
  },
- "%n have no icon anywhere.": {
-  "one": "%n برنامه هیچ آیکونی ندارد.",
-  "other": "%n برنامه هیچ آیکونی ندارد."
- },
  "%n output(s)": {
   "one": "%n خروجی",
   "other": "%n خروجی"
@@ -171,10 +167,6 @@
   "one": "%n فایل ویژه، مانند دستگاه‌ها، کنار گذاشته شد.",
   "other": "%n فایل ویژه، مانند دستگاه‌ها، کنار گذاشته شد."
  },
- "%n use their own icon, since the pack has none for them.": {
-  "one": "%n برنامه از آیکون خودش استفاده می‌کند، چون بسته آیکونی برای آن ندارد.",
-  "other": "%n برنامه از آیکون خودش استفاده می‌کند، چون بسته آیکونی برای آن ندارد."
- },
  "Going back to the previous one in %n second(s).": {
   "one": "تا %n ثانیهٔ دیگر به اتصال قبلی بازگردانده می‌شود.",
   "other": "تا %n ثانیهٔ دیگر به اتصال قبلی بازگردانده می‌شود."
@@ -195,7 +187,6 @@
   "one": "چیدمان قبلی تا %n ثانیهٔ دیگر برمی‌گردد، مگر اینکه این یکی را نگه دارید.",
   "other": "چیدمان قبلی تا %n ثانیهٔ دیگر برمی‌گردد، مگر اینکه این یکی را نگه دارید."
  },
- "%1 %2?": "%1 %2؟",
  "%1 Restoring the previous value also failed: %2": "%1 بازگرداندن مقدار قبلی هم ناموفق بود: %2",
  "%1 The change may be partly applied.": "%1 ممکن است تغییر تا حدی اعمال شده باشد.",
  "%1 The previous value was restored.": "%1 مقدار قبلی بازگردانده شد.",
@@ -663,7 +654,6 @@
  "Preview layout": "پیش‌نمایش چیدمان",
  "Preview of the %1 theme": "پیش‌نمایش تم %1",
  "Preview of the bar layout": "پیش‌نمایش چیدمان نوار",
- "Print": "چاپ",
  "Printer settings": "تنظیمات چاپگر",
  "Printers and print queues": "چاپگرها و صف‌های چاپ",
  "Prune": "پاک‌سازی",
@@ -1515,8 +1505,6 @@
  "Power profile": "پروفایل انرژی",
  "Power profiles, battery, idle timers, lock, and session actions.": "پروفایل‌های انرژی، باتری، زمان‌سنج‌های بیکاری، قفل و کارهای نشست.",
  "Power saver": "صرفه‌جویی",
- "Print Wi-Fi details": "چاپ جزئیات Wi-Fi",
- "Print debugging information": "چاپ اطلاعات اشکال‌زدایی",
  "Printers and cameras": "چاپگرها و دوربین‌ها",
  "Printers and print queues.": "چاپگرها و صف‌های چاپ.",
  "Profile on AC power": "پروفایل هنگام اتصال به برق",
@@ -2001,5 +1989,18 @@
  "The command did not finish in time.": "فرمان به‌موقع تمام نشد.",
  "The command stopped unexpectedly.": "فرمان به‌طور غیرمنتظره متوقف شد.",
  "The command was cancelled.": "فرمان لغو شد.",
- "The command failed with exit code %1.": "فرمان با کد خروج %1 ناموفق بود."
+ "The command failed with exit code %1.": "فرمان با کد خروج %1 ناموفق بود.",
+ "%n apps use their own icon, since the pack has none for them.": {
+  "one": "%n برنامه از آیکون خودش استفاده می‌کند، چون بسته آیکونی برای آن ندارد.",
+  "other": "%n برنامه از آیکون خودشان استفاده می‌کنند، چون بسته آیکونی برای آن‌ها ندارد."
+ },
+ "%n apps have no icon anywhere.": {
+  "one": "%n برنامه هیچ‌جا آیکونی ندارد.",
+  "other": "%n برنامه هیچ‌جا آیکونی ندارند."
+ },
+ "Disable %1?": "%1 غیرفعال شود؟",
+ "Restart %1?": "%1 راه‌اندازی مجدد شود؟",
+ "Stop %1?": "%1 متوقف شود؟",
+ "Show Wi-Fi details": "نمایش جزئیات Wi-Fi",
+ "Show debugging information": "نمایش اطلاعات اشکال‌زدایی"
 }

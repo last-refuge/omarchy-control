@@ -141,9 +141,6 @@
  "%n failed": {
   "other": "%n 件失敗"
  },
- "%n have no icon anywhere.": {
-  "other": "%n 個のアプリにはどこにもアイコンがありません。"
- },
  "%n output(s)": {
   "other": "出力 %n 個"
  },
@@ -162,9 +159,6 @@
  "%n special files, such as devices, were left out.": {
   "other": "デバイスなどの特殊ファイル %n 個を除外しました。"
  },
- "%n use their own icon, since the pack has none for them.": {
-  "other": "%n 個のアプリはパックに対応するアイコンがないため、独自のアイコンを使用します。"
- },
  "Going back to the previous one in %n second(s).": {
   "other": "%n 秒後に以前の接続に戻ります。"
  },
@@ -180,7 +174,6 @@
  "The previous layout comes back in %n second(s) unless you keep this one.": {
   "other": "このレイアウトを維持しない場合、%n 秒後に以前のレイアウトに戻ります。"
  },
- "%1 %2?": "%2 を%1しますか？",
  "%1 Restoring the previous value also failed: %2": "%1 以前の値の復元にも失敗しました：%2",
  "%1 The change may be partly applied.": "%1 変更が一部だけ適用された可能性があります。",
  "%1 The previous value was restored.": "%1 以前の値に戻しました。",
@@ -649,7 +642,6 @@
  "Preview layout": "レイアウトをプレビュー",
  "Preview of the %1 theme": "%1 テーマのプレビュー",
  "Preview of the bar layout": "バーのレイアウトのプレビュー",
- "Print": "印刷",
  "Printer settings": "プリンターの設定",
  "Printers and print queues": "プリンターと印刷キュー",
  "Prune": "整理",
@@ -1500,8 +1492,6 @@
  "Power profile": "電源プロファイル",
  "Power profiles, battery, idle timers, lock, and session actions.": "電源プロファイル、バッテリー、アイドルタイマー、ロック、セッション操作。",
  "Power saver": "省電力",
- "Print Wi-Fi details": "Wi-Fi の詳細を表示",
- "Print debugging information": "デバッグ情報を出力",
  "Printers and cameras": "プリンターとカメラ",
  "Printers and print queues.": "プリンターと印刷キュー。",
  "Profile on AC power": "AC 電源時のプロファイル",
@@ -1985,5 +1975,16 @@
  "The command did not finish in time.": "コマンドが時間内に完了しませんでした。",
  "The command stopped unexpectedly.": "コマンドが予期せず停止しました。",
  "The command was cancelled.": "コマンドはキャンセルされました。",
- "The command failed with exit code %1.": "コマンドが終了コード %1 で失敗しました。"
+ "The command failed with exit code %1.": "コマンドが終了コード %1 で失敗しました。",
+ "%n apps use their own icon, since the pack has none for them.": {
+  "other": "%n 個のアプリは、パックにアイコンがないため独自のアイコンを使用しています。"
+ },
+ "%n apps have no icon anywhere.": {
+  "other": "%n 個のアプリにはどこにもアイコンがありません。"
+ },
+ "Disable %1?": "%1 を無効化しますか？",
+ "Restart %1?": "%1 を再起動しますか？",
+ "Stop %1?": "%1 を停止しますか？",
+ "Show Wi-Fi details": "Wi-Fi の詳細を表示",
+ "Show debugging information": "デバッグ情報を表示"
 }
