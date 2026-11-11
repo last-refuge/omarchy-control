@@ -1020,8 +1020,6 @@
  "Plugin picker": "Plugin-vælger",
  "Polish": "Polsk",
  "Portuguese": "Portugisisk",
- "Print Wi-Fi details": "Vis Wi-Fi-oplysninger",
- "Print debugging information": "Vis fejlfindingsoplysninger",
  "Printers and print queues.": "Printere og udskriftskøer.",
  "Prune package cache": "Ryd op i pakkecachen",
  "Read a QR code from the screen": "Læs en QR-kode fra skærmen",
@@ -1414,7 +1412,6 @@
  "No disks found.": "Ingen diske fundet.",
  "Pick": "Vælg",
  "Power settings": "Strømindstillinger",
- "Print": "Udskriv",
  "Prune": "Ryd op",
  "Read": "Læs",
  "Receive": "Modtag",
@@ -1743,7 +1740,6 @@
  "Starting": "Starter",
  "Status": "Status",
  "Stopping": "Stopper",
- "%1 %2?": "%1 %2?",
  "Added by you": "Tilføjet af dig",
  "Changed by you": "Ændret af dig",
  "Disable %1": "Deaktivér %1",
@@ -1833,14 +1829,6 @@
  "The launcher icons could not be updated: %1": "Startmenuens ikoner kunne ikke opdateres: %1",
  "The new icons could not be moved into %1.": "De nye ikoner kunne ikke flyttes ind i %1.",
  "There is nothing of Iconic's to restore.": "Der er intet fra Iconic at gendanne.",
- "%n have no icon anywhere.": {
-  "one": "%n har ingen ikoner nogen steder.",
-  "other": "%n har ingen ikoner nogen steder."
- },
- "%n use their own icon, since the pack has none for them.": {
-  "one": "%n bruger sit eget ikon, da pakken ikke har et til den.",
-  "other": "%n bruger deres eget ikon, da pakken ikke har et til dem."
- },
  "Credits": "Tak",
  "Iconic by UnderStackDev": "Iconic af UnderStackDev",
  "Icons for apps, folders, and files, in apps and in Omarchy's launcher and dock.": "Ikoner for apps, mapper og filer, i apps og i Omarchys startmenu og dok.",
@@ -2001,5 +1989,18 @@
  "The command did not finish in time.": "Kommandoen blev ikke færdig i tide.",
  "The command stopped unexpectedly.": "Kommandoen stoppede uventet.",
  "The command was cancelled.": "Kommandoen blev annulleret.",
- "The command failed with exit code %1.": "Kommandoen mislykkedes med afslutningskode %1."
+ "The command failed with exit code %1.": "Kommandoen mislykkedes med afslutningskode %1.",
+ "%n apps use their own icon, since the pack has none for them.": {
+  "one": "%n app bruger sit eget ikon, da pakken ikke har et til den.",
+  "other": "%n apps bruger deres eget ikon, da pakken ikke har et til dem."
+ },
+ "%n apps have no icon anywhere.": {
+  "one": "%n app har intet ikon nogen steder.",
+  "other": "%n apps har intet ikon nogen steder."
+ },
+ "Disable %1?": "Deaktivér %1?",
+ "Restart %1?": "Genstart %1?",
+ "Stop %1?": "Stop %1?",
+ "Show Wi-Fi details": "Vis Wi-Fi-detaljer",
+ "Show debugging information": "Vis fejlsøgningsoplysninger"
 }

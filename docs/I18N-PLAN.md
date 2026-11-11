@@ -1,6 +1,6 @@
 # All of Omarchy's languages
 
-Status: decisions settled by Jason on November 10, 2026, all as recommended (see [§8](#8-decisions)). L0 and the L1 pilot were implemented the same day (see [§9](#9-as-built)): Control now speaks 10 of Omarchy's 50 languages. Written November 10, 2026, against Omarchy v4.5.0 and the 50-language registry on `basecamp/omarchy` main (added October 14, 2026, in basecamp/omarchy#15326).
+Status: decisions settled by Jason on November 10, 2026, all as recommended (see [§8](#8-decisions)). L0, the L1 pilot and L2 were implemented the same day (see [§9](#9-as-built)): Control now speaks 21 of Omarchy's 50 languages. Written November 10, 2026, against Omarchy v4.5.0 and the 50-language registry on `basecamp/omarchy` main (added October 14, 2026, in basecamp/omarchy#15326).
 
 Control speaks 5 of the 50 languages Omarchy ships: English, Arabic, Danish, German and Simplified Chinese, all four translations complete. Pick French under **Setup › Language** and the menu, the shell and Omarchy's notifications all switch, but Control stays in English. Control's own **Language** setting already offers all 50, because it lists Omarchy's registry.
 
@@ -141,3 +141,15 @@ Settled November 10, 2026: all five as recommended.
   - **Digits:** these follow Omarchy now. Bengali and Persian write durations, percentages and limits in prose in their own digits ("৫ মিনিট", "۲٫۵ دقیقه"), as Omarchy's own catalogs do ("গত ৩০ দিন"). Technical values keep Western digits: clock previews, degrees, GHz, names like 1Password. [I18N-BRIEF.md](I18N-BRIEF.md) states the rule.
   - **"The command":** an unnamed command now gets whole sentences ("The command is not installed."), so no language has to fill a phrase into another sentence.
 - **Still open:** native-speaker review of the pilot languages through one tracking issue each (§5). These will be opened once the languages are on `main`, so reviewers read what ships.
+
+### L2: most used (November 10, 2026)
+
+- **New languages:** `es-MX`, `pt-BR`, `pt`, `it`, `ko`, `zh-TW`, `tr`, `pl`, `nl`, `uk` and `he`, each complete under `--strict`. They were made the same way as the pilot, with one agent per language running in parallel. The brief now includes the pilot's lesson: check seeded nouns that should be verbs on buttons, and notification wording that should be a toggle label. Each agent corrected between 0 and 9 seeds.
+- **Source strings that several translators found ambiguous,** fixed in the English:
+  - "Print Wi-Fi details" and "Print debugging information" show information on screen, so they're now "Show…", and the unused "Print" verb is gone.
+  - The service dialog's "%1 %2?" (a verb followed by a unit name) is now a whole question per action ("Stop %1?").
+  - "%n have no icon anywhere." and its neighbour now name their noun ("%n apps…"), which the plural forms need in order to inflect.
+- **The first sync:** those seven strings reached all 20 catalogs through one agent working from `tools/i18n-pending.py`. That's the L4 process: export what's pending, translate it with each catalog's own words, import, then `--strict`.
+- **Fixed:** zh-CN translated "Polish", the language, as 润色, "polish text". The zh-TW agent caught it, and it's now 波兰语.
+- **Screenshots:** Hebrew (right to left), Korean, Traditional Chinese and Polish render cleanly; the longest Polish sidebar entry fits.
+

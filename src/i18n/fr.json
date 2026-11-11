@@ -143,11 +143,6 @@
   "many": "%n en échec",
   "other": "%n en échec"
  },
- "%n have no icon anywhere.": {
-  "one": "%n n'a d'icône nulle part.",
-  "many": "%n n'ont d'icône nulle part.",
-  "other": "%n n'ont d'icône nulle part."
- },
  "%n output(s)": {
   "one": "%n sortie",
   "many": "%n sorties",
@@ -178,11 +173,6 @@
   "many": "%n fichiers spéciaux, comme des périphériques, ont été ignorés.",
   "other": "%n fichiers spéciaux, comme des périphériques, ont été ignorés."
  },
- "%n use their own icon, since the pack has none for them.": {
-  "one": "%n utilise sa propre icône, car le pack n'en a pas pour elle.",
-  "many": "%n utilisent leur propre icône, car le pack n'en a pas pour elles.",
-  "other": "%n utilisent leur propre icône, car le pack n'en a pas pour elles."
- },
  "Going back to the previous one in %n second(s).": {
   "one": "Retour à la précédente dans %n seconde.",
   "many": "Retour à la précédente dans %n secondes.",
@@ -208,7 +198,6 @@
   "many": "La disposition précédente revient dans %n secondes, sauf si vous gardez celle-ci.",
   "other": "La disposition précédente revient dans %n secondes, sauf si vous gardez celle-ci."
  },
- "%1 %2?": "%1 %2 ?",
  "%1 Restoring the previous value also failed: %2": "%1 La restauration de la valeur précédente a également échoué : %2",
  "%1 The change may be partly applied.": "%1 La modification a peut-être été appliquée en partie.",
  "%1 The previous value was restored.": "%1 La valeur précédente a été restaurée.",
@@ -679,7 +668,6 @@
  "Preview layout": "Prévisualiser la disposition",
  "Preview of the %1 theme": "Aperçu du thème %1",
  "Preview of the bar layout": "Aperçu de la disposition de la barre",
- "Print": "Imprimer",
  "Printer settings": "Réglages des imprimantes",
  "Printers and print queues": "Imprimantes et files d'impression",
  "Prune": "Nettoyer",
@@ -1532,8 +1520,6 @@
  "Power profile": "Profil d'alimentation",
  "Power profiles, battery, idle timers, lock, and session actions.": "Profils d'alimentation, batterie, délais d'inactivité, verrouillage et actions de session.",
  "Power saver": "Économie d'énergie",
- "Print Wi-Fi details": "Imprimer les infos Wi-Fi",
- "Print debugging information": "Afficher les informations de débogage",
  "Printers and cameras": "Imprimantes et caméras",
  "Printers and print queues.": "Imprimantes et files d'impression.",
  "Profile on AC power": "Profil sur secteur",
@@ -2017,5 +2003,20 @@
  "The command did not finish in time.": "La commande ne s'est pas terminée à temps.",
  "The command stopped unexpectedly.": "La commande s'est arrêtée de façon inattendue.",
  "The command was cancelled.": "La commande a été annulée.",
- "The command failed with exit code %1.": "La commande a échoué avec le code de sortie %1."
+ "The command failed with exit code %1.": "La commande a échoué avec le code de sortie %1.",
+ "%n apps use their own icon, since the pack has none for them.": {
+  "one": "%n appli utilise sa propre icône, car le pack n'en a pas pour elle.",
+  "many": "%n applis utilisent leur propre icône, car le pack n'en a pas pour elles.",
+  "other": "%n applis utilisent leur propre icône, car le pack n'en a pas pour elles."
+ },
+ "%n apps have no icon anywhere.": {
+  "one": "%n appli n'a d'icône nulle part.",
+  "many": "%n applis n'ont d'icône nulle part.",
+  "other": "%n applis n'ont d'icône nulle part."
+ },
+ "Disable %1?": "Désactiver %1 ?",
+ "Restart %1?": "Redémarrer %1 ?",
+ "Stop %1?": "Arrêter %1 ?",
+ "Show Wi-Fi details": "Afficher les détails du Wi-Fi",
+ "Show debugging information": "Afficher les informations de débogage"
 }

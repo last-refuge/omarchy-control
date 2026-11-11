@@ -11050,7 +11050,7 @@
             "read_method": "none",
             "recovery_class": "no-undo",
             "searchable_labels": [
-                "Print Wi-Fi details"
+                "Show Wi-Fi details"
             ],
             "source_references": [
                 "omarchy network qr"
@@ -11071,7 +11071,7 @@
             "read_method": "none",
             "recovery_class": "no-undo",
             "searchable_labels": [
-                "Print debugging information",
+                "Show debugging information",
                 "logs",
                 "support"
             ],

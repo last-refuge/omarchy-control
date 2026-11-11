@@ -139,10 +139,6 @@
   "one": "%nটি ব্যর্থ",
   "other": "%nটি ব্যর্থ"
  },
- "%n have no icon anywhere.": {
-  "one": "%nটির কোথাও কোনো আইকন নেই।",
-  "other": "%nটির কোথাও কোনো আইকন নেই।"
- },
  "%n output(s)": {
   "one": "%nটি আউটপুট",
   "other": "%nটি আউটপুট"
@@ -167,10 +163,6 @@
   "one": "ডিভাইসের মতো %nটি বিশেষ ফাইল বাদ দেওয়া হয়েছে।",
   "other": "ডিভাইসের মতো %nটি বিশেষ ফাইল বাদ দেওয়া হয়েছে।"
  },
- "%n use their own icon, since the pack has none for them.": {
-  "one": "%nটি নিজস্ব আইকন ব্যবহার করে, কারণ প্যাকে এর জন্য কোনো আইকন নেই।",
-  "other": "%nটি নিজস্ব আইকন ব্যবহার করে, কারণ প্যাকে এগুলোর জন্য কোনো আইকন নেই।"
- },
  "Going back to the previous one in %n second(s).": {
   "one": "%n সেকেন্ড পরে আগেরটিতে ফিরে যাওয়া হবে।",
   "other": "%n সেকেন্ড পরে আগেরটিতে ফিরে যাওয়া হবে।"
@@ -191,7 +183,6 @@
   "one": "আপনি এটি না রাখলে %n সেকেন্ড পরে আগের লেআউট ফিরে আসবে।",
   "other": "আপনি এটি না রাখলে %n সেকেন্ড পরে আগের লেআউট ফিরে আসবে।"
  },
- "%1 %2?": "%2: %1?",
  "%1 Restoring the previous value also failed: %2": "%1 আগের মান ফেরানোও ব্যর্থ হয়েছে: %2",
  "%1 The change may be partly applied.": "%1 পরিবর্তনটি হয়তো আংশিক প্রয়োগ হয়েছে।",
  "%1 The previous value was restored.": "%1 আগের মান ফেরানো হয়েছে।",
@@ -664,7 +655,6 @@
  "Preview layout": "লেআউট প্রিভিউ করুন",
  "Preview of the %1 theme": "%1 থিমের প্রিভিউ",
  "Preview of the bar layout": "বারের লেআউটের প্রিভিউ",
- "Print": "প্রিন্ট করুন",
  "Printer settings": "প্রিন্টার সেটিং",
  "Printers and print queues": "প্রিন্টার ও প্রিন্ট কিউ",
  "Prune": "ছাঁটাই করুন",
@@ -1517,8 +1507,6 @@
  "Power profile": "পাওয়ার প্রোফাইল",
  "Power profiles, battery, idle timers, lock, and session actions.": "পাওয়ার প্রোফাইল, ব্যাটারি, নিষ্ক্রিয়তার টাইমার, লক ও সেশনের কাজ।",
  "Power saver": "বিদ্যুৎ সাশ্রয়ী",
- "Print Wi-Fi details": "Wi-Fi-এর বিবরণ দেখান",
- "Print debugging information": "ডিবাগিং তথ্য দেখান",
  "Printers and cameras": "প্রিন্টার ও ক্যামেরা",
  "Printers and print queues.": "প্রিন্টার ও প্রিন্ট কিউ।",
  "Profile on AC power": "AC পাওয়ারে প্রোফাইল",
@@ -2001,5 +1989,18 @@
  "The command did not finish in time.": "কমান্ডটি সময়মতো শেষ হয়নি।",
  "The command stopped unexpectedly.": "কমান্ডটি অপ্রত্যাশিতভাবে থেমে গেছে।",
  "The command was cancelled.": "কমান্ডটি বাতিল করা হয়েছে।",
- "The command failed with exit code %1.": "কমান্ডটি এক্সিট কোড %1 দিয়ে ব্যর্থ হয়েছে।"
+ "The command failed with exit code %1.": "কমান্ডটি এক্সিট কোড %1 দিয়ে ব্যর্থ হয়েছে।",
+ "%n apps use their own icon, since the pack has none for them.": {
+  "one": "%nটি অ্যাপ নিজের আইকন ব্যবহার করছে, কারণ প্যাকে এর জন্য কোনো আইকন নেই।",
+  "other": "%nটি অ্যাপ নিজেদের আইকন ব্যবহার করছে, কারণ প্যাকে সেগুলোর জন্য কোনো আইকন নেই।"
+ },
+ "%n apps have no icon anywhere.": {
+  "one": "%nটি অ্যাপের কোথাও কোনো আইকন নেই।",
+  "other": "%nটি অ্যাপের কোথাও কোনো আইকন নেই।"
+ },
+ "Disable %1?": "%1 নিষ্ক্রিয় করবেন?",
+ "Restart %1?": "%1 পুনরায় চালু করবেন?",
+ "Stop %1?": "%1 বন্ধ করবেন?",
+ "Show Wi-Fi details": "Wi-Fi-এর বিবরণ দেখান",
+ "Show debugging information": "ডিবাগিং তথ্য দেখান"
 }

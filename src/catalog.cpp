@@ -58,7 +58,6 @@ QString CatalogEntry::verb() const {
         {"Install", QT_TRANSLATE_NOOP("HelperLabels", "Install")},
         {"Lock", QT_TRANSLATE_NOOP("HelperLabels", "Lock")},
         {"Log", QT_TRANSLATE_NOOP("HelperLabels", "Log out")},
-        {"Print", QT_TRANSLATE_NOOP("HelperLabels", "Print")},
         {"Reboot", QT_TRANSLATE_NOOP("HelperLabels", "Reboot")},
         {"Receive", QT_TRANSLATE_NOOP("HelperLabels", "Receive")},
         {"Reinstall", QT_TRANSLATE_NOOP("HelperLabels", "Reinstall")},

@@ -1020,8 +1020,6 @@
  "Plugin picker": "Plugin-Auswahl",
  "Polish": "Polnisch",
  "Portuguese": "Portugiesisch",
- "Print Wi-Fi details": "Wi-Fi-Details anzeigen",
- "Print debugging information": "Debug-Informationen anzeigen",
  "Printers and print queues.": "Drucker und Druckwarteschlangen.",
  "Prune package cache": "Paket-Cache bereinigen",
  "Read a QR code from the screen": "Einen QR-Code vom Bildschirm lesen",
@@ -1414,7 +1412,6 @@
  "No disks found.": "Keine Datenträger gefunden.",
  "Pick": "Auswählen",
  "Power settings": "Energieeinstellungen",
- "Print": "Drucken",
  "Prune": "Bereinigen",
  "Read": "Lesen",
  "Receive": "Empfangen",
@@ -1743,7 +1740,6 @@
  "Starting": "Wird gestartet",
  "Status": "Status",
  "Stopping": "Wird beendet",
- "%1 %2?": "%1 %2?",
  "Added by you": "Von Ihnen hinzugefügt",
  "Changed by you": "Von Ihnen geändert",
  "Disable %1": "%1 deaktivieren",
@@ -1833,14 +1829,6 @@
  "The launcher icons could not be updated: %1": "Die Startersymbole konnten nicht aktualisiert werden: %1",
  "The new icons could not be moved into %1.": "Die neuen Symbole konnten nicht nach %1 verschoben werden.",
  "There is nothing of Iconic's to restore.": "Von Iconic gibt es nichts wiederherzustellen.",
- "%n have no icon anywhere.": {
-  "one": "%n hat nirgends ein Symbol.",
-  "other": "%n haben nirgends ein Symbol."
- },
- "%n use their own icon, since the pack has none for them.": {
-  "one": "%n nutzt sein eigenes Symbol, da das Paket keins dafür hat.",
-  "other": "%n nutzen ihr eigenes Symbol, da das Paket keins dafür hat."
- },
  "Credits": "Danksagungen",
  "Iconic by UnderStackDev": "Iconic von UnderStackDev",
  "Icons for apps, folders, and files, in apps and in Omarchy's launcher and dock.": "Symbole für Apps, Ordner und Dateien, in Apps und in Omarchys Starter und Dock.",
@@ -2001,5 +1989,18 @@
  "The command did not finish in time.": "Der Befehl wurde nicht rechtzeitig fertig.",
  "The command stopped unexpectedly.": "Der Befehl wurde unerwartet beendet.",
  "The command was cancelled.": "Der Befehl wurde abgebrochen.",
- "The command failed with exit code %1.": "Der Befehl ist mit Exit-Code %1 fehlgeschlagen."
+ "The command failed with exit code %1.": "Der Befehl ist mit Exit-Code %1 fehlgeschlagen.",
+ "%n apps use their own icon, since the pack has none for them.": {
+  "one": "%n App verwendet ihr eigenes Symbol, da das Paket keines für sie hat.",
+  "other": "%n Apps verwenden ihr eigenes Symbol, da das Paket keines für sie hat."
+ },
+ "%n apps have no icon anywhere.": {
+  "one": "%n App hat nirgends ein Symbol.",
+  "other": "%n Apps haben nirgends ein Symbol."
+ },
+ "Disable %1?": "%1 deaktivieren?",
+ "Restart %1?": "%1 neu starten?",
+ "Stop %1?": "%1 stoppen?",
+ "Show Wi-Fi details": "Wi-Fi-Details anzeigen",
+ "Show debugging information": "Informationen zur Fehlersuche anzeigen"
 }

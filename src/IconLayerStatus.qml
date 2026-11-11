@@ -23,9 +23,9 @@ ColumnLayout {
             var total = root.details.total || 0
             var line = qsTr("%1 gives %2 of %3 apps their icon.").arg(root.details.pack || "").arg(root.details.fromPack || 0).arg(total)
             if ((root.details.own || 0) > 0)
-                line += " " + qsTr("%n use their own icon, since the pack has none for them.", "", root.details.own)
+                line += " " + qsTr("%n apps use their own icon, since the pack has none for them.", "", root.details.own)
             if ((root.details.missing || 0) > 0)
-                line += " " + qsTr("%n have no icon anywhere.", "", root.details.missing)
+                line += " " + qsTr("%n apps have no icon anywhere.", "", root.details.missing)
             return line
         }
     }
