@@ -1,5 +1,5 @@
 pkgname=omarchy-control
-pkgver=0.3.1
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='One searchable place to understand this computer, change its settings, and reach the right tool'
 arch=('x86_64' 'aarch64')
