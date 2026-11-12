@@ -4,7 +4,7 @@ CONFIG += c++17 release
 TARGET = omarchy-control
 TEMPLATE = app
 
-VERSION = 0.4.0
+VERSION = 0.5.0
 # version.h, from version.h.in. qmake rewrites it only when the version changes, so a new
 # version rebuilds main.cpp, where a define would leave an old object in place.
 QMAKE_SUBSTITUTES += src/version.h.in
