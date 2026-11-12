@@ -1032,14 +1032,31 @@ const char ProfileUsage[] =
     "      --bar remembers the order and options of Omarchy's own bar widgets; --plugins, which of\n"
     "      Omarchy's own plugins are switched off. --desktop takes all nine. --file carries a\n"
     "      terminal's configuration file when nothing in it runs a program or loads another file.\n"
-    "  inspect <dir> [--json]          Check a profile and show what it holds\n"
-    "  plan <dir> [--use-saved <id|all>]... [--keep-local <id|all>]... [--json]\n"
-    "      Compare a profile with this computer and save a restore plan. Changes nothing.\n"
+    "      Without <dir>, capture uses this computer's own profile, which saves versions and\n"
+    "      publishes to GitHub; it starts from the newest saved or published version.\n"
+    "  inspect [<dir> | --revision <version>] [--json]\n"
+    "      Check a profile and show what it holds\n"
+    "  plan [<dir> | --revision <version>] [--use-saved <id|all>]... [--keep-local <id|all>]... [--json]\n"
+    "      Compare a profile with this computer and save a restore plan. Changes nothing. A\n"
+    "      version is a commit from history, saved (the newest here), or published.\n"
     "  apply <plan-id> [--yes] [--partial] [--json]\n"
     "      Restore a reviewed plan. --partial goes ahead when some items are left out. Apps are\n"
     "      installed and removed with pacman in this terminal, which asks before it changes anything.\n"
     "  resume <run-id> [--json]        Continue a restore that stopped\n"
-    "  status [--json]                 Show recent restores, and whether one is running\n";
+    "  status [--json]                 Show this computer's profile versions and recent restores\n"
+    "  save [--message <text>]         Save this computer's profile as a new version, here only\n"
+    "  history [--published] [--json]  List the versions saved here, or last seen published\n"
+    "  connect <owner/name> [--branch <name>] [--allow-public]\n"
+    "  connect --create <name>\n"
+    "      Connect a GitHub repository, or create a private one, with GitHub CLI signed in.\n"
+    "      A public repository is refused unless --allow-public says so.\n"
+    "  diff <version> [<version>]      What changed between two versions; the second defaults to\n"
+    "                                  working, this computer's profile as it is now\n"
+    "  fetch                           Get the published versions. Changes nothing here.\n"
+    "  publish                         Fetch, then add this computer's versions to GitHub\n"
+    "  resolve --use-published | --keep-mine\n"
+    "      When both sides changed: take the published version here, keeping this computer's\n"
+    "      as a version of its own, or save this computer's on top of the published one.\n";
 
 // A value as its row would show it, from the catalog's own choices. Live lists, such as
 // themes, are their own labels, so nothing is read to show one.
@@ -1058,6 +1075,63 @@ QString profileValue(AppCore &core, const QString &id, const ProfileSetting &set
     if (setting.mode == QLatin1String("inherit"))
         return QStringLiteral("this computer's default");
     return shownValue(core, id, setting.value);
+}
+
+ProfileRepository::Result waitForRepository(std::function<void(ProfileRepository::Done)> start) {
+    ProfileRepository::Result result;
+    QEventLoop loop;
+    bool done = false;
+    start([&](const ProfileRepository::Result &r) {
+        result = r;
+        done = true;
+        loop.quit();
+    });
+    if (!done)
+        loop.exec();
+    return result;
+}
+
+int reportRepository(const ProfileRepository::Result &result, bool json) {
+    if (json) {
+        printJson(result.toJson());
+    } else if (result.ok) {
+        out() << (result.message.isEmpty() ? QStringLiteral("Done.") : result.message) << "\n";
+        out().flush();
+    } else {
+        err() << result.error << "\n";
+        for (const QString &problem : result.problems)
+            err() << "  " << problem << "\n";
+    }
+    return result.ok ? 0 : 1;
+}
+
+// The profile a command works on: a folder given by name, a version read back from history,
+// or this computer's own profile.
+bool profileDirectory(AppCore &core, QStringList &args, QString *directory, bool json) {
+    const QString revision = popOption(args, "--revision");
+    if (!revision.isEmpty()) {
+        if (args.size() != 2) {
+            err() << ProfileUsage;
+            return false;
+        }
+        const ProfileRepository::Result read = waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.read(revision, done); });
+        if (!read.ok) {
+            reportRepository(read, json);
+            return false;
+        }
+        *directory = read.directory;
+        return true;
+    }
+    if (args.size() == 3) {
+        *directory = args[2];
+        return true;
+    }
+    if (args.size() == 2) {
+        *directory = core.profileRepository.workingDirectory();
+        return true;
+    }
+    err() << ProfileUsage;
+    return false;
 }
 
 int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
@@ -1087,11 +1161,19 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
     selection.suggested = popFlag(args, "--suggested");
     selection.name = popOption(args, "--name");
     const bool dryRun = popFlag(args, "--dry-run");
-    if (args.size() != 3) {
+    if (args.size() != 3 && args.size() != 2) {
         err() << ProfileUsage;
         return 1;
     }
-    const QString directory = args[2];
+    const QString directory = args.size() == 3 ? args[2] : core.profileRepository.workingDirectory();
+    if (args.size() == 2) {
+        // This computer's own profile picks up where its history is, never from nothing.
+        const ProfileRepository::Result prepared = waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.prepareWorking(done); });
+        if (!prepared.ok)
+            return reportRepository(prepared, json);
+        if (!prepared.message.isEmpty() && !json)
+            out() << prepared.message << "\n";
+    }
     bool exists = false;
     const ProfileModel::Parsed parsed = ProfileModel::load(directory, &exists);
     if (exists && !parsed.ok) {
@@ -1195,12 +1277,11 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
     return 0;
 }
 
-int cmdProfileInspect(AppCore &core, const QStringList &args, bool json) {
-    if (args.size() != 3) {
-        err() << ProfileUsage;
+int cmdProfileInspect(AppCore &core, QStringList args, bool json) {
+    QString directory;
+    if (!profileDirectory(core, args, &directory, json))
         return 1;
-    }
-    const ProfileModel::Parsed parsed = ProfileModel::load(args[2]);
+    const ProfileModel::Parsed parsed = ProfileModel::load(directory);
     if (!parsed.ok) {
         if (json) {
             printJson(QJsonObject{{"valid", false}, {"errors", QJsonArray::fromStringList(parsed.errors)}});
@@ -1329,14 +1410,13 @@ int cmdProfilePlan(AppCore &core, QStringList args, bool json) {
     ProfilePlanner::Options options;
     options.useSaved = popOptions(args, "--use-saved");
     options.keepLocal = popOptions(args, "--keep-local");
-    if (args.size() != 3) {
-        err() << ProfileUsage;
+    QString directory;
+    if (!profileDirectory(core, args, &directory, json))
         return 1;
-    }
     ProfilePlan plan;
     QEventLoop loop;
     bool done = false;
-    core.profilePlanner.plan(args[2], options, [&](const ProfilePlan &p) {
+    core.profilePlanner.plan(directory, options, [&](const ProfilePlan &p) {
         plan = p;
         done = true;
         loop.quit();
@@ -1468,9 +1548,28 @@ int cmdProfileApply(AppCore &core, QStringList args, bool yes, bool json) {
     return waitForRun(core, [&](ProfileRunner::Done done) { core.profileRunner.apply(plan, done); }, json);
 }
 
+QString shownLabel(AppCore &core, const QString &id) {
+    const CatalogEntry *entry = core.catalog.find(id);
+    return entry ? entry->label : id;
+}
+
+QString versionLine(const ProfileRepository::Version &version) {
+    return version.commit.left(7) + "  " + QDateTime::fromSecsSinceEpoch(version.time).toString(QStringLiteral("yyyy-MM-dd HH:mm")) + "  " + version.message;
+}
+
 int cmdProfileStatus(AppCore &core, bool json) {
     const bool running = core.coordinator.leaseHeldElsewhere();
     const QList<ProfileRun> runs = core.profileRunner.runs(10);
+    ProfileRepository::Status repository;
+    QEventLoop loop;
+    bool done = false;
+    core.profileRepository.status([&](const ProfileRepository::Status &status) {
+        repository = status;
+        done = true;
+        loop.quit();
+    });
+    if (!done)
+        loop.exec();
     if (json) {
         QJsonArray rows;
         for (const ProfileRun &run : runs) {
@@ -1479,9 +1578,39 @@ int cmdProfileStatus(AppCore &core, bool json) {
             row["resumable"] = run.resumable();
             rows.append(row);
         }
-        printJson(QJsonObject{{"restoreRunning", running}, {"runs", rows}});
+        QJsonObject profile = repository.toJson();
+        profile["directory"] = core.profileRepository.workingDirectory();
+        printJson(QJsonObject{{"restoreRunning", running}, {"runs", rows}, {"profile", profile}});
         return 0;
     }
+    // Saved on this computer, and published to GitHub, are told apart.
+    if (!repository.saved.isEmpty())
+        out() << "Saved on this computer: " << versionLine(repository.saved) << "\n";
+    else if (repository.relation == QLatin1String("unsaved-only"))
+        out() << "This computer's profile has not been saved as a version yet.\n";
+    else
+        out() << "No profile has been saved on this computer.\n";
+    if (repository.unsavedChanges && !repository.saved.isEmpty())
+        out() << "  It has changes since that version. Save them with: omarchy-control profile save\n";
+    if (repository.connection.isEmpty()) {
+        out() << "Not connected to GitHub.\n";
+    } else {
+        out() << "GitHub: " << repository.connection.webUrl() << " (" << (repository.connection.visibility.isEmpty() ? QStringLiteral("visibility unknown") : repository.connection.visibility)
+              << "), branch " << repository.connection.branch << "\n";
+        if (!repository.published.isEmpty())
+            out() << "Published, as last fetched: " << versionLine(repository.published) << "\n";
+        const QString relation = repository.relation;
+        if (relation == QLatin1String("same"))
+            out() << "  Up to date.\n";
+        else if (relation == QLatin1String("ahead"))
+            out() << "  " << repository.ahead << " version(s) not published yet. Publish with: omarchy-control profile publish\n";
+        else if (relation == QLatin1String("behind") || relation == QLatin1String("published-only"))
+            out() << "  GitHub has newer versions. Restore one with: omarchy-control profile plan --revision published\n";
+        else if (relation == QLatin1String("diverged"))
+            out() << "  Both sides changed. Choose with: omarchy-control profile resolve --use-published | --keep-mine\n";
+    }
+    if (!repository.gitAvailable)
+        out() << "Saving versions needs git, which is not installed.\n";
     out() << (running ? "A restore is running now.\n" : "No restore is running.\n");
     for (const ProfileRun &run : runs) {
         out() << run.id << "  " << run.startedAt << "  " << run.state.leftJustified(11) << run.profileName << ": "
@@ -1513,6 +1642,109 @@ int cmdProfile(AppCore &core, const QStringList &args, bool yes, bool json) {
     }
     if (verb == QLatin1String("status"))
         return cmdProfileStatus(core, json);
+    QStringList rest = args;
+    if (verb == QLatin1String("save")) {
+        const QString message = popOption(rest, "--message");
+        if (rest.size() != 2) {
+            err() << ProfileUsage;
+            return 1;
+        }
+        return reportRepository(waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.save(message, done); }), json);
+    }
+    if (verb == QLatin1String("history")) {
+        const bool published = popFlag(rest, "--published");
+        QList<ProfileRepository::Version> versions;
+        QEventLoop loop;
+        bool done = false;
+        core.profileRepository.history(published, 50, [&](const QList<ProfileRepository::Version> &list, const QString &) {
+            versions = list;
+            done = true;
+            loop.quit();
+        });
+        if (!done)
+            loop.exec();
+        if (json) {
+            QJsonArray rows;
+            for (const ProfileRepository::Version &version : versions)
+                rows.append(version.toJson());
+            printJson(QJsonObject{{"published", published}, {"versions", rows}});
+            return 0;
+        }
+        if (versions.isEmpty())
+            out() << (published ? "Nothing has been fetched from GitHub yet.\n" : "Nothing has been saved on this computer yet.\n");
+        for (const ProfileRepository::Version &version : versions)
+            out() << versionLine(version) << "\n";
+        out().flush();
+        return 0;
+    }
+    if (verb == QLatin1String("connect")) {
+        const QString create = popOption(rest, "--create");
+        const QString branch = popOption(rest, "--branch");
+        const bool allowPublic = popFlag(rest, "--allow-public");
+        if (!create.isEmpty() && rest.size() == 2)
+            return reportRepository(waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.create(create, done); }), json);
+        if (create.isEmpty() && rest.size() == 3)
+            return reportRepository(waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.connectTo(rest[2], branch, allowPublic, done); }), json);
+        err() << ProfileUsage;
+        return 1;
+    }
+    if (verb == QLatin1String("diff") && (rest.size() == 3 || rest.size() == 4)) {
+        // Each side is a version, or "working" for this computer's profile as it is now.
+        const auto side = [&](const QString &name, Profile *profile) {
+            QString directory = core.profileRepository.workingDirectory();
+            if (name != QLatin1String("working")) {
+                const ProfileRepository::Result read = waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.read(name, done); });
+                if (!read.ok) {
+                    reportRepository(read, json);
+                    return false;
+                }
+                directory = read.directory;
+            }
+            const ProfileModel::Parsed parsed = ProfileModel::load(directory);
+            if (!parsed.ok) {
+                err() << name << ": " << parsed.errors.value(0, QStringLiteral("there is no profile there")) << "\n";
+                return false;
+            }
+            *profile = parsed.profile;
+            return true;
+        };
+        Profile from, to;
+        if (!side(rest[2], &from) || !side(rest.value(3, QStringLiteral("working")), &to))
+            return 1;
+        const QJsonArray rows = ProfileRepository::differences(from, to);
+        if (json) {
+            printJson(QJsonObject{{"from", rest[2]}, {"to", rest.value(3, QStringLiteral("working"))}, {"differences", rows}});
+            return 0;
+        }
+        if (rows.isEmpty())
+            out() << "No differences.\n";
+        for (const QJsonValue &value : rows) {
+            const QJsonObject row = value.toObject();
+            const QString change = row.value("change").toString();
+            const QString id = row.value("kind").toString() == QLatin1String("setting") ? shownLabel(core, row.value("id").toString()) : row.value("id").toString();
+            if (change == QLatin1String("added"))
+                out() << "  + " << id << ": " << row.value("after").toString() << "\n";
+            else if (change == QLatin1String("removed"))
+                out() << "  - " << id << ": " << row.value("before").toString() << "\n";
+            else
+                out() << "  ~ " << id << ": " << row.value("before").toString() << " -> " << row.value("after").toString() << "\n";
+        }
+        out().flush();
+        return 0;
+    }
+    if (verb == QLatin1String("fetch") && rest.size() == 2)
+        return reportRepository(waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.fetch(done); }), json);
+    if (verb == QLatin1String("publish") && rest.size() == 2)
+        return reportRepository(waitForRepository([&](ProfileRepository::Done done) { core.profileRepository.publish(done); }), json);
+    if (verb == QLatin1String("resolve")) {
+        const bool published = popFlag(rest, "--use-published");
+        const bool mine = popFlag(rest, "--keep-mine");
+        if (published != mine && rest.size() == 2)
+            return reportRepository(waitForRepository([&](ProfileRepository::Done done) {
+                                        core.profileRepository.resolve(published ? QStringLiteral("published") : QStringLiteral("mine"), done);
+                                    }),
+                                    json);
+    }
     err() << ProfileUsage;
     return 1;
 }

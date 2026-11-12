@@ -445,6 +445,23 @@ case " $* " in
 esac
 )SH";
 
+// GitHub CLI over local bare repositories: the sandbox's GitHub is a folder of them. The
+// account "tester" is signed in unless gh-signed-out exists; a repository is public when a
+// <name>.public file sits beside it.
+const char kFakeGh[] = R"SH(
+H="${FAKE_GITHUB:-$(dirname "$HOME")/github}"
+case "$1 $2" in
+  "api user") [ -f "$(dirname "$HOME")/gh-signed-out" ] && { echo "gh: not logged in" >&2; exit 1; }; echo "tester 4242";;
+  "repo view")
+    [ -d "$H/$3.git" ] || { echo "GraphQL: Could not resolve to a Repository with the name '$3'." >&2; exit 1; }
+    if [ -f "$H/$3.public" ]; then echo '{"visibility":"PUBLIC"}'; else echo '{"visibility":"PRIVATE"}'; fi;;
+  "repo create")
+    mkdir -p "$H/tester" && git init --bare --quiet "$H/tester/$3.git" && echo "https://github.com/tester/$3";;
+  "auth git-credential") exit 0;;
+  *) exit 1;;
+esac
+)SH";
+
 // xdg-mime keeping each type's app in the sandbox.
 const char kFakeXdgMime[] = R"SH(
 S="$HOME/.fake-omarchy"; mkdir -p "$S"

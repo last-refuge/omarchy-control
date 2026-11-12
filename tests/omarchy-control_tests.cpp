@@ -485,6 +485,79 @@ QString pngFile(const QString &path, Qt::GlobalColor color) {
     return path;
 }
 
+// Real git, which profile repositories are tested with, against local bare repositories
+// standing in for GitHub at `hub`, and a fake GitHub CLI signed in as "tester".
+void useGitHub(Sandbox &s, const QString &hub) {
+    QFile::link(QStandardPaths::findExecutable("git"), s.bin("git"));
+    s.env.gitHub = "file://" + hub;
+    s.env.process.insert("FAKE_GITHUB", hub);
+    s.command("gh", kFakeGh);
+}
+
+// Git run directly, as someone with their own copy of the repository would.
+QByteArray gitIn(const QString &gitDir, const QStringList &arguments, const QByteArray &input = {}, const QString &indexFile = {}) {
+    QProcess git;
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    for (const char *variable : {"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=Someone", "GIT_AUTHOR_EMAIL=someone@example.com",
+                                 "GIT_COMMITTER_NAME=Someone", "GIT_COMMITTER_EMAIL=someone@example.com"})
+        environment.insert(QString::fromLatin1(variable).section('=', 0, 0), QString::fromLatin1(variable).section('=', 1));
+    if (!indexFile.isEmpty())
+        environment.insert("GIT_INDEX_FILE", indexFile);
+    git.setProcessEnvironment(environment);
+    git.start("git", QStringList{"--git-dir=" + gitDir} + arguments);
+    git.write(input);
+    git.closeWriteChannel();
+    git.waitForFinished(30000);
+    return git.readAllStandardOutput().trimmed();
+}
+
+QString bareRepository(const QString &hub, const QString &fullName) {
+    const QString path = hub + "/" + fullName + ".git";
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QProcess::execute("git", {"init", "--bare", "--quiet", path});
+    return path;
+}
+
+// A commit made by hand in a repository, holding exactly these entries: mode, path, and
+// contents (a link's target, or a submodule's commit).
+struct GitEntry {
+    QString mode, path;
+    QByteArray contents;
+};
+QString commitByHand(const QString &gitDir, const QList<GitEntry> &entries, const QString &parent = {}) {
+    QTemporaryDir scratch;
+    QByteArray info;
+    for (const GitEntry &entry : entries) {
+        const QByteArray object = entry.mode == "160000" ? entry.contents : gitIn(gitDir, {"hash-object", "-w", "--stdin"}, entry.contents);
+        info += entry.mode.toLatin1() + " " + object + "\t" + entry.path.toUtf8() + "\n";
+    }
+    gitIn(gitDir, {"update-index", "--add", "--index-info"}, info, scratch.path() + "/index");
+    const QByteArray tree = gitIn(gitDir, {"write-tree"}, {}, scratch.path() + "/index");
+    QStringList arguments{"commit-tree", QString::fromLatin1(tree), "-m", "By hand"};
+    if (!parent.isEmpty())
+        arguments << "-p" << parent;
+    const QString commit = QString::fromLatin1(gitIn(gitDir, arguments));
+    gitIn(gitDir, {"update-ref", "refs/heads/main", commit});
+    return commit;
+}
+
+ProfileRepository::Result repositoryDo(std::function<void(ProfileRepository::Done)> start) {
+    ProfileRepository::Result result;
+    bool done = false;
+    start([&](const ProfileRepository::Result &r) { result = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 60000))
+        result.error = "timed out";
+    return result;
+}
+
+ProfileRepository::Status repositoryStatus(AppCore &core) {
+    ProfileRepository::Status status;
+    bool done = false;
+    core.profileRepository.status([&](const ProfileRepository::Status &s) { status = s; done = true; });
+    QTest::qWaitFor([&] { return done; }, 30000);
+    return status;
+}
+
 // Omarchy's own plugins, as their manifests declare them.
 void omarchyPlugins(Sandbox &s, const QStringList &ids, const QString &kind = "bar-widget") {
     for (const QString &id : ids)
@@ -507,6 +580,8 @@ void omarchyTerminalDefaults(Sandbox &s) {
 }
 
 }  // namespace
+
+Q_DECLARE_METATYPE(GitEntry)
 
 class OmarchyControlTests : public QObject {
     Q_OBJECT
@@ -9604,6 +9679,295 @@ esac)SH");
         const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
         QVERIFY(result.ok);
         QVERIFY(!result.profile.desktop.contains("plugins"));
+    }
+
+    // ---- My Omarchy: versions and GitHub -------------------------------------------
+    void profileRepositorySavesVersionsWithoutTheNetwork() {
+        QTemporaryDir hub;
+        ProfileMachine m;
+        useGitHub(m.s, hub.path());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileRepository &repository = core.profileRepository;
+        QCOMPARE(repositoryStatus(core).relation, QString("nothing"));
+        // Nothing to save before there is a profile.
+        QVERIFY(!repositoryDo([&](auto done) { repository.save("First", done); }).ok);
+        ProfileCapture::Selection selection;
+        selection.settings = {"power.idle.lock"};
+        QVERIFY(saveProfile(core, repository.workingDirectory(), selection));
+        QCOMPARE(repositoryStatus(core).relation, QString("unsaved-only"));
+        const ProfileRepository::Result first = repositoryDo([&](auto done) { repository.save("First", done); });
+        QVERIFY2(first.ok, qPrintable(first.error));
+        // The same profile again is no new version.
+        const ProfileRepository::Result again = repositoryDo([&](auto done) { repository.save("Again", done); });
+        QVERIFY(again.ok);
+        QCOMPARE(again.commit, first.commit);
+        QVERIFY(again.message.contains("Nothing changed"));
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(core, repository.workingDirectory(), selection));
+        ProfileRepository::Status status = repositoryStatus(core);
+        QVERIFY(status.unsavedChanges);
+        const ProfileRepository::Result second = repositoryDo([&](auto done) { repository.save("Second", done); });
+        QVERIFY(second.ok && second.commit != first.commit);
+        status = repositoryStatus(core);
+        QCOMPARE(status.relation, QString("saved"));
+        QVERIFY(!status.unsavedChanges);
+        QCOMPARE(status.saved.parents, QStringList{first.commit});
+        QList<ProfileRepository::Version> versions;
+        bool listed = false;
+        repository.history(false, 10, [&](const QList<ProfileRepository::Version> &list, const QString &) { versions = list; listed = true; });
+        QVERIFY(QTest::qWaitFor([&] { return listed; }, 10000));
+        QCOMPARE(versions.size(), 2);
+        QCOMPARE(versions[0].message, QString("Second"));
+        // A version holds the profile and nothing else, and the history has no hooks, no
+        // remote, and none of the user's configuration.
+        QCOMPARE(QString::fromLatin1(gitIn(repository.repositoryPath(), {"ls-tree", "-r", "--name-only", second.commit})), QString("profile.json"));
+        QVERIFY(!QFileInfo::exists(repository.repositoryPath() + "/hooks"));
+        QVERIFY(!readAll(repository.repositoryPath() + "/config").contains("remote"));
+        const ProfileRepository::Result read = repositoryDo([&](auto done) { repository.read(first.commit.left(9), done); });
+        QVERIFY2(read.ok, qPrintable(read.error));
+        QVERIFY(ProfileModel::load(read.directory).profile.settings.contains("power.idle.lock"));
+        QVERIFY(!ProfileModel::load(read.directory).profile.settings.contains("appearance.theme"));
+        // Saving never reached GitHub.
+        QVERIFY(!m.s.calls().join("\n").contains("gh "));
+        // What changed between the two, record by record.
+        const ProfileRepository::Result older = repositoryDo([&](auto done) { repository.read(first.commit, done); });
+        const QJsonArray rows = ProfileRepository::differences(ProfileModel::load(older.directory).profile, ProfileModel::load(repository.workingDirectory()).profile);
+        QCOMPARE(rows.size(), 1);
+        QCOMPARE(rows[0].toObject().value("id").toString(), QString("appearance.theme"));
+        QCOMPARE(rows[0].toObject().value("change").toString(), QString("added"));
+        QCOMPARE(Cli::run(m.s.env, {"profile", "diff", first.commit.left(7), "saved", "--json"}), 0);
+        QCOMPARE(Cli::run(m.s.env, {"profile", "diff", "nothere"}), 1);
+        // Connecting on a branch of its own takes the versions saved so far along.
+        bareRepository(hub.path(), "tester/elsewhere");
+        QVERIFY(repositoryDo([&](auto done) { repository.connectTo("tester/elsewhere", "profiles", false, done); }).ok);
+        QCOMPARE(repositoryStatus(core).saved.commit, second.commit);
+    }
+
+    void profileRepositoryRoundTripsThroughGitHub() {
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        QString published;
+        {
+            ProfileMachine a;
+            useGitHub(a.s, hub.path());
+            writeFile(a.config(), "{\"idle\": {\"lock\": 600, \"screensaver\": 150}}\n");
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            ProfileCapture::Selection selection;
+            selection.settings = {"power.idle.lock"};
+            QVERIFY(saveProfile(core, core.profileRepository.workingDirectory(), selection));
+            QVERIFY(repositoryDo([&](auto done) { core.profileRepository.save("From the laptop", done); }).ok);
+            const ProfileRepository::Result connected = repositoryDo([&](auto done) { core.profileRepository.connectTo("https://github.com/tester/my-omarchy", {}, false, done); });
+            QVERIFY2(connected.ok, qPrintable(connected.error));
+            QCOMPARE(core.profileRepository.connection().visibility, QString("private"));
+            // Versions carry the account's no-reply address, never a real one.
+            QCOMPARE(core.profileRepository.connection().authorEmail, QString("4242+tester@users.noreply.github.com"));
+            QCOMPARE(repositoryStatus(core).relation, QString("ahead"));
+            const ProfileRepository::Result pushed = repositoryDo([&](auto done) { core.profileRepository.publish(done); });
+            QVERIFY2(pushed.ok, qPrintable(pushed.error));
+            published = pushed.commit;
+            QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), published);
+            QCOMPARE(repositoryStatus(core).relation, QString("same"));
+            // Publishing again adds nothing.
+            QVERIFY(repositoryDo([&](auto done) { core.profileRepository.publish(done); }).message.contains("Already published"));
+        }
+        // A fresh computer: connect, fetch, and restore the published version.
+        ProfileMachine b;
+        useGitHub(b.s, hub.path());
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/my-omarchy", {}, false, done); }).ok);
+        QVERIFY(!QFileInfo::exists(core.profileRepository.repositoryPath() + "/HEAD") || repositoryStatus(core).published.isEmpty());
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.fetch(done); }).ok);
+        QCOMPARE(repositoryStatus(core).relation, QString("published-only"));
+        // Fetching changed nothing on the desktop.
+        QVERIFY(readAll(b.config()).contains("\"lock\": 300"));
+        const ProfileRepository::Result version = repositoryDo([&](auto done) { core.profileRepository.read("published", done); });
+        QVERIFY2(version.ok, qPrintable(version.error));
+        QCOMPARE(version.commit, published);
+        const ProfilePlan plan = planProfile(core, version.directory);
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("ready"));
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        QVERIFY(readAll(b.config()).contains("\"lock\": 600"));
+        // Its own profile starts from the published one, so a save adds to that history.
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.prepareWorking(done); }).ok);
+        ProfileCapture::Selection selection;
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(core, core.profileRepository.workingDirectory(), selection));
+        const ProfileModel::Parsed working = ProfileModel::load(core.profileRepository.workingDirectory());
+        QVERIFY(working.profile.settings.contains("power.idle.lock") && working.profile.settings.contains("appearance.theme"));
+        const ProfileRepository::Result saved = repositoryDo([&](auto done) { core.profileRepository.save("From the desktop", done); });
+        QCOMPARE(repositoryStatus(core).saved.parents, QStringList{published});
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.publish(done); }).ok);
+        QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), saved.commit);
+    }
+
+    void profileRepositoryNeverLosesAVersion() {
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        ProfileMachine a, b;
+        useGitHub(a.s, hub.path());
+        useGitHub(b.s, hub.path());
+        AppCore one(a.s.env), two(b.s.env);
+        one.capabilities.scanServicesBlocking();
+        two.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.settings = {"power.idle.lock"};
+        QVERIFY(saveProfile(one, one.profileRepository.workingDirectory(), selection));
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.save("Base", done); }).ok);
+        for (AppCore *core : {&one, &two})
+            QVERIFY(repositoryDo([&](auto done) { core->profileRepository.connectTo("tester/my-omarchy", {}, false, done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.publish(done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { two.profileRepository.fetch(done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { two.profileRepository.prepareWorking(done); }).ok);
+        // Both change the same profile after it.
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(one, one.profileRepository.workingDirectory(), selection));
+        const QString theirs = repositoryDo([&](auto done) { one.profileRepository.save("Theme", done); }).commit;
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.publish(done); }).ok);
+        selection.settings = {"power.idle.screensaver"};
+        QVERIFY(saveProfile(two, two.profileRepository.workingDirectory(), selection));
+        const QString mine = repositoryDo([&](auto done) { two.profileRepository.save("Screensaver", done); }).commit;
+        // Publishing stops, with both versions where they were.
+        const ProfileRepository::Result refused = repositoryDo([&](auto done) { two.profileRepository.publish(done); });
+        QVERIFY(!refused.ok);
+        QVERIFY(refused.error.contains("Both"));
+        QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), theirs);
+        QCOMPARE(repositoryStatus(two).saved.commit, mine);
+        QCOMPARE(repositoryStatus(two).relation, QString("diverged"));
+        // Offline: saving still works, and publishing fails without losing anything.
+        {
+            Sandbox offline;
+            Env away = b.s.env;
+            away.gitHub = "file://" + offline.dir.path() + "/nowhere";
+            AppCore cut(away);
+            const ProfileRepository::Result failed = repositoryDo([&](auto done) { cut.profileRepository.publish(done); });
+            QVERIFY(!failed.ok);
+            QVERIFY(failed.error.contains("stay saved"));
+            QCOMPARE(repositoryStatus(cut).saved.commit, mine);
+        }
+        // Keeping this computer's: a new version with both behind it, which only adds.
+        const ProfileRepository::Result kept = repositoryDo([&](auto done) { two.profileRepository.resolve("mine", done); });
+        QVERIFY2(kept.ok, qPrintable(kept.error));
+        QCOMPARE(repositoryStatus(two).saved.parents, (QStringList{theirs, mine}));
+        QVERIFY(repositoryDo([&](auto done) { two.profileRepository.publish(done); }).ok);
+        QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), kept.commit);
+        // The other computer takes the published version; what it had is kept, not lost.
+        selection.settings = {"input.repeat_rate"};
+        QVERIFY(saveProfile(one, one.profileRepository.workingDirectory(), selection));
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.fetch(done); }).ok);
+        const ProfileRepository::Result taken = repositoryDo([&](auto done) { one.profileRepository.resolve("published", done); });
+        QVERIFY2(taken.ok, qPrintable(taken.error));
+        QCOMPARE(repositoryStatus(one).saved.commit, kept.commit);
+        QVERIFY(!repositoryStatus(one).unsavedChanges);
+        const QStringList keptRefs = QString::fromLatin1(gitIn(one.profileRepository.repositoryPath(), {"for-each-ref", "--format=%(objectname)", "refs/omarchy-control/kept"}))
+                                         .split('\n', Qt::SkipEmptyParts);
+        QCOMPARE(keptRefs.size(), 1);
+        // The unsaved change went into the kept version.
+        QVERIFY(QString::fromLatin1(gitIn(one.profileRepository.repositoryPath(), {"show", keptRefs.first() + ":profile.json"})).contains("input.repeat_rate"));
+        QVERIFY(ProfileModel::load(one.profileRepository.workingDirectory()).profile.settings.contains("power.idle.screensaver"));
+    }
+
+    void profileRepositoryRefusesWhatAProfileNeverHolds_data() {
+        const QByteArray profile = QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "By hand"}, {"settings", QJsonObject{{"power.idle.lock", setTo("600")}}}}).toJson();
+        const QString digest = QString::fromLatin1(QCryptographicHash::hash("an image", QCryptographicHash::Sha256).toHex());
+        const QJsonObject background{{"theme", "nord"}, {"name", "a.png"}, {"sha256", digest}};
+        const QJsonObject asset{{"sha256", digest}, {"size", 8}, {"kind", "background"}, {"name", "a.png"}};
+        const QByteArray withAsset =
+            QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "By hand"}, {"desktop", QJsonObject{{"background", background}}}, {"assets", QJsonArray{asset}}}).toJson();
+        const QByteArray future = QJsonDocument(QJsonObject{{"schemaVersion", 2}, {"name", "Future"}}).toJson();
+        const QByteArray script = QByteArray("#!") + "/bin/sh\nid\n";
+        QTest::addColumn<QList<GitEntry>>("entries");
+        QTest::addColumn<QString>("problem");
+        QTest::newRow("hook") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100755", "hooks/post-checkout", script}} << "folder hooks";
+        QTest::newRow("submodules file") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100644", ".gitmodules", "[submodule \"x\"]\n"}} << ".gitmodules";
+        QTest::newRow("attributes") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100644", ".gitattributes", "* filter=x\n"}} << ".gitattributes";
+        QTest::newRow("link") << QList<GitEntry>{{"120000", "profile.json", "/etc/passwd"}} << "is a link";
+        QTest::newRow("program") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100755", "files/ghostty/config", "font-size = 9\n"}} << "marked as a program";
+        QTest::newRow("submodule") << QList<GitEntry>{{"100644", "profile.json", profile}, {"160000", "files/ghostty", QByteArray(40, 'a')}} << "submodule";
+        QTest::newRow("too large") << QList<GitEntry>{{"100644", "profile.json", QByteArray(ProfileModel::MaxManifestBytes + 1, ' ')}} << "larger than a profile allows";
+        QTest::newRow("no manifest") << QList<GitEntry>{{"100644", "files/ghostty/config", "font-size = 9\n"}} << "no profile.json";
+        QTest::newRow("newer schema") << QList<GitEntry>{{"100644", "profile.json", future}} << "newer";
+        QTest::newRow("damaged asset") << QList<GitEntry>{{"100644", "profile.json", withAsset}, {"100644", "assets/sha256/" + digest, "an imagX"}}
+                                       << "digest";
+    }
+    void profileRepositoryRefusesWhatAProfileNeverHolds() {
+        QFETCH(QList<GitEntry>, entries);
+        QFETCH(QString, problem);
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        const QString commit = commitByHand(remote, entries);
+        ProfileMachine b;
+        useGitHub(b.s, hub.path());
+        AppCore core(b.s.env);
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/my-omarchy", {}, false, done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.fetch(done); }).ok);
+        const ProfileRepository::Result read = repositoryDo([&](auto done) { core.profileRepository.read("published", done); });
+        QVERIFY(!read.ok);
+        QVERIFY2((read.error + " " + read.problems.join(" ")).contains(problem), qPrintable(read.error + " | " + read.problems.join(" | ")));
+        // Nothing of it is left to plan from, and nothing reached the working profile.
+        QVERIFY(!QFileInfo::exists(ProfileStore::root(b.s.env) + "/revisions/" + commit));
+        QVERIFY(!repositoryDo([&](auto done) { core.profileRepository.prepareWorking(done); }).ok);
+        QVERIFY(!QFileInfo::exists(ProfileModel::manifestPath(core.profileRepository.workingDirectory())));
+    }
+
+    void profileRepositoryConnectsOnlyToGitHub() {
+        ProfileRepository::Connection connection;
+        for (const QString &form : {"owner/name", "https://github.com/owner/name", "https://github.com/owner/name.git", "github.com/owner/name/", "https://www.github.com/owner/name"}) {
+            QVERIFY2(ProfileRepository::parseGitHub(form, &connection, nullptr), qPrintable(form));
+            QCOMPARE(connection.fullName(), QString("owner/name"));
+        }
+        for (const QString &form : {"git@github.com:owner/name.git", "https://gitlab.com/owner/name", "https://user:token@github.com/owner/name", "https://github.com/owner/name/tree/main",
+                                    "owner/name?x=1", "../name", "owner/..", "-owner/name", "http://github.com/owner/name", "file:///srv/name.git"})
+            QVERIFY2(!ProfileRepository::parseGitHub(form, &connection, nullptr), qPrintable(form));
+        QTemporaryDir hub;
+        bareRepository(hub.path(), "tester/open");
+        writeFile(hub.path() + "/tester/open.public", "");
+        ProfileMachine m;
+        useGitHub(m.s, hub.path());
+        AppCore core(m.s.env);
+        // A public repository is refused unless that is asked for by name.
+        ProfileRepository::Result result = repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/open", {}, false, done); });
+        QVERIFY(!result.ok);
+        QVERIFY(result.error.contains("public"));
+        QVERIFY(core.profileRepository.connection().isEmpty());
+        result = repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/open", {}, true, done); });
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QVERIFY(core.profileRepository.connection().publicAllowed);
+        // One this account cannot see is refused.
+        QVERIFY(!repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/missing", {}, false, done); }).ok);
+        QVERIFY(!repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/open", "bad..branch", true, done); }).ok);
+        // Creating one makes it private.
+        result = repositoryDo([&](auto done) { core.profileRepository.create("my-omarchy", done); });
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(core.profileRepository.connection().fullName(), QString("tester/my-omarchy"));
+        QCOMPARE(core.profileRepository.connection().visibility, QString("private"));
+        QVERIFY(m.s.calls().join("\n").contains("gh repo create my-omarchy --private"));
+    }
+
+    void profileCliSavesAndPublishes() {
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        ProfileMachine a;
+        useGitHub(a.s, hub.path());
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", "--setting", "power.idle.lock"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "save", "--message", "First"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "history", "--json"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "publish"}), 1);  // Not connected yet.
+        QCOMPARE(Cli::run(a.s.env, {"profile", "connect", "tester/my-omarchy"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "publish"}), 0);
+        QVERIFY(!gitIn(remote, {"rev-parse", "main"}).isEmpty());
+        QCOMPARE(Cli::run(a.s.env, {"profile", "status"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "inspect", "--revision", "saved"}), 0);
+        ProfileMachine b;
+        useGitHub(b.s, hub.path());
+        QCOMPARE(Cli::run(b.s.env, {"profile", "connect", "https://github.com/tester/my-omarchy"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", "--revision", "published"}), 1);  // Not fetched yet.
+        QCOMPARE(Cli::run(b.s.env, {"profile", "fetch"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", "--revision", "published"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "resolve", "--use-published", "--keep-mine"}), 1);
     }
 
     void profileThemeInstallFailuresAreContained() {

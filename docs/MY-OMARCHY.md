@@ -1,6 +1,6 @@
 # My Omarchy: contract, audit, and progress
 
-Status, November 12, 2026: P0 (contract and portability audit) is recorded here, and P1 (local settings round trip) is implemented and tested against fixtures. P2 (apps) is implemented: repository installs, reviewed AUR builds, explicit removals, and default apps that wait for their app, fixture-tested and checked against real pacman in a disposable root. P3 (desktop choices and files) is implemented and fixture-tested: themes installed from Git, the background with its file, the bar's layout and Omarchy's plugin switches, the dock, launcher changes with their icon files, file associations, the shortcuts and window rules this app owns, and Ghostty and Alacritty configuration files. A dry-run capture of the theme and bar ran on this machine; nothing has been restored on a real desktop yet. The milestones P0 to P5 are those of the My Omarchy implementation plan.
+Status, November 12, 2026: P0 (contract and portability audit) is recorded here, and P1 (local settings round trip) is implemented and tested against fixtures. P2 (apps) is implemented: repository installs, reviewed AUR builds, explicit removals, and default apps that wait for their app, fixture-tested and checked against real pacman in a disposable root. P3 (desktop choices and files) is implemented and fixture-tested: themes installed from Git, the background with its file, the bar's layout and Omarchy's plugin switches, the dock, launcher changes with their icon files, file associations, the shortcuts and window rules this app owns, and Ghostty and Alacritty configuration files. P4 (versions and GitHub) is implemented and tested with real git against local repositories standing in for GitHub: saving versions, history and differences, connecting or creating a private repository, fetching, publishing, and restoring a chosen version. On this machine, a capture, save, and plan from the saved version ran with the app's own folders in a scratch location; nothing has been restored on a real desktop, and nothing has been published to github.com yet. The milestones P0 to P5 are those of the My Omarchy implementation plan.
 
 Evidence base: a read-only audit of this machine. `pacman -Q` reports `omarchy` and `omarchy-settings` 4.5.0-3 and `hyprland` 0.56.2-4, on x86_64. `/usr/share/omarchy/version` reads `4.0.0.alpha` on this release, so it is never used; the version comes from `omarchy version`, as Control already does.
 
@@ -180,7 +180,21 @@ Protected: the base system, kernels and firmware, the bootloader and snapshots, 
 
 After the run, what each restored record reads as is kept as this computer's agreed value, for later plans to compare with.
 
-## 9. Command line
+## 9. Versions and GitHub (P4)
+
+**Where things live.** This computer's own profile is a plain folder, `~/.local/share/omarchy-control/profiles/my-omarchy/`, and its history a bare Git repository beside it, `my-omarchy.git`. The connection is recorded in `~/.config/omarchy-control/profile-repository.json`. A version read back for planning goes to a private folder under `~/.local/state/omarchy-control/profiles/revisions/`. Plans, runs, and journals stay on this computer and never enter the repository. A capture with no folder named uses this computer's profile, and starts from the newest version saved here, or published, so it never begins again from nothing.
+
+**Saved and published are separate.** `profile save` makes a version from the profile's reviewed files alone: `profile.json`, the assets it names, and its configuration files, each checked against its digest first. Nothing is checked out and nothing runs: the files are hashed into a temporary index of their own, written as a tree, and committed. Saving the same profile again makes no version, and saving never uses the network. `profile publish` fetches first, then pushes only when GitHub's newest version is behind this computer's, which is a fast-forward; nothing is ever forced. When the push fails, offline or refused, the versions stay saved here, to publish later.
+
+**When both sides changed.** Publishing stops, and nothing is rewritten, merged, or forced. `profile resolve --keep-mine` saves this computer's files as a new version with both histories behind it, which publishing then adds. `--use-published` takes the published version here; this computer's newest, with any unsaved changes, is first kept as a version of its own under `refs/omarchy-control/kept`, never thrown away. Fetching never moves this computer's versions on its own, so a capture can never silently drop what another computer published.
+
+**A downloaded version is input, not code.** Git runs with none of the user's configuration (no global or system config), no hooks, no attributes or filters, only https, objects checked as they arrive, no submodules, and no prompts. A version is read blob by blob, never checked out. Before anything is read, every entry is checked, and the version is refused whole if it holds any path but `profile.json`, `assets/sha256/<digest>`, and `files/<adapter>/<name>`; any link, program, or submodule; or anything over the size limits. What is read is then validated as any profile is, digests included, before it can be planned, and a refused version leaves nothing behind.
+
+**GitHub.** `profile connect owner/name`, or its github.com address, records the repository and branch. With GitHub CLI signed in, it also reads the repository's visibility and the account's no-reply address, which versions carry instead of a real one; without it, they carry a placeholder name and address. A public repository is refused unless `--allow-public` says so. `profile connect --create <name>` creates a private repository with `gh repo create --private`. Signing in stays with GitHub CLI: the managed repository asks `gh auth git-credential` for github.com, as `gh auth setup-git` would, without touching the user's own Git setup, and Control never asks for or stores a token. GitHub CLI keeps its own token, in plain text where no keyring is available; nothing here claims it is encrypted. Only connect, fetch, and publish use the network.
+
+**Restoring a version.** `profile plan --revision published`, `saved`, or a commit from `profile history` reads that version back and plans it like any profile; the plan records that folder, so applying it restores exactly what was reviewed. `profile diff <version> [<version>]` lists what one changes from another, setting by setting, app by app, and record by record.
+
+## 10. Command line
 
 ```sh
 omarchy-control profile capture ~/my-omarchy --category appearance --category idle
@@ -190,11 +204,23 @@ omarchy-control profile plan ~/my-omarchy [--use-saved <id|all>] [--keep-local <
 omarchy-control profile apply <plan-id> --yes [--partial]
 omarchy-control profile resume <run-id>
 omarchy-control profile status
+
+omarchy-control profile capture --category appearance       # This computer's own profile
+omarchy-control profile save --message "New laptop"
+omarchy-control profile connect --create my-omarchy          # Or: connect owner/name
+omarchy-control profile publish
+omarchy-control profile history [--published]
+omarchy-control profile diff published working
+
+# On another computer
+omarchy-control profile connect owner/my-omarchy
+omarchy-control profile fetch
+omarchy-control profile plan --revision published
 ```
 
 Apps take `--app`, `--exclude-app`, `--forget-app`, `--suggested-apps`, and `--resolve-aur`, and desktop records and files the options in section 8. Settings: `--category` takes appearance, windows, desktop, input, idle, defaults, or language; `--setting <id>` names one setting; `--suggested` takes the portable settings that differ from a fresh installation by the rules above; `--inherit <id>` saves "use the default"; `--forget <id>` stops remembering one; `--dry-run` shows the changes without writing. A first capture needs a selection; nothing is captured in bulk by default. What a category holds but a profile cannot carry is listed with its reason. A saved setting whose current value cannot be read stays as saved and is flagged. Each command takes `--json`, and exits 0 when the request was fulfilled and 1 otherwise.
 
-## 10. Fixture matrix
+## 11. Fixture matrix
 
 | Gate requirement | Test |
 | --- | --- |
@@ -229,10 +255,16 @@ Apps take `--app`, `--exclude-app`, `--forget-app`, `--suggested-apps`, and `--r
 | P3: a theme already here is never replaced; a failed clone is taken back and blocks what needs it; a changed installer pauses | `profileNeverReplacesAThemeAlreadyHere`, `profileThemeInstallFailuresAreContained` |
 | P3: the bar's layout and plugin switches, keeping widgets installed separately and options of one's own | `profileCarriesTheBarLayout` |
 | P3: a widget or plugin this Omarchy lacks, and a shell that is not running | `profileBarAndPluginsRefuseWhatIsNotHere` |
+| P4: versions saved without the network, a no-op save, history, differences, and a version read back | `profileRepositorySavesVersionsWithoutTheNetwork` |
+| P4: save on A, publish to a private repository, fetch on a fresh B, restore the same preferences, and add to the history from B | `profileRepositoryRoundTripsThroughGitHub` |
+| P4: remote divergence stops publishing; keeping either side loses nothing; an offline or failed publish keeps the local versions | `profileRepositoryNeverLosesAVersion` |
+| P4: disallowed Git content, oversized files, unknown schemas, and asset integrity failures | `profileRepositoryRefusesWhatAProfileNeverHolds` |
+| P4: only GitHub; a public repository only when allowed; a created one is private | `profileRepositoryConnectsOnlyToGitHub` |
+| P4: command line end to end | `profileCliSavesAndPublishes` |
 
 The tests use fake commands, including a stateful fake pacman, and `tools/profile-package-check.sh` repeats the package side with real pacman in a disposable root. Every test machine is a separate sandbox with its own home folder, so each restore lands under a different home path than its capture, as the P3 gate asks. The P1 gate also asks for real settings behavior: extending `tools/nested-check.py` to restore a profile into the nested session is the next verification step there. On this machine, a dry-run capture of apps and a plan of a package-only profile also ran against the system's own pacman without root, changing nothing.
 
-## 11. Coverage by adapter
+## 12. Coverage by adapter
 
 | Adapter | Capture | Plan | Apply | Verify | Recovery | State |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -250,7 +282,8 @@ The tests use fake commands, including a stateful fake pacman, and `tools/profil
 | Bar layout | Omarchy's own widgets, data options | yes | `shell.json`, then reload | read back | the file is backed up | P3, fixture-tested |
 | Plugins switched off | from the shell | yes | Omarchy's plugin commands | the shell's list | the file is backed up | P3, fixture-tested |
 | Ghostty and Alacritty files | reviewed contents | yes | atomic write | digest | the file is backed up | P3, fixture-tested |
-| Git and GitHub | none | none | none | none | none | P4 |
+| Versions on this computer | the reviewed files only | any version, read back and validated | commit, never a checkout | the version read back | nothing lost: set-aside versions are kept | P4, tested with real git |
+| GitHub | connect, fetch | fetch first | fast-forward push only | the published head | a failed publish keeps local versions | P4, tested with local repositories and a fake GitHub CLI |
 | Window | none | none | none | none | none | P5 |
 
 ### Test strategy for the remaining categories
@@ -262,10 +295,10 @@ The tests use fake commands, including a stateful fake pacman, and `tools/profil
 | Themes, bar layout, and plugins | ProfileDesktop over Omarchy's own commands and `shell.json` | Fixtures with a fake shell and fake git, then the nested session |
 | Backgrounds and icon assets | profilefiles | Fixtures for digests, containment, links, and oversized files |
 | Ghostty and Alacritty configs | profilefiles adapters | Fixtures for includes, executable directives, and the order against font and text size |
-| GitHub | ProfileRepository over `git` and `gh` | Local bare repositories and a fake `gh`; one private test repository for the release gate |
+| GitHub | ProfileRepository over `git` and `gh` | Local bare repositories and a fake `gh`, done; one private test repository for the release gate, still to do |
 | Whole restore | All of the above | A disposable Omarchy VM |
 
-## 12. Known limits so far
+## 13. Known limits so far
 
 - There is no window yet (P5). The window's own controls already respect a restore running elsewhere, because every change goes through the coordinator.
 - Font, default apps, and language have no evidenced stock value, so without a baseline they need `--use-saved` on a fresh installation.
@@ -280,3 +313,7 @@ The tests use fake commands, including a stateful fake pacman, and `tools/profil
 - On a widget already on the bar, options a profile does not carry stay as they are here, while the ones it carries are set to the saved ones, which removes one the saved widget did not have.
 - Capture records file associations for the window's seven everyday types only.
 - The window cannot restore apps itself. Launching the command-line restore in a terminal, which then holds the lease and survives the window closing, is the P5 route.
+- GitHub itself is not exercised yet: the tests use local bare repositories and a fake GitHub CLI. The release gate's round trip through a private test repository on github.com is still to do, and needs a GitHub account to run it with.
+- A refused sign-in is recognized from git's own message, which covers GitHub's answers over https, though perhaps not every proxy's.
+- One profile per repository, on one branch.
+- Versions read back for planning stay under the state folder until read again; nothing prunes them yet.

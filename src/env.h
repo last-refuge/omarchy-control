@@ -22,6 +22,9 @@ struct Env {
     QString selfBinary;     // Path of this executable, for the display watchdog.
     QProcessEnvironment process;
     bool enforceCompat = false;  // Off in sandboxes, whose commands are all fakes.
+    // Where profile repositories are published. Sandboxes point it at local bare
+    // repositories, so no test ever reaches GitHub.
+    QString gitHub = QStringLiteral("https://github.com");
 
     static Env system();
     static Env sandbox(const QString &root, const QString &binDirectory);

@@ -12,6 +12,7 @@
 #include "profilecapture.h"
 #include "profiledesktop.h"
 #include "profileplanner.h"
+#include "profilerepository.h"
 #include "profilerunner.h"
 #include "settingsengine.h"
 
@@ -33,6 +34,7 @@ struct AppCore {
     ProfileCapture profileCapture;
     ProfilePlanner profilePlanner;
     ProfileRunner profileRunner;
+    ProfileRepository profileRepository;  // Versions, saved here and published to GitHub.
 
     explicit AppCore(const Env &environment, const QString &catalogDirectory = QStringLiteral(":/data"))
         : env(environment),
@@ -48,7 +50,8 @@ struct AppCore {
           profileDesktop(&catalog, &runner, &capabilities, &coordinator, &compat, &launchers),
           profileCapture(&catalog, &engine, &capabilities, &packages, env),
           profilePlanner(&catalog, &engine, &capabilities, &packages, env),
-          profileRunner(&catalog, &engine, &coordinator, &packages, env) {
+          profileRunner(&catalog, &engine, &coordinator, &packages, env),
+          profileRepository(&runner, env) {
         engine.setIconThemes(&icons);
         engine.setLaunchers(&launchers);
         profileCapture.setDesktop(&profileDesktop);

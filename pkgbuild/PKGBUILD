@@ -10,7 +10,9 @@ optdepends=('omarchy: the desktop this manages'
             'hyprland: window, input, and display settings'
             'networkmanager: network settings'
             'pipewire-pulse: sound settings'
-            'bluez-utils: Bluetooth settings')
+            'bluez-utils: Bluetooth settings'
+            'git: saving versions of My Omarchy profiles'
+            'github-cli: publishing My Omarchy profiles to GitHub')
 makedepends=('gcc' 'make')
 options=('!debug')
 source=()
