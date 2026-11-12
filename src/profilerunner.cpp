@@ -5,7 +5,9 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHash>
+#include <QElapsedTimer>
 #include <QJsonArray>
+#include <QThread>
 #include <memory>
 
 namespace {
@@ -18,10 +20,16 @@ QString now() {
 
 QJsonObject ProfileRunItem::toJson() const {
     QJsonObject o{{"id", id}, {"kind", kind}, {"target", target}, {"label", label}, {"mode", mode}, {"state", state}, {"planned", planned}};
-    if (mode == QLatin1String("set"))
+    if (mode == QLatin1String("set") || kind == QLatin1String("package"))
         o["desired"] = desired;
     if (plannedOverride)
         o["plannedOverride"] = true;
+    if (!action.isEmpty())
+        o["action"] = action;
+    if (!packages.isEmpty())
+        o["packages"] = QJsonArray::fromStringList(packages);
+    if (!needs.isEmpty())
+        o["needs"] = QJsonArray::fromStringList(needs);
     if (!transaction.isEmpty())
         o["transaction"] = transaction;
     if (!settled.isEmpty())
@@ -41,6 +49,11 @@ ProfileRunItem ProfileRunItem::fromJson(const QJsonObject &o) {
     item.desired = o.value("desired").toString();
     item.planned = o.value("planned").toString();
     item.plannedOverride = o.value("plannedOverride").toBool();
+    item.action = o.value("action").toString();
+    for (const QJsonValue &value : o.value("packages").toArray())
+        item.packages << value.toString();
+    for (const QJsonValue &value : o.value("needs").toArray())
+        item.needs << value.toString();
     item.state = o.value("state").toString();
     item.transaction = o.value("transaction").toString();
     item.settled = o.value("settled").toString();
@@ -57,7 +70,8 @@ int ProfileRun::count(const QString &itemState) const {
 }
 
 bool ProfileRun::resumable() const {
-    return state == QLatin1String("running") || state == QLatin1String("cancelled") || state == QLatin1String("interrupted");
+    return state == QLatin1String("running") || state == QLatin1String("cancelled") || state == QLatin1String("interrupted")
+           || state == QLatin1String("paused");
 }
 
 QJsonObject ProfileRun::toJson() const {
@@ -95,8 +109,9 @@ ProfileRun ProfileRun::fromJson(const QJsonObject &o) {
     return run;
 }
 
-ProfileRunner::ProfileRunner(const Catalog *catalog, SettingsEngine *engine, ChangeCoordinator *coordinator, const Env &env, QObject *parent)
-    : QObject(parent), m_catalog(catalog), m_engine(engine), m_coordinator(coordinator), m_env(env) {}
+ProfileRunner::ProfileRunner(const Catalog *catalog, SettingsEngine *engine, ChangeCoordinator *coordinator, PackageProvider *packages,
+                             const Env &env, QObject *parent)
+    : QObject(parent), m_catalog(catalog), m_engine(engine), m_coordinator(coordinator), m_packages(packages), m_env(env) {}
 
 bool ProfileRunner::persist(const ProfileRun &run, QString *error) const {
     return ProfileStore::writeJson(ProfileStore::runsDir(m_env) + "/" + run.id + ".json", run.toJson(), error);
@@ -133,6 +148,8 @@ QList<ProfileRun> ProfileRunner::runs(int limit) const {
 
 ProfilePlanItem ProfileRunner::asPlanItem(const ProfileRunItem &item) const {
     ProfilePlanItem plan;
+    plan.kind = item.kind;
+    plan.action = item.action;
     plan.target = item.target;
     plan.mode = item.mode;
     plan.desired = item.desired;
@@ -168,7 +185,7 @@ void ProfileRunner::apply(const ProfilePlan &plan, Done done) {
     run->profileDigest = plan.profileDigest;
     run->leftOut = plan.leftOut();
     for (const ProfilePlanItem &item : plan.items) {
-        if (!item.willRun() || item.kind != QLatin1String("setting"))
+        if (!item.willRun() || (item.kind != QLatin1String("setting") && item.kind != QLatin1String("package")))
             continue;
         ProfileRunItem step;
         step.id = item.id;
@@ -177,7 +194,11 @@ void ProfileRunner::apply(const ProfilePlan &plan, Done done) {
         step.label = item.label;
         step.mode = item.mode;
         step.desired = item.desired;
-        step.planned = item.current;
+        step.action = item.action;
+        step.packages = item.transaction;
+        step.needs = item.needs;
+        // A package's state is what the plan saw of it; a setting's, its value.
+        step.planned = item.kind == QLatin1String("package") ? item.currentStatus : item.current;
         step.plannedOverride = item.currentOverride;
         run->items << step;
     }
@@ -215,21 +236,32 @@ void ProfileRunner::resume(const QString &runId, Done done) {
     start(run, true, done);
 }
 
-void ProfileRunner::readAll(std::shared_ptr<ProfileRun> run, std::function<void(QHash<QString, ReadResult>)> done) {
+void ProfileRunner::readAll(std::shared_ptr<ProfileRun> run, std::function<void(const Observed &)> done) {
     QStringList targets;
-    for (const ProfileRunItem &item : run->items)
-        if (!targets.contains(item.target))
+    bool packages = false;
+    for (const ProfileRunItem &item : run->items) {
+        if (item.kind == QLatin1String("package"))
+            packages = true;
+        else if (!targets.contains(item.target))
             targets << item.target;
-    auto results = std::make_shared<QHash<QString, ReadResult>>();
+    }
+    auto observed = std::make_shared<Observed>();
     auto next = std::make_shared<std::function<void(int)>>();
-    *next = [this, targets, results, done, next](int index) {
+    *next = [this, targets, packages, observed, done, next](int index) {
         if (index >= targets.size()) {
-            done(*results);
+            if (packages && m_packages) {
+                m_packages->readInventory([observed, done](const PackageProvider::Inventory &inventory) {
+                    observed->packages = inventory;
+                    done(*observed);
+                });
+            } else {
+                done(*observed);
+            }
             *next = nullptr;
             return;
         }
-        m_engine->read(targets[index], [results, targets, index, next](const ReadResult &read) {
-            results->insert(targets[index], read);
+        m_engine->read(targets[index], [observed, targets, index, next](const ReadResult &read) {
+            observed->settings.insert(targets[index], read);
             (*next)(index + 1);
         });
     };
@@ -265,9 +297,38 @@ void ProfileRunner::start(std::shared_ptr<ProfileRun> run, bool resuming, Done d
         return;
     }
     // Everything is read again under the lease: the review was of what the plan saw.
-    readAll(run, [this, run, resuming, done, refuse](const QHash<QString, ReadResult> &reads) {
+    readAll(run, [this, run, resuming, done, refuse](const Observed &observed) {
+        const QHash<QString, ReadResult> &reads = observed.settings;
         QStringList stale;
         for (ProfileRunItem &item : run->items) {
+            if (item.kind == QLatin1String("package")) {
+                if (item.state == QLatin1String("failed") || item.state == QLatin1String("blocked") || item.state == QLatin1String("skipped"))
+                    continue;
+                if (!observed.packages.ok) {
+                    stale << tr("installed apps could not be read (%1)").arg(observed.packages.error);
+                    continue;
+                }
+                const QString state = ProfilePlanner::packageState(observed.packages, item.target);
+                const bool wasUnderway = item.state == QLatin1String("running") || item.state == QLatin1String("interrupted");
+                if (ProfilePlanner::packageSatisfied(asPlanItem(item), state)) {
+                    if (item.state != QLatin1String("verified"))
+                        item.message = wasUnderway ? tr("Found already done when the restore resumed.") : tr("Already as saved.");
+                    item.state = QStringLiteral("verified");
+                    item.settled = state;
+                } else if (item.state == QLatin1String("verified")) {
+                    item.message = tr("Changed again after this restore verified it, and was left as it is.");
+                } else if (state == item.planned) {
+                    item.state = QStringLiteral("pending");
+                    if (wasUnderway)
+                        item.message = tr("Not done when the restore stopped, so it runs again.");
+                } else if (!resuming) {
+                    stale << item.label;
+                } else {
+                    item.state = wasUnderway ? QStringLiteral("interrupted") : QStringLiteral("skipped");
+                    item.message = tr("Changed since the plan was made, so it was left as it is.");
+                }
+                continue;
+            }
             const CatalogEntry *entry = m_catalog->find(item.target);
             const ReadResult read = reads.value(item.target);
             const ProfilePlanItem planned = asPlanItem(item);
@@ -346,6 +407,23 @@ void ProfileRunner::execute(std::shared_ptr<ProfileRun> run, int index, Done don
     // rather than fail for being second.
     m_coordinator->waitUntilIdle(30000);
     ProfileRunItem &item = run->items[index];
+    // What this depends on has to have worked first, as a default app needs its app.
+    for (const QString &need : item.needs) {
+        for (const ProfileRunItem &needed : run->items) {
+            if (needed.id != need || needed.state == QLatin1String("verified"))
+                continue;
+            item.state = QStringLiteral("blocked");
+            item.message = tr("Needs %1, which was not installed.").arg(needed.label);
+            persist(*run);
+            emit itemChanged(*run, index);
+            execute(run, index + 1, done);
+            return;
+        }
+    }
+    if (item.kind == QLatin1String("package")) {
+        executePackages(run, index, done);
+        return;
+    }
     item.state = QStringLiteral("running");
     item.message.clear();
     persist(*run);
@@ -374,8 +452,147 @@ void ProfileRunner::execute(std::shared_ptr<ProfileRun> run, int index, Done don
         m_engine->apply(item.target, item.desired, finished, QStringLiteral("set"), run->id);
 }
 
+void ProfileRunner::executePackages(std::shared_ptr<ProfileRun> run, int index, Done done) {
+    // Every app with the same change goes in one transaction: one question from sudo and
+    // one from pacman, which shows the whole transaction before doing anything.
+    // An AUR build goes alone: one that fails or is cancelled leaves the others alone.
+    const QString action = run->items[index].action;
+    QList<int> batch;
+    QStringList names, planned;
+    for (int i = index; i < run->items.size(); ++i) {
+        const ProfileRunItem &step = run->items[i];
+        if (step.kind != QLatin1String("package") || step.action != action || step.state != QLatin1String("pending"))
+            continue;
+        if (action == QLatin1String("build") && i != index)
+            continue;
+        batch << i;
+        names << step.target;
+        for (const QString &package : step.packages)
+            if (!planned.contains(package))
+                planned << package;
+    }
+    const auto settle = [this, run, batch, index, done](const QString &state, const QString &message) {
+        for (int i : batch) {
+            run->items[i].state = state;
+            run->items[i].message = message;
+        }
+        persist(*run);
+        for (int i : batch)
+            emit itemChanged(*run, i);
+        execute(run, index + 1, done);
+    };
+    if (!m_packageTerminal || !m_packages) {
+        settle(QStringLiteral("blocked"), tr("Apps are installed and removed in a terminal, where sudo and pacman can ask: restore from the command line."));
+        return;
+    }
+    m_coordinator->waitUntilIdle(30000);
+    // pacman's own lock is waited for, never removed. If it stays, the run pauses here and
+    // resumes later from this step.
+    QElapsedTimer waited;
+    waited.start();
+    while (m_packages->pacmanBusy() && waited.elapsed() < m_pacmanWaitMs)
+        QThread::msleep(250);
+    if (m_packages->pacmanBusy()) {
+        run->state = QStringLiteral("paused");
+        run->message = tr("Another package operation is still running. Resume this restore when it finishes.");
+        conclude(run, done);
+        return;
+    }
+    if (action == QLatin1String("mark-explicit") || action == QLatin1String("build")) {
+        transact(run, batch, index, done);
+        return;
+    }
+    // What pacman would do now has to be what was reviewed. Newer packages, or a dependency
+    // that appeared or went, make it a different transaction, which needs a new plan.
+    const auto compare = [this, run, batch, index, done, planned, settle](const PackageProvider::Preview &preview) {
+        QStringList now = preview.packages, before = planned;
+        now.sort();
+        before.sort();
+        if (!preview.ok)
+            settle(QStringLiteral("failed"), tr("pacman refuses this now: %1").arg(preview.error));
+        else if (now != before)
+            settle(QStringLiteral("failed"), tr("What this would install or remove changed since the plan was made. Make a new plan."));
+        else
+            transact(run, batch, index, done);
+    };
+    if (action == QLatin1String("install"))
+        m_packages->previewInstall(names, compare);
+    else
+        m_packages->previewRemoval(names, compare);
+}
+
+void ProfileRunner::transact(std::shared_ptr<ProfileRun> run, QList<int> batch, int index, Done done) {
+    QStringList names;
+    for (int i : batch)
+        names << run->items[i].target;
+    const QString action = run->items[batch.first()].action;
+    // On disk before pacman starts, so a run that dies during it is settled by reading.
+    for (int i : batch) {
+        run->items[i].state = QStringLiteral("running");
+        run->items[i].message.clear();
+    }
+    persist(*run);
+    for (int i : batch)
+        emit itemChanged(*run, i);
+
+    ChangeCoordinator::Request request;
+    request.settingId = QStringLiteral("packages");
+    request.label = action == QLatin1String("install")   ? tr("Install %1").arg(names.join(", "))
+                    : action == QLatin1String("build")  ? tr("Build %1 from the AUR").arg(names.join(", "))
+                    : action == QLatin1String("remove") ? tr("Remove %1").arg(names.join(", "))
+                                                        : tr("Keep %1 as wanted").arg(names.join(", "));
+    request.kind = QStringLiteral("action");
+    request.after = names.join(' ');
+    // pacman's changes are not undone automatically, and its hooks can do more besides.
+    request.recovery = QStringLiteral("no-undo");
+    request.nothingToRestore = true;
+    request.runId = run->id;
+    request.apply = [this, names, action](ChangeCoordinator::Done finished) {
+        QString error;
+        const int code = action == QLatin1String("install")  ? m_packages->install(names, &error)
+                         : action == QLatin1String("build")  ? m_packages->buildFromAur(names.first(), &error)
+                         : action == QLatin1String("remove") ? m_packages->remove(names, &error)
+                                                             : m_packages->markExplicit(names, &error);
+        if (code == 0)
+            finished(true, {});
+        else
+            finished(false, !error.isEmpty() ? error : tr("pacman did not finish (exit status %1).").arg(code));
+    };
+    m_coordinator->submit(std::move(request), [this, run, batch, index, done](const Transaction &tx) {
+        // Each app is settled by reading it, whatever the exit status said: a refused
+        // password changes nothing, and a transaction can stop partway.
+        m_packages->readInventory([this, run, batch, index, done, tx](const PackageProvider::Inventory &inventory) {
+            QJsonObject agreed;
+            for (int i : batch) {
+                ProfileRunItem &step = run->items[i];
+                step.transaction = tx.id;
+                if (!inventory.ok) {
+                    step.state = QStringLiteral("interrupted");
+                    step.message = tr("Its state could not be read afterwards: %1").arg(inventory.error);
+                    continue;
+                }
+                const QString state = ProfilePlanner::packageState(inventory, step.target);
+                step.settled = state;
+                if (ProfilePlanner::packageSatisfied(asPlanItem(step), state)) {
+                    step.state = QStringLiteral("verified");
+                    step.message.clear();
+                    agreed["package:" + step.target] = QJsonObject{{"mode", step.mode}, {"at", now()}, {"by", QStringLiteral("restore")}, {"run", run->id}};
+                } else {
+                    step.state = QStringLiteral("failed");
+                    step.message = tx.phase == QLatin1String("committed") ? tr("pacman finished, but it is not as wanted.") : tx.message;
+                }
+            }
+            ProfileStore::recordBaseline(m_env, agreed);
+            persist(*run);
+            for (int i : batch)
+                emit itemChanged(*run, i);
+            execute(run, index + 1, done);
+        });
+    });
+}
+
 void ProfileRunner::conclude(std::shared_ptr<ProfileRun> run, Done done) {
-    if (run->state != QLatin1String("cancelled")) {
+    if (run->state != QLatin1String("cancelled") && run->state != QLatin1String("paused")) {
         const int problems = run->count("failed") + run->count("interrupted") + run->count("blocked") + run->count("skipped");
         run->state = problems > 0       ? QStringLiteral("incomplete")
                      : run->leftOut > 0 ? QStringLiteral("partial")
@@ -385,11 +602,11 @@ void ProfileRunner::conclude(std::shared_ptr<ProfileRun> run, Done done) {
             run->message = run->leftOut > 0 ? tr("Nothing needed to change. %1 items were left out of this restore.").arg(run->leftOut)
                                             : tr("Nothing needed to change: this computer already matches the profile.");
         else if (run->state == QLatin1String("completed"))
-            run->message = tr("Restored and verified all %1 settings.").arg(verified);
+            run->message = tr("Restored and verified all %1 changes.").arg(verified);
         else if (run->state == QLatin1String("partial"))
-            run->message = tr("Restored and verified %1 settings. %2 more were left out of this restore.").arg(verified).arg(run->leftOut);
+            run->message = tr("Restored and verified %1 changes. %2 more were left out of this restore.").arg(verified).arg(run->leftOut);
         else
-            run->message = tr("Restored and verified %1 of %2 settings. The rest need attention.").arg(verified).arg(run->items.size());
+            run->message = tr("Restored and verified %1 of %2 changes. The rest need attention.").arg(verified).arg(run->items.size());
     }
     run->finishedAt = now();
     persist(*run);

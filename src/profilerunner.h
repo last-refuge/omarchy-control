@@ -7,6 +7,7 @@
 
 #include "catalog.h"
 #include "changecoordinator.h"
+#include "packageprovider.h"
 #include "profileplanner.h"
 #include "settingsengine.h"
 
@@ -14,7 +15,11 @@
 // the next step, so a run that dies can be picked up again by reading what happened.
 struct ProfileRunItem {
     QString id, kind, target, label, mode, desired;
-    // What the plan saw, which an operation must still find before it changes anything.
+    QString action;            // For a package: install, mark-explicit, or remove.
+    QStringList packages;      // For a package: what pacman said it would install or remove.
+    QStringList needs;         // Items that must have been verified first.
+    // What the plan saw, which an operation must still find before it changes anything. For
+    // a package: "explicit", "dependency", or "missing".
     QString planned;
     bool plannedOverride = false;
     // pending, running, verified, failed, blocked, skipped, interrupted
@@ -29,7 +34,8 @@ struct ProfileRunItem {
 
 struct ProfileRun {
     QString id, planId, directory, profileName, profileDigest;
-    // running, completed, partial, incomplete, cancelled, interrupted
+    // running, completed, partial, incomplete, cancelled, paused (waiting for another
+    // package operation), interrupted
     QString state;
     QString startedAt, finishedAt, message;
     int leftOut = 0;  // Plan items the review left out: blocked, manual, or kept local.
@@ -50,7 +56,14 @@ class ProfileRunner : public QObject {
 public:
     using Done = std::function<void(const ProfileRun &)>;
 
-    ProfileRunner(const Catalog *catalog, SettingsEngine *engine, ChangeCoordinator *coordinator, const Env &env, QObject *parent = nullptr);
+    ProfileRunner(const Catalog *catalog, SettingsEngine *engine, ChangeCoordinator *coordinator, PackageProvider *packages, const Env &env,
+                  QObject *parent = nullptr);
+
+    // Package changes run attached to a terminal, where sudo and pacman can ask. Only the CLI
+    // turns this on; elsewhere they are left for a restore started from a terminal.
+    void setPackageTerminal(bool attached) { m_packageTerminal = attached; }
+    // How long to wait for another package operation before pausing the run.
+    void setPacmanWait(int milliseconds) { m_pacmanWaitMs = milliseconds; }
 
     // Refuses before any change when the plan is stale, the profile changed since it was
     // planned, or another restore holds the lease. `run.state` is empty then, and
@@ -70,15 +83,24 @@ signals:
 private:
     void start(std::shared_ptr<ProfileRun> run, bool resuming, Done done);
     void execute(std::shared_ptr<ProfileRun> run, int index, Done done);
+    void executePackages(std::shared_ptr<ProfileRun> run, int index, Done done);
+    void transact(std::shared_ptr<ProfileRun> run, QList<int> batch, int index, Done done);
     void conclude(std::shared_ptr<ProfileRun> run, Done done);
     bool persist(const ProfileRun &run, QString *error = nullptr) const;
-    void readAll(std::shared_ptr<ProfileRun> run, std::function<void(QHash<QString, ReadResult>)> done);
+    struct Observed {
+        QHash<QString, ReadResult> settings;
+        PackageProvider::Inventory packages;
+    };
+    void readAll(std::shared_ptr<ProfileRun> run, std::function<void(const Observed &)> done);
     ProfilePlanItem asPlanItem(const ProfileRunItem &item) const;
 
     const Catalog *m_catalog;
     SettingsEngine *m_engine;
     ChangeCoordinator *m_coordinator;
+    PackageProvider *m_packages;
     Env m_env;
     bool m_cancelled = false;
     bool m_running = false;
+    bool m_packageTerminal = false;
+    int m_pacmanWaitMs = 60000;
 };

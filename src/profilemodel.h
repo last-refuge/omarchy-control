@@ -19,6 +19,20 @@ struct ProfileSetting {
     bool operator!=(const ProfileSetting &other) const { return !(*this == other); }
 };
 
+// One app a profile asks for, or explicitly does not want. Leaving an app out of a
+// profile never removes it: only "absent" does.
+struct ProfilePackage {
+    QString name;
+    QString source;  // repository, aur, manual
+    QString intent;  // present, absent
+    QString repository;
+    bool operator==(const ProfilePackage &other) const {
+        return name == other.name && source == other.source && intent == other.intent && repository == other.repository;
+    }
+    QJsonObject toJson() const;
+    static ProfilePackage fromJson(const QJsonObject &object);
+};
+
 // profile.json: the choices that make an Omarchy machine someone's own. It records
 // what is wanted; the live machine stays the authority on what is in effect. Sections
 // this version cannot restore yet are still validated, and kept exactly as they are
@@ -33,6 +47,12 @@ struct Profile {
     QJsonObject desktop;
     QJsonArray files;
     QJsonArray assets;
+
+    QList<ProfilePackage> packageList() const;
+    ProfilePackage package(const QString &name) const;
+    bool hasPackage(const QString &name) const { return !package(name).name.isEmpty(); }
+    void setPackage(const ProfilePackage &package);
+    void removePackage(const QString &name);
 
     QJsonObject toJson() const;
     // Canonical bytes: sorted keys, stable record order, one trailing newline. The same
@@ -67,6 +87,8 @@ struct ProfileTraits {
     // The categories a capture can select, in the order they are shown.
     static QStringList categories();
     static QString describeActivation(const QString &key);
+    // The package a default-app choice opens, from the catalog: "" when it names none.
+    static QString packageFor(const CatalogEntry &entry, const QString &value, QString *source = nullptr);
 };
 
 namespace ProfileModel {
@@ -94,6 +116,7 @@ QString manifestPath(const QString &directory);
 // The reviewed adapters a profile's files may name. Profiles supply data, never code.
 QStringList fileAdapters();
 bool isSettingId(const QString &id);
+bool isPackageName(const QString &name);
 
 }  // namespace ProfileModel
 

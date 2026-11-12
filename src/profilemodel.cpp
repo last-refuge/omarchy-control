@@ -445,6 +445,44 @@ QJsonArray sortedBy(QJsonArray array, const std::function<QString(const QJsonObj
 
 }  // namespace
 
+QJsonObject ProfilePackage::toJson() const {
+    QJsonObject object{{"name", name}, {"source", source}, {"intent", intent}};
+    if (!repository.isEmpty())
+        object["repository"] = repository;
+    return object;
+}
+
+ProfilePackage ProfilePackage::fromJson(const QJsonObject &object) {
+    return ProfilePackage{object.value("name").toString(), object.value("source").toString(), object.value("intent").toString(),
+                          object.value("repository").toString()};
+}
+
+QList<ProfilePackage> Profile::packageList() const {
+    QList<ProfilePackage> list;
+    for (const QJsonValue &value : packages)
+        list << ProfilePackage::fromJson(value.toObject());
+    std::sort(list.begin(), list.end(), [](const ProfilePackage &a, const ProfilePackage &b) { return a.name < b.name; });
+    return list;
+}
+
+ProfilePackage Profile::package(const QString &name) const {
+    for (const QJsonValue &value : packages)
+        if (value.toObject().value("name").toString() == name)
+            return ProfilePackage::fromJson(value.toObject());
+    return {};
+}
+
+void Profile::setPackage(const ProfilePackage &package) {
+    removePackage(package.name);
+    packages.append(package.toJson());
+}
+
+void Profile::removePackage(const QString &name) {
+    for (int i = packages.size() - 1; i >= 0; --i)
+        if (packages[i].toObject().value("name").toString() == name)
+            packages.removeAt(i);
+}
+
 QJsonObject Profile::toJson() const {
     QJsonObject root;
     root["schemaVersion"] = schemaVersion;
@@ -528,6 +566,18 @@ QString ProfileTraits::describeActivation(const QString &key) {
     return key;
 }
 
+QString ProfileTraits::packageFor(const CatalogEntry &entry, const QString &value, QString *source) {
+    for (const QJsonValue &choice : entry.choices) {
+        const QJsonObject object = choice.toObject();
+        if (object.value("value").toString() != value)
+            continue;
+        if (source)
+            *source = object.value("packageSource").toString(QStringLiteral("repository"));
+        return object.value("package").toString();
+    }
+    return {};
+}
+
 namespace ProfileModel {
 
 QStringList fileAdapters() {
@@ -536,6 +586,10 @@ QStringList fileAdapters() {
 
 bool isSettingId(const QString &id) {
     return id.size() <= 64 && settingIdPattern().match(id).hasMatch();
+}
+
+bool isPackageName(const QString &name) {
+    return packagePattern().match(name).hasMatch();
 }
 
 QString manifestPath(const QString &directory) {

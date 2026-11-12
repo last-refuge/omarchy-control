@@ -36,6 +36,7 @@ HEADERS += \
     $$PWD/src/windowrulesprovider.h \
     $$PWD/src/updater.h \
     $$PWD/src/compat.h \
+    $$PWD/src/packageprovider.h \
     $$PWD/src/profilemodel.h \
     $$PWD/src/profilecapture.h \
     $$PWD/src/profileplanner.h \
@@ -78,6 +79,7 @@ SOURCES += \
     $$PWD/src/windowrulesprovider.cpp \
     $$PWD/src/updater.cpp \
     $$PWD/src/compat.cpp \
+    $$PWD/src/packageprovider.cpp \
     $$PWD/src/profilemodel.cpp \
     $$PWD/src/profilecapture.cpp \
     $$PWD/src/profileplanner.cpp \

@@ -1014,15 +1014,21 @@ QStringList popOptions(QStringList &args, const QString &flag) {
 const char ProfileUsage[] =
     "Usage: omarchy-control profile <command>\n\n"
     "  capture <dir> [--category <name>]... [--setting <id>]... [--suggested]\n"
-    "                [--inherit <id>]... [--forget <id>]... [--name <text>] [--dry-run] [--json]\n"
+    "                [--inherit <id>]... [--forget <id>]... [--app <package>]... [--suggested-apps]\n"
+    "                [--exclude-app <package>]... [--forget-app <package>]... [--resolve-aur]\n"
+    "                [--name <text>] [--dry-run] [--json]\n"
     "      Save this computer's choices to <dir>/profile.json. A first capture needs a selection;\n"
     "      a later one re-reads what the profile remembers. Categories: appearance, windows,\n"
-    "      input, idle, defaults, language.\n"
+    "      input, idle, defaults, language. --app remembers an installed package, CLI tools\n"
+    "      included; --suggested-apps takes what is installed beyond Omarchy's defaults;\n"
+    "      --exclude-app remembers a package as unwanted, so a restore removes it. --resolve-aur\n"
+    "      asks the AUR which saved apps from no configured repository it has: the only network use.\n"
     "  inspect <dir> [--json]          Check a profile and show what it holds\n"
     "  plan <dir> [--use-saved <id|all>]... [--keep-local <id|all>]... [--json]\n"
     "      Compare a profile with this computer and save a restore plan. Changes nothing.\n"
     "  apply <plan-id> [--yes] [--partial] [--json]\n"
-    "      Restore a reviewed plan. --partial goes ahead when some items are left out.\n"
+    "      Restore a reviewed plan. --partial goes ahead when some items are left out. Apps are\n"
+    "      installed and removed with pacman in this terminal, which asks before it changes anything.\n"
     "  resume <run-id> [--json]        Continue a restore that stopped\n"
     "  status [--json]                 Show recent restores, and whether one is running\n";
 
@@ -1051,6 +1057,11 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
     selection.categories = popOptions(args, "--category");
     selection.inherit = popOptions(args, "--inherit");
     selection.forget = popOptions(args, "--forget");
+    selection.apps = popOptions(args, "--app");
+    selection.excludeApps = popOptions(args, "--exclude-app");
+    selection.forgetApps = popOptions(args, "--forget-app");
+    selection.suggestedApps = popFlag(args, "--suggested-apps");
+    selection.resolveAur = popFlag(args, "--resolve-aur");
     selection.suggested = popFlag(args, "--suggested");
     selection.name = popOption(args, "--name");
     const bool dryRun = popFlag(args, "--dry-run");
@@ -1099,6 +1110,25 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
         return 0;
     }
     for (const ProfileCapture::Item &item : result.items) {
+        if (item.kind == QLatin1String("package")) {
+            const auto wanted = [](const ProfilePackage &package) {
+                return package.intent == QLatin1String("absent") ? QStringLiteral("unwanted, so a restore removes it") : QStringLiteral("wanted");
+            };
+            const QString note = item.reason.isEmpty() ? QString() : "  " + item.reason;
+            if (item.change == QLatin1String("added"))
+                out() << "  + app " << item.label << ": " << wanted(item.packageAfter) << note << "\n";
+            else if (item.change == QLatin1String("modified"))
+                out() << "  ~ app " << item.label << ": " << wanted(item.packageBefore) << " -> " << wanted(item.packageAfter) << note << "\n";
+            else if (item.change == QLatin1String("removed"))
+                out() << "  - app " << item.label << ": no longer remembered\n";
+            else if (item.change == QLatin1String("kept"))
+                out() << "  ! app " << item.label << ": " << item.reason << "\n";
+            else if (item.change == QLatin1String("excluded"))
+                out() << "  x app " << item.label << ": " << item.reason << "\n";
+            else if (item.change == QLatin1String("suggested"))
+                out() << "  ? app " << item.label << ": " << item.reason << "\n";
+            continue;
+        }
         if (item.change == QLatin1String("added"))
             out() << "  + " << item.label << ": " << profileValue(core, item.id, item.after) << "\n";
         else if (item.change == QLatin1String("modified"))
@@ -1111,12 +1141,13 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
             out() << "  x " << item.label << " (" << item.id << "): " << item.reason << "\n";
     }
     const QString file = ProfileModel::manifestPath(QFileInfo(directory).absoluteFilePath());
+    const QString held = QStringLiteral("%1 settings and %2 apps").arg(result.profile.settings.size()).arg(result.profile.packages.size());
     if (!result.changed)
         out() << "No changes: " << file << " already matches this computer.\n";
     else if (dryRun)
-        out() << "Would save " << result.profile.settings.size() << " settings to " << file << " (dry run; nothing written).\n";
+        out() << "Would save " << held << " to " << file << " (dry run; nothing written).\n";
     else
-        out() << "Saved " << result.profile.settings.size() << " settings to " << file << ".\n";
+        out() << "Saved " << held << " to " << file << ".\n";
     out().flush();
     return 0;
 }
@@ -1200,6 +1231,17 @@ void printPlanItems(AppCore &core, const ProfilePlan &plan) {
         }
     };
     const auto change = [&](const ProfilePlanItem &item) {
+        if (item.kind == QLatin1String("package")) {
+            if (item.action == QLatin1String("install"))
+                return "Install " + item.target + (item.transaction.size() > 1 ? QStringLiteral(", with %1 more packages it needs").arg(item.transaction.size() - 1) : QString());
+            if (item.action == QLatin1String("build"))
+                return "Build " + item.target + " from the AUR";
+            if (item.action == QLatin1String("remove"))
+                return "Remove " + item.target;
+            if (item.action == QLatin1String("mark-explicit"))
+                return "Keep " + item.target + " as an app you want";
+            return item.target;
+        }
         const QString wanted = item.mode == QLatin1String("inherit") ? QStringLiteral("this computer's default") : shownValue(core, item.target, item.desired);
         return item.label + ": " + shownValue(core, item.target, item.current) + " -> " + wanted;
     };
@@ -1365,6 +1407,14 @@ int cmdProfileApply(AppCore &core, QStringList args, bool yes, bool json) {
         err() << "Re-run with --partial to restore the rest, or make a new plan with --use-saved or --keep-local.\n";
         return 1;
     }
+    for (const ProfilePlanItem &item : plan.items) {
+        if (!json && item.kind == QLatin1String("package") && item.willRun()) {
+            out() << "Apps are installed and removed with pacman, in this terminal. sudo may ask for your password, and pacman\n"
+                     "shows each transaction and asks before it changes anything.\n";
+            break;
+        }
+    }
+    core.profileRunner.setPackageTerminal(true);
     return waitForRun(core, [&](ProfileRunner::Done done) { core.profileRunner.apply(plan, done); }, json);
 }
 
@@ -1407,8 +1457,10 @@ int cmdProfile(AppCore &core, const QStringList &args, bool yes, bool json) {
         return cmdProfilePlan(core, args, json);
     if (verb == QLatin1String("apply"))
         return cmdProfileApply(core, args, yes, json);
-    if (verb == QLatin1String("resume") && args.size() == 3)
+    if (verb == QLatin1String("resume") && args.size() == 3) {
+        core.profileRunner.setPackageTerminal(true);
         return waitForRun(core, [&](ProfileRunner::Done done) { core.profileRunner.resume(args[2], done); }, json);
+    }
     if (verb == QLatin1String("status"))
         return cmdProfileStatus(core, json);
     err() << ProfileUsage;

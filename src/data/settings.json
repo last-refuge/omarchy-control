@@ -4115,7 +4115,8 @@
     "icons": [
      "chromium",
      "web-browser"
-    ]
+    ],
+    "package": "chromium"
    },
    {
     "value": "chrome",
@@ -4125,7 +4126,9 @@
      "google-chrome",
      "chrome",
      "web-browser"
-    ]
+    ],
+    "package": "google-chrome",
+    "packageSource": "aur"
    },
    {
     "value": "brave",
@@ -4135,7 +4138,9 @@
      "brave-browser",
      "brave",
      "web-browser"
-    ]
+    ],
+    "package": "brave-bin",
+    "packageSource": "aur"
    },
    {
     "value": "brave-origin",
@@ -4145,7 +4150,9 @@
      "brave-origin",
      "brave-browser",
      "web-browser"
-    ]
+    ],
+    "package": "brave-origin-bin",
+    "packageSource": "aur"
    },
    {
     "value": "edge",
@@ -4155,7 +4162,9 @@
      "microsoft-edge",
      "microsoft-edge-stable",
      "web-browser"
-    ]
+    ],
+    "package": "microsoft-edge-stable-bin",
+    "packageSource": "aur"
    },
    {
     "value": "firefox",
@@ -4164,7 +4173,8 @@
     "icons": [
      "firefox",
      "web-browser"
-    ]
+    ],
+    "package": "firefox"
    },
    {
     "value": "zen",
@@ -4174,7 +4184,9 @@
      "zen-browser",
      "zen",
      "web-browser"
-    ]
+    ],
+    "package": "zen-browser-bin",
+    "packageSource": "aur"
    }
   ],
   "recovery": "auto-undo",
@@ -4228,7 +4240,8 @@
      "Alacritty",
      "alacritty",
      "utilities-terminal"
-    ]
+    ],
+    "package": "alacritty"
    },
    {
     "value": "foot",
@@ -4237,7 +4250,8 @@
     "icons": [
      "foot",
      "utilities-terminal"
-    ]
+    ],
+    "package": "foot"
    },
    {
     "value": "ghostty",
@@ -4247,7 +4261,8 @@
      "com.mitchellh.ghostty",
      "ghostty",
      "utilities-terminal"
-    ]
+    ],
+    "package": "ghostty"
    },
    {
     "value": "kitty",
@@ -4256,7 +4271,8 @@
     "icons": [
      "kitty",
      "utilities-terminal"
-    ]
+    ],
+    "package": "kitty"
    }
   ],
   "recovery": "auto-undo",
@@ -4315,7 +4331,8 @@
      "nvim",
      "neovim",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "neovim"
    },
    {
     "value": "code",
@@ -4326,7 +4343,8 @@
      "visual-studio-code",
      "code",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "visual-studio-code-bin"
    },
    {
     "value": "cursor",
@@ -4335,7 +4353,8 @@
     "icons": [
      "cursor",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "cursor-bin"
    },
    {
     "value": "zed",
@@ -4345,7 +4364,8 @@
      "zed",
      "dev.zed.Zed",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "zed"
    },
    {
     "value": "sublime_text",
@@ -4355,7 +4375,8 @@
      "sublime-text",
      "sublime_text",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "sublime-text-4"
    },
    {
     "value": "helix",
@@ -4364,7 +4385,8 @@
     "icons": [
      "helix",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "helix"
    },
    {
     "value": "vim",
@@ -4374,7 +4396,8 @@
      "gvim",
      "vim",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "vim"
    },
    {
     "value": "emacs",
@@ -4383,7 +4406,9 @@
     "icons": [
      "emacs",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "omarchy-emacs",
+    "packageSource": "aur"
    }
   ],
   "recovery": "auto-undo",

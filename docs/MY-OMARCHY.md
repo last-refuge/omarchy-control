@@ -1,6 +1,6 @@
 # My Omarchy: contract, audit, and progress
 
-Status, November 11, 2026: P0 (contract and portability audit) is recorded here, and P1 (local settings round trip) is implemented and tested against fixtures. Nothing has been restored on a real desktop yet. The milestones P0 to P5 are those of the My Omarchy implementation plan.
+Status, November 11, 2026: P0 (contract and portability audit) is recorded here, and P1 (local settings round trip) is implemented and tested against fixtures. P2 (apps) is implemented: repository installs, reviewed AUR builds, explicit removals, and default apps that wait for their app, fixture-tested and checked against real pacman in a disposable root. Nothing has been restored on a real desktop yet. The milestones P0 to P5 are those of the My Omarchy implementation plan.
 
 Evidence base: a read-only audit of this machine. `pacman -Q` reports `omarchy` and `omarchy-settings` 4.5.0-3 and `hyprland` 0.56.2-4, on x86_64. `/usr/share/omarchy/version` reads `4.0.0.alpha` on this release, so it is never used; the version comes from `omarchy version`, as Control already does.
 
@@ -87,9 +87,9 @@ Idle timers and owned Lua overrides use Control's own reviewed adapters, describ
 | `omarchy pkg defaults [platform]` (hidden) | The base list plus architecture and platform additions from `$OMARCHY_PATH/install/*.packages`. 162 names on this x86 machine. | Source of the application baseline. |
 | `omarchy pkg install`, `aur install` | Interactive pickers. | Not used. |
 
-Fingerprints to pin when the P2 adapter lands, as SHA-256 prefixes: `omarchy-pkg-add` f39314028454ced3, `omarchy-pkg-aur-add` 91704da97df33ce1, `omarchy-pkg-remove` b591764abec88fa7, `omarchy-pkg-drop` 0e2ec756ceb3d4a1, `omarchy-pkg-present` 3d6b2d498a3ebdf7, `omarchy-pkg-missing` 2cfa64af694cc58d, `omarchy-pkg-defaults` 6a71de3dcc410381.
+P2 does not route through these scripts. A restore needs pacman to show each transaction and ask, exact names with nothing else removed, and a check of each package afterwards, so it calls pacman itself: `pacman -S --needed`, `pacman -R`, and `pacman -D --asexplicit`, never with `--noconfirm`, `-s`, `-c`, or `-n`. The dry runs `pacman -S --print` and `pacman -R --print`, and the dependency test `pacman -T`, need neither root nor the network, and were checked against this machine's pacman. These scripts' fingerprints, as SHA-256 prefixes, for any later use: `omarchy-pkg-add` f39314028454ced3, `omarchy-pkg-aur-add` 91704da97df33ce1, `omarchy-pkg-remove` b591764abec88fa7, `omarchy-pkg-drop` 0e2ec756ceb3d4a1, `omarchy-pkg-present` 3d6b2d498a3ebdf7, `omarchy-pkg-missing` 2cfa64af694cc58d, `omarchy-pkg-defaults` 6a71de3dcc410381.
 
-**Application baseline format (proposed for P2):** one reviewed file per supported Omarchy version and platform, generated from `omarchy pkg defaults <platform>` and checked in: the Omarchy version, the platform, the package names, and digests of the package lists it came from. Explicitly installed packages outside the baseline become capture suggestions. A baseline package missing on the source machine is a proposed exclusion only when that baseline applies to the source's version and platform.
+**Application baseline (as built in P2):** read live from the installed Omarchy, not checked in: `omarchy pkg defaults` gives what Omarchy installs on this platform, and its own `install/omarchy-other.packages` lists what it installs for particular hardware or from its installer image, such as drivers, firmware, and the audio stack. Explicitly installed packages outside both are capture suggestions. A default missing here is shown as a possible exclusion only when `pacman -T` says nothing installed provides it, since an alternative such as `ex-vi-compat` stands in for `vi`; it is never recorded unless chosen by name. On this machine that took the suggestions from 51 to 41 genuine apps, and the missing defaults from 4 to 2.
 
 ## 5. Destination support policy
 
@@ -122,7 +122,37 @@ A plan reads every setting once, then decides, and changes nothing. Each item is
 
 **Results.** `completed` means every item in the plan was verified or already matched. `partial` means the run did everything it was asked, and the plan left items out, which `apply` only accepts with `--partial`. `incomplete` means something failed or needs attention. `cancelled` and `interrupted` runs can be resumed.
 
-## 7. Command line
+## 7. Apps (P2)
+
+**Capture.** `--app <package>` remembers an installed package as wanted, command-line tools included. `--exclude-app <package>` remembers one as unwanted, so a restore removes it. `--forget-app` stops remembering either way. `--suggested-apps` takes what is installed beyond Omarchy's defaults. A package from no configured repository is saved with source `manual`, since nothing can tell an AUR package from a local build without the network. `--resolve-aur` asks the AUR's public lookup which of those it has, sending only their names, and saves the ones it knows with source `aur`; it is the only part of a capture that uses the network. A default app's own package needs no lookup: the catalog knows Chrome comes from the AUR. A default app the profile sets brings the package that provides it, from a mapping taken from Omarchy's own installers. Kernels, firmware, drivers, and what Omarchy installs for hardware are never saved as apps. A remembered app that is missing here, or an unwanted one installed here, stays as saved and is flagged.
+
+**Plan.** Each app is one item, checked by pacman's dry run:
+
+| Saved | Here | Status |
+| --- | --- | --- |
+| wanted | installed as wanted | `unchanged` |
+| wanted | installed only as a dependency | `ready`: marked as wanted |
+| wanted | missing, in a configured repository | `ready`: install, listing what it brings |
+| wanted | missing, in no repository | `blocked` |
+| wanted, from the AUR | missing | `ready`: built in the terminal, or `blocked` without `yay` |
+| wanted, `manual` | missing | `manual` |
+| unwanted | missing | `unchanged` |
+| unwanted | installed, one of Omarchy's defaults | `ready`: remove |
+| unwanted | installed, not one of Omarchy's | `conflict`: possibly installed here on purpose |
+| unwanted | needed by another installed package | `blocked`, naming it |
+| unwanted | protected or hardware | `blocked`, always |
+
+Protected: the base system, kernels and firmware, the bootloader and snapshots, pacman and sudo, Omarchy, Omarchy Control, Hyprland and the session it runs in, NetworkManager and the audio stack, and `yay` and `git`, which restoring relies on. As with settings, the record of what this computer last agreed on turns a change made here since into a conflict. A profile whose default app needs a package it also removes is refused.
+
+**Order.** Apps to install come first, then settings, then removals, so a removed default is only removed after whatever replaces it has been verified. A default app whose app the restore installs waits for that install, and is blocked if it fails.
+
+**Apply.** All repository installs go in one transaction, all removals in another, so sudo asks once and pacman shows each whole transaction before changing anything. Each AUR app is built on its own with `yay -S --needed --aur --diffmenu --noanswerdiff`: yay offers its build files for review whatever answer its own settings keep, and a build that fails or is cancelled blocks only what needs that app. Before each, pacman's dry run is repeated: if it now differs from the plan, because packages updated or a dependency appeared, nothing starts and the plan has to be made again. If another package operation holds pacman's lock, the restore waits a minute and then pauses, resumable; the lock is never removed. The items are recorded as underway before pacman starts, and afterwards each app is settled by reading pacman, whatever its exit status: a refused password changes nothing, and that is what is reported. Each transaction is one journal entry under the run, marked as not undoable. Packages change only in a terminal, where sudo and pacman can ask, so only the command line does it; elsewhere app items are blocked with that reason.
+
+**Resume.** An app that was underway is read. Installed as wanted, it is done; still as the plan saw it, it runs again; anything else is left for a person.
+
+**Checked against real pacman.** `tools/profile-package-check.sh` builds a few small packages into a local repository, then has the real `omarchy-control` plan and restore a profile into a disposable pacman root under fakeroot, with this machine's database untouched. It confirmed the dry runs, dependency listing, install reasons, the refused removal, partial results, and that a second restore runs no transaction. It also found two things the fakes had hidden: pacman prints the dependencies a removal would break on stdout, not stderr, and its output went into `--json` results; both are fixed. And it settled what happens when nobody can answer: pacman takes end of input, or "n", as no, and nothing changes, so a restore run from a script never confirms on its own.
+
+## 8. Command line
 
 ```sh
 omarchy-control profile capture ~/my-omarchy --category appearance --category idle
@@ -134,9 +164,9 @@ omarchy-control profile resume <run-id>
 omarchy-control profile status
 ```
 
-Capture selection: `--category` takes appearance, windows, input, idle, defaults, or language; `--setting <id>` names one setting; `--suggested` takes the portable settings that differ from a fresh installation by the rules above; `--inherit <id>` saves "use the default"; `--forget <id>` stops remembering one; `--dry-run` shows the changes without writing. A first capture needs a selection; nothing is captured in bulk by default. What a category holds but a profile cannot carry is listed with its reason. A saved setting whose current value cannot be read stays as saved and is flagged. Each command takes `--json`, and exits 0 when the request was fulfilled and 1 otherwise.
+Apps take `--app`, `--exclude-app`, `--forget-app`, `--suggested-apps`, and `--resolve-aur`, as above. Settings: `--category` takes appearance, windows, input, idle, defaults, or language; `--setting <id>` names one setting; `--suggested` takes the portable settings that differ from a fresh installation by the rules above; `--inherit <id>` saves "use the default"; `--forget <id>` stops remembering one; `--dry-run` shows the changes without writing. A first capture needs a selection; nothing is captured in bulk by default. What a category holds but a profile cannot carry is listed with its reason. A saved setting whose current value cannot be read stays as saved and is flagged. Each command takes `--json`, and exits 0 when the request was fulfilled and 1 otherwise.
 
-## 8. Fixture matrix for the P1 gate
+## 9. Fixture matrix for the P1 and P2 gates
 
 | Gate requirement | Test |
 | --- | --- |
@@ -150,17 +180,28 @@ Capture selection: `--category` takes appearance, windows, input, idle, defaults
 | Inherit returns to the default | `profileInheritRemovesAnOverride` |
 | Every editable setting reviewed | `profileMetadataCoversEveryEditableSetting` |
 | CLI end to end | `profileCliRoundTrip` |
+| P2: install a selected app and a CLI tool, switch a default to the new app, remove an excluded optional app, preserve unrelated apps | `profileRestoresApps`, `profileCliRestoresApps` |
+| P2: refuse a required removal, and protected or hardware ones | `profileRefusesUnsafeAppRemovals` |
+| P2: resume after an interrupted worker | `profileResumesAfterAnInterruptedPackageWorker` |
+| P2: auth denial, failed transactions, changed package plans, missing packages | `profileAppFailuresAreReportedAsTheyAre`, `profileRefusesUnsafeAppRemovals` |
+| P2: pacman busy | `profilePausesWhilePacmanIsBusy` |
+| P2: inventory and dry runs change nothing | `packageInventoryReadsPacmanWithoutChangingAnything` |
+| P2: capture, suggestions, hardware, and a stand-in for a default | `profileCapturesApps` |
+| P2: AUR builds, and a failed build blocking only what needs it | `profileBuildsAppsFromTheAur`, `profileFailedAurBuildBlocksOnlyWhatNeedsIt` |
+| P2: AUR lookup only when asked | `profileResolvesAurAppsOnlyWhenAsked` |
+| P2: real pacman, declining and confirming | `tools/profile-package-check.sh` |
 
-These are fixture tests with fake commands. The P1 gate also asks for real settings behavior: extending `tools/nested-check.py` to restore a profile into the nested session is the next verification step.
+The tests use fake commands, including a stateful fake pacman, and `tools/profile-package-check.sh` repeats the package side with real pacman in a disposable root. The P1 gate also asks for real settings behavior: extending `tools/nested-check.py` to restore a profile into the nested session is the next verification step there. On this machine, a dry-run capture of apps and a plan of a package-only profile also ran against the system's own pacman without root, changing nothing.
 
-## 9. Coverage by adapter
+## 10. Coverage by adapter
 
 | Adapter | Capture | Plan | Apply | Verify | Recovery | State |
 | --- | --- | --- | --- | --- | --- | --- |
 | Settings: scoped `shell.json` | yes | yes | yes | read-back | per-change undo | P1, fixture-tested |
 | Settings: owned `omarchy-control.lua` | the module's value | yes | yes | read-back and config errors | per-change undo | P1, fixture-tested |
 | Settings: Omarchy commands | yes | yes | yes | read-back | per catalog: undo or best effort | P1, fixture-tested |
-| Applications | none | listed as manual | none | none | none | P2 |
+| Applications from configured repositories | yes | pacman's dry run | pacman, in a terminal | reads pacman afterwards | reported, not undone | P2, fixture-tested and checked with real pacman |
+| Applications from the AUR | with `--resolve-aur`, or from the catalog | needs `yay` | yay, in a terminal, with review | reads pacman afterwards | reported, not undone | P2, fixture-tested |
 | Dock, launchers, associations, shortcuts, window rules | none | listed as manual | none | none | none | P3 |
 | Ghostty and Alacritty files | none | listed as manual | none | none | none | P3 |
 | Backgrounds, icons, theme files | none | listed as manual | none | none | none | P3 |
@@ -171,7 +212,6 @@ These are fixture tests with fake commands. The P1 gate also asks for real setti
 
 | Category | Adapter | Test strategy |
 | --- | --- | --- |
-| Applications | PackageProvider: narrow pacman adapter, reviewed AUR terminal worker | Fake pacman and yay for denial, busy lock, and failed builds; a disposable pacman root, as in `tools/package-check.sh`, for real transactions |
 | Launchers, associations, dock | LauncherEditor, SystemProvider associations, Omarchy's dock commands | Fixtures, then the nested session |
 | Shortcuts and window rules | Owned Lua module, merged by record id | Fixtures, then nested Hyprland |
 | Bar layout and plugins | PluginsProvider | Fixtures with a fake shell |
@@ -180,10 +220,13 @@ These are fixture tests with fake commands. The P1 gate also asks for real setti
 | GitHub | ProfileRepository over `git` and `gh` | Local bare repositories and a fake `gh`; one private test repository for the release gate |
 | Whole restore | All of the above | A disposable Omarchy VM |
 
-## 10. Known limits of P1
+## 11. Known limits so far
 
 - There is no window yet (P5). The window's own controls already respect a restore running elsewhere, because every change goes through the coordinator.
 - Font, default apps, and language have no evidenced stock value, so without a baseline they need `--use-saved` on a fresh installation.
 - Hyprland provenance recognizes numeric and true/false assignments in the user's own Lua. A string value there, such as an acceleration profile, reads as Omarchy's default.
 - Font and text size edit terminal configs that P3's file adapters will own. P3 must order them, or refuse the overlap.
 - After the first write, a failure to update the run record does not stop the run. The coordinator's journal still records every change with its run id.
+- Apps install with pacman alone. Omarchy's own installers for some apps also write their configs, desktop entries, or browser policies; a restore does not run them, so that setup stays manual until P3's file adapters carry it.
+- An AUR build is checked with a fake yay only. A real one needs the network and a real AUR package, which belongs in the disposable-VM check of P5.
+- The window cannot restore apps itself. Launching the command-line restore in a terminal, which then holds the lease and survives the window closing, is the P5 route.

@@ -7,6 +7,7 @@
 
 #include "capabilities.h"
 #include "catalog.h"
+#include "packageprovider.h"
 #include "profilemodel.h"
 #include "settingsengine.h"
 
@@ -23,15 +24,25 @@ public:
         bool suggested = false;  // Remember settings that differ from a fresh installation.
         QStringList inherit;     // Remember these as "use this computer's default".
         QStringList forget;      // Stop remembering these.
+        QStringList apps;        // Remember these installed packages as wanted.
+        QStringList excludeApps; // Remember these as unwanted: a restore removes them.
+        QStringList forgetApps;  // Stop remembering these packages either way.
+        bool suggestedApps = false;  // Remember what is installed beyond Omarchy's defaults.
+        // Ask the AUR which of the saved apps from no configured repository it has, so a
+        // restore can build them. The only part of a capture that uses the network.
+        bool resolveAur = false;
         QString name;            // Rename the profile.
         bool isEmpty() const;
     };
 
     struct Item {
+        QString kind = QStringLiteral("setting");  // setting, package
         QString id, label, category;
-        // added, modified, unchanged, removed, kept, excluded
+        // added, modified, unchanged, removed, kept, excluded, and for apps "suggested":
+        // shown as a possible exclusion, never recorded on its own.
         QString change;
         ProfileSetting before, after;
+        ProfilePackage packageBefore, packageAfter;
         QString reason;
         // A saved choice whose current value could not be read. It stays as saved: a
         // failed read is never a reason to forget something.
@@ -52,7 +63,8 @@ public:
 
     using Done = std::function<void(const Result &)>;
 
-    ProfileCapture(const Catalog *catalog, SettingsEngine *engine, Capabilities *capabilities, const Env &env, QObject *parent = nullptr);
+    ProfileCapture(const Catalog *catalog, SettingsEngine *engine, Capabilities *capabilities, PackageProvider *packages, const Env &env,
+                   QObject *parent = nullptr);
 
     // `existing` is the profile saved so far, or null for a first save.
     void capture(const Profile *existing, const Selection &selection, Done done);
@@ -65,9 +77,11 @@ public:
 
 private:
     QString capturedValue(const CatalogEntry &entry, const ReadResult &read) const;
+    void capturePackages(std::shared_ptr<Result> result, const Selection &selection, std::function<void()> finished);
 
     const Catalog *m_catalog;
     SettingsEngine *m_engine;
     Capabilities *m_capabilities;
+    PackageProvider *m_packages;
     Env m_env;
 };

@@ -7,18 +7,27 @@
 
 #include "capabilities.h"
 #include "catalog.h"
+#include "packageprovider.h"
 #include "profilemodel.h"
 #include "settingsengine.h"
 
 // One thing a restore would do, or a reason it will not.
 struct ProfilePlanItem {
-    QString id;      // "setting:<id>", "packages", "desktop", "files", "assets"
-    QString kind;    // setting, section
-    QString target;  // The setting id, or the section name.
+    QString id;      // "setting:<id>", "package:<name>", "desktop", "files", "assets"
+    QString kind;    // setting, package, section
+    QString target;  // The setting id, the package name, or the section name.
     QString label;
     QString category;
-    QString mode;     // set, inherit
-    QString desired;  // The saved value, for "set".
+    QString mode;     // set or inherit for a setting; present or absent for a package
+    QString desired;  // The saved value, for "set"; a package's source.
+    // What a package item does: install, build (from the AUR), mark-explicit, or remove.
+    // Empty for settings.
+    QString action;
+    // Every package pacman said the transaction would install or remove. A restore checks
+    // this again before it starts, and stops if the transaction has changed.
+    QStringList transaction;
+    // Items that must succeed first, as a default app needs its app installed.
+    QStringList needs;
     // What this computer had when the plan was made. A restore starts only while that is
     // still true, so it never overwrites something that changed after the review.
     QString current;
@@ -74,7 +83,8 @@ public:
     };
     using Done = std::function<void(const ProfilePlan &)>;
 
-    ProfilePlanner(const Catalog *catalog, SettingsEngine *engine, Capabilities *capabilities, const Env &env, QObject *parent = nullptr);
+    ProfilePlanner(const Catalog *catalog, SettingsEngine *engine, Capabilities *capabilities, PackageProvider *packages, const Env &env,
+                   QObject *parent = nullptr);
 
     void plan(const QString &directory, const Options &options, Done done);
     bool save(const ProfilePlan &plan, QString *error) const;
@@ -85,12 +95,18 @@ public:
     // Whether what was read is still what the plan saw.
     static bool unchangedSincePlan(const CatalogEntry &entry, const ProfilePlanItem &item, const ReadResult &read);
 
+    // A package's state here: "explicit", "dependency", or "missing".
+    static QString packageState(const PackageProvider::Inventory &inventory, const QString &name);
+    static bool packageSatisfied(const ProfilePlanItem &item, const QString &state);
+
 private:
     void planSettings(const Profile &profile, const Options &options, ProfilePlan plan, Done done);
+    void planPackages(const Profile &profile, const Options &options, std::function<void(const QList<ProfilePlanItem> &)> done);
     QString provenance(const CatalogEntry &entry, const ReadResult &read) const;
 
     const Catalog *m_catalog;
     SettingsEngine *m_engine;
     Capabilities *m_capabilities;
+    PackageProvider *m_packages;
     Env m_env;
 };

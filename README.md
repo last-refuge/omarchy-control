@@ -192,6 +192,7 @@ bin/install                # Build the Arch package from this checkout and insta
 bin/test                   # 405 tests; never touches the real desktop
 tools/nested-check.py      # Real Hyprland and Omarchy scripts in an isolated session
 tools/package-check.sh     # Install, upgrade, and remove in a disposable pacman root
+tools/profile-package-check.sh  # Restore apps from a profile with real pacman, in a disposable root
 tools/installer-check.sh   # install.sh against real release files in a disposable root
 tools/gen-compat.py        # Re-pin commands after reviewing a changed script
 bin/coverage               # Regenerates docs/coverage-ledger.json

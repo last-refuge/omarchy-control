@@ -232,6 +232,7 @@ case "$*" in
   "font current") echo "JetBrainsMono Nerd Font";;
   "font list") printf 'JetBrainsMono Nerd Font\n';;
   "font cjk") echo default;;
+  "pkg defaults") cat "$HOME/.fake-pacman/baseline" 2>/dev/null;;
   "default browser") kv browser chromium;;
   "default browser "*) setkv browser "$3";;
   "default terminal") kv terminal alacritty;;
@@ -272,4 +273,115 @@ case "${args[0]}" in
     esac;;
 esac
 exit 0
+)SH";
+
+// pacman for profile tests, kept in the sandbox. A repository lists "repo name version deps",
+// installed packages "name version reason deps". Installing an app also puts a command of
+// its name on PATH, as a real package would. The lock and failures are files a test makes.
+const char kFakePacman[] = R"SH(
+P="$HOME/.fake-pacman"; mkdir -p "$P"; touch "$P/installed" "$P/repo"
+lock="$(dirname "$HOME")/sys-root/var/lib/pacman/db.lck"
+args=("$@"); names=(); after=0
+for a in "${args[@]}"; do if [ $after = 1 ]; then names+=("$a"); elif [ "$a" = "--" ]; then after=1; fi; done
+inst() { awk -v n="$1" '$1==n' "$P/installed"; }
+repo() { awk -v n="$1" '$2==n' "$P/repo"; }
+has() { [ -n "$(inst "$1")" ]; }
+offered() { [ -n "$(repo "$1")" ]; }
+deps_of() { repo "$1" | awk '{print $4}' | tr ',' '\n' | grep -v '^-$' | grep -v '^$'; }
+record() { echo "pacman ${args[*]}" >> "$P/transactions"; }
+case "${args[0]}" in
+  -Q) awk '{print $1, $2}' "$P/installed";;
+  -Qqe) awk '$3=="explicit"{print $1}' "$P/installed";;
+  -Qqm)
+    out=$(awk '{print $1}' "$P/installed" | while read -r n; do offered "$n" || echo "$n"; done)
+    [ -n "$out" ] || exit 1; echo "$out";;
+  -Sl) while read -r r n v d; do [ -n "$n" ] || continue; if has "$n"; then echo "$r $n $v [installed]"; else echo "$r $n $v"; fi; done < "$P/repo";;
+  -T)
+    # A name is satisfied when installed, or provided by something installed ("provider name").
+    unmet=()
+    for n in "${names[@]}"; do
+      has "$n" && continue
+      by=$(awk -v n="$n" '$2==n{print $1}' "$P/provides" 2>/dev/null | while read -r pr; do has "$pr" && echo "$pr"; done)
+      [ -n "$by" ] || unmet+=("$n")
+    done
+    [ ${#unmet[@]} = 0 ] && exit 0
+    printf '%s\n' "${unmet[@]}"; exit 127;;
+  -S)
+    status=0
+    for n in "${names[@]}"; do offered "$n" || { echo "error: target not found: $n" >&2; status=1; }; done
+    [ $status = 0 ] || exit 1
+    if [ "${args[1]}" = "--print" ]; then
+      { for n in "${names[@]}"; do has "$n" && continue; repo "$n" | awk '{print $2, $3, $1}'
+          for d in $(deps_of "$n"); do has "$d" || repo "$d" | awk '{print $2, $3, $1}'; done; done; } | awk 'NF && !seen[$0]++'
+      exit 0
+    fi
+    [ -f "$lock" ] && { echo "error: failed to init transaction (unable to lock database)" >&2; exit 1; }
+    record
+    [ -f "$P/fail-install" ] && { echo "error: failed to commit transaction (conflicting files)" >&2; exit 1; }
+    for n in "${names[@]}"; do
+      has "$n" && continue
+      for d in $(deps_of "$n"); do has "$d" || repo "$d" | awk '{print $2, $3, "dependency", $4}' >> "$P/installed"; done
+      repo "$n" | awk '{print $2, $3, "explicit", $4}' >> "$P/installed"
+      ln -sf "$(dirname "$HOME")/safe-bin/true" "$(dirname "$0")/$n"
+    done;;
+  -R)
+    status=0
+    for n in "${names[@]}"; do has "$n" || { echo "error: target not found: $n" >&2; status=1; }; done
+    while read -r pn pv pr pd; do
+      [ -n "$pn" ] || continue
+      skip=0; for n in "${names[@]}"; do [ "$pn" = "$n" ] && skip=1; done; [ $skip = 1 ] && continue
+      for d in $(echo "$pd" | tr ',' ' '); do for n in "${names[@]}"; do
+        [ "$d" = "$n" ] && { echo ":: removing $n breaks dependency '$n' required by $pn"; status=1; }; done; done
+    done < "$P/installed"
+    # As real pacman does: the error on stderr, the broken dependencies on stdout.
+    [ $status = 0 ] || { echo "error: failed to prepare transaction (could not satisfy dependencies)" >&2; exit 1; }
+    if [ "${args[1]}" = "--print" ]; then for n in "${names[@]}"; do inst "$n" | awk '{print $1, $2}'; done; exit 0; fi
+    [ -f "$lock" ] && { echo "error: failed to init transaction (unable to lock database)" >&2; exit 1; }
+    record
+    for n in "${names[@]}"; do awk -v n="$n" '$1!=n' "$P/installed" > "$P/installed.new" && mv "$P/installed.new" "$P/installed"; rm -f "$(dirname "$0")/$n"; done;;
+  -D)
+    record
+    for n in "${names[@]}"; do awk -v n="$n" '{ if ($1==n) $3="explicit"; print }' "$P/installed" > "$P/installed.new" && mv "$P/installed.new" "$P/installed"; done;;
+esac
+exit 0
+)SH";
+
+// sudo that refuses when the test says the password was wrong, and otherwise runs the command.
+const char kFakeSudo[] = R"SH(
+[ -f "$HOME/.fake-pacman/deny-sudo" ] && { echo "sudo: 3 incorrect password attempts" >&2; exit 1; }
+exec "$@"
+)SH";
+
+// yay building from a fake AUR, "name version commands": records each build, fails when a
+// test says so, and installs the package as wanted with its commands on PATH.
+const char kFakeYay[] = R"SH(
+P="$HOME/.fake-pacman"
+args=("$@"); name="${args[-1]}"
+echo "yay ${args[*]}" >> "$P/transactions"
+[ -f "$P/fail-build" ] && { echo "==> ERROR: A failure occurred in build()." >&2; exit 1; }
+line=$(awk -v n="$name" '$1==n' "$P/aur" 2>/dev/null)
+[ -n "$line" ] || { echo " -> Could not find all required packages: $name" >&2; exit 1; }
+set -- $line
+echo "$1 $2 explicit -" >> "$P/installed"
+cmds="$3"; [ "$cmds" = "-" ] && cmds="$1"
+for c in $(echo "$cmds" | tr ',' ' '); do ln -sf "$(dirname "$HOME")/safe-bin/true" "$(dirname "$0")/$c"; done
+exit 0
+)SH";
+
+// curl answering the AUR's info lookup from that fake AUR, and recording every request.
+const char kFakeAurCurl[] = R"SH(
+P="$HOME/.fake-pacman"
+url="${@: -1}"
+echo "$url" >> "$P/curl-calls"
+[ -f "$P/aur-down" ] && { echo "curl: (22) The requested URL returned error: 503" >&2; exit 22; }
+query="${url#*\?}"
+first=1; count=0; out=""
+for part in $(echo "$query" | tr '&' ' '); do
+  name=$(echo "${part#arg%5B%5D=}" | sed -e 's/%2B/+/g' -e 's/%40/@/g')
+  if awk -v n="$name" '$1==n{f=1} END{exit !f}' "$P/aur" 2>/dev/null; then
+    [ $first = 1 ] || out="$out,"; first=0; count=$((count+1))
+    out="$out{\"Name\":\"$name\",\"Version\":\"1.0-1\"}"
+  fi
+done
+printf '{"resultcount":%d,"results":[%s],"type":"multiinfo","version":5}\n' "$count" "$out"
 )SH";

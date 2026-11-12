@@ -404,6 +404,46 @@ int changesBy(const ChangeCoordinator &coordinator, const QString &runId) {
     return count;
 }
 
+// A machine with apps: a repository, what is installed and why, and Omarchy's defaults.
+// Firefox is offered but not installed; chromium and libreoffice-fresh are Omarchy's;
+// my-local-tool is in no repository; mpv needs libmpv; omarchy needs hyprland.
+struct PackageMachine : ProfileMachine {
+    PackageMachine() {
+        s.command("pacman", kFakePacman);
+        s.command("sudo", kFakeSudo);
+        QFile::remove(s.bin("firefox"));
+        writeFile(pacman("repo"), "extra firefox 140.0-1 nss,libvpx\nextra nss 3.110-1 -\nextra libvpx 1.15-1 -\nextra ripgrep 14.1-1 -\n"
+                                  "extra libreoffice-fresh 25.2-1 -\nextra chromium 138.0-1 -\nextra hyprland 0.56.2-4 -\nextra btop 1.4.7-1 -\n"
+                                  "extra obsidian 1.8-1 -\nextra mpv 0.40-1 libmpv\nextra libmpv 0.40-1 -\nomarchy omarchy 4.5.0-3 hyprland\n");
+        writeFile(pacman("installed"), "omarchy 4.5.0-3 explicit hyprland\nhyprland 0.56.2-4 dependency -\nchromium 138.0-1 explicit -\n"
+                                       "libreoffice-fresh 25.2-1 explicit -\nbtop 1.4.7-1 explicit -\nlibmpv 0.40-1 dependency -\n"
+                                       "mpv 0.40-1 explicit libmpv\nmy-local-tool 1.0-1 explicit -\nthermald 2.5-1 explicit -\n"
+                                       "ex-vi-compat 1.0-1 explicit -\n");
+        writeFile(pacman("baseline"), "chromium\nlibreoffice-fresh\nbtop\nmpv\nhyprland\nobsidian\ntypora\nvi\n");
+        // Installed by Omarchy for this hardware, and an alternative that stands in for vi.
+        writeFile(s.env.omarchyPath + "/install/omarchy-other.packages", "# Hardware\nthermald\nintel-media-driver\n");
+        writeFile(pacman("provides"), "ex-vi-compat vi\n");
+    }
+    QString pacman(const QString &name) const { return s.env.home + "/.fake-pacman/" + name; }
+    QString reason(const QString &name) const {
+        for (const QString &line : QString::fromUtf8(readAll(pacman("installed"))).split('\n'))
+            if (line.section(' ', 0, 0) == name)
+                return line.section(' ', 2, 2);
+        return {};
+    }
+    bool has(const QString &name) const { return !reason(name).isEmpty(); }
+    QStringList transactions() const { return QString::fromUtf8(readAll(pacman("transactions"))).split('\n', Qt::SkipEmptyParts); }
+};
+
+QJsonObject app(const QString &name, const QString &intent = "present", const QString &source = "repository") {
+    return QJsonObject{{"name", name}, {"source", source}, {"intent", intent}};
+}
+
+void writeAppProfile(const QString &directory, const QJsonObject &settings, const QJsonArray &packages) {
+    writeFile(ProfileModel::manifestPath(directory),
+              QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Apps"}, {"settings", settings}, {"packages", packages}}).toJson());
+}
+
 }  // namespace
 
 class OmarchyControlTests : public QObject {
@@ -8233,7 +8273,9 @@ esac)SH");
         QCOMPARE(planned(plan, "future.setting").status, QString("manual"));
         QCOMPARE(planned(plan, "appearance.theme").status, QString("blocked"));
         QCOMPARE(planned(plan, "input.repeat_rate").status, QString("unchanged"));
-        QCOMPARE(planned(plan, "packages").status, QString("manual"));
+        // This machine has no pacman to ask, so the app is held back, with the reason.
+        QCOMPARE(planned(plan, "firefox").status, QString("blocked"));
+        QVERIFY(planned(plan, "firefox").reason.contains("could not be read"));
         QCOMPARE(plan.leftOut(), 6);
         // A restore that leaves things out says so, and is never called complete.
         const ProfileRun run = runPlan(core, plan);
@@ -8396,6 +8438,469 @@ esac)SH");
         QCOMPARE(Cli::run(b.s.env, {"profile", "resume", "not-a-run"}), 1);
         QCOMPARE(Cli::run(b.s.env, {"profile", "frobnicate"}), 1);
         QCOMPARE(Cli::run(b.s.env, {"profile"}), 0);
+    }
+
+    // ---- My Omarchy: apps -----------------------------------------------------------
+    void packageInventoryReadsPacmanWithoutChangingAnything() {
+        PackageMachine m;
+        AppCore core(m.s.env);
+        PackageProvider::Inventory inventory;
+        bool done = false;
+        core.packages.readInventory([&](const PackageProvider::Inventory &read) { inventory = read; done = true; });
+        QVERIFY(QTest::qWaitFor([&] { return done; }, 15000));
+        QVERIFY2(inventory.ok, qPrintable(inventory.error));
+        QVERIFY(inventory.installed.value("chromium").explicitly);
+        QCOMPARE(inventory.installed.value("chromium").repository, QString("extra"));
+        QCOMPARE(inventory.installed.value("omarchy").repository, QString("omarchy"));
+        QVERIFY(!inventory.installed.value("hyprland").explicitly);
+        QVERIFY(inventory.installed.value("my-local-tool").foreign);
+        QVERIFY(inventory.installed.value("my-local-tool").repository.isEmpty());
+        QVERIFY(inventory.hasBaseline);
+        QVERIFY(inventory.baseline.contains("libreoffice-fresh"));
+
+        PackageProvider::Preview preview;
+        const auto wait = [&](const std::function<void(std::function<void(const PackageProvider::Preview &)>)> &start) {
+            done = false;
+            start([&](const PackageProvider::Preview &result) { preview = result; done = true; });
+            return QTest::qWaitFor([&] { return done; }, 15000);
+        };
+        QVERIFY(wait([&](auto callback) { core.packages.previewInstall({"firefox"}, callback); }));
+        QVERIFY(preview.ok);
+        QStringList brings = preview.packages;
+        brings.sort();
+        QCOMPARE(brings, (QStringList{"firefox 140.0-1 extra", "libvpx 1.15-1 extra", "nss 3.110-1 extra"}));
+        QVERIFY(wait([&](auto callback) { core.packages.previewInstall({"no-such-app"}, callback); }));
+        QVERIFY(!preview.ok);
+        QCOMPARE(preview.missing, QStringList{"no-such-app"});
+        QVERIFY(wait([&](auto callback) { core.packages.previewRemoval({"hyprland"}, callback); }));
+        QVERIFY(!preview.ok);
+        QCOMPARE(preview.requiredBy, QStringList{"omarchy"});
+        QVERIFY(wait([&](auto callback) { core.packages.previewRemoval({"libreoffice-fresh"}, callback); }));
+        QVERIFY(preview.ok);
+        QCOMPARE(preview.packages, QStringList{"libreoffice-fresh 25.2-1"});
+
+        QVERIFY(PackageProvider::isProtected("omarchy-control"));
+        QVERIFY(PackageProvider::isProtected("linux-firmware-intel"));
+        QVERIFY(!PackageProvider::isProtected("firefox"));
+        QVERIFY(PackageProvider::isSystemPackage("nvidia-open-dkms"));
+        QVERIFY(PackageProvider::isSystemPackage("intel-ucode"));
+        QVERIFY(!PackageProvider::isSystemPackage("ripgrep"));
+        // Reading all of that ran no transaction and asked sudo for nothing.
+        QVERIFY(m.transactions().isEmpty());
+        QVERIFY(!m.s.calls().join('\n').contains("sudo"));
+    }
+    void profileCapturesApps() {
+        PackageMachine m;
+        QTemporaryDir store;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.apps = {"btop", "ripgrep", "my-local-tool", "linux-firmware", "--force", "thermald"};
+        selection.excludeApps = {"libreoffice-fresh", "hyprland", "obsidian"};
+        selection.suggestedApps = true;
+        selection.settings = {"apps.default.browser"};
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QHash<QString, ProfileCapture::Item> items;
+        for (const ProfileCapture::Item &item : result.items)
+            if (item.kind == "package")
+                items.insert(item.label, item);
+        const Profile &profile = result.profile;
+        QCOMPARE(profile.package("btop"), (ProfilePackage{"btop", "repository", "present", "extra"}));
+        QCOMPARE(items.value("ripgrep").change, QString("excluded"));
+        // In no repository: kept in view, for a person to install.
+        QCOMPARE(profile.package("my-local-tool").source, QString("manual"));
+        QCOMPARE(items.value("linux-firmware").change, QString("excluded"));
+        QCOMPARE(items.value("thermald").change, QString("excluded"));
+        QVERIFY(items.value("thermald").reason.contains("hardware"));
+        QCOMPARE(items.value("--force").change, QString("excluded"));
+        QCOMPARE(profile.package("libreoffice-fresh").intent, QString("absent"));
+        QVERIFY(items.value("libreoffice-fresh").reason.contains("Still installed"));
+        QCOMPARE(items.value("hyprland").change, QString("excluded"));
+        QCOMPARE(profile.package("obsidian").intent, QString("absent"));
+        // The default browser brings the app it opens.
+        QCOMPARE(profile.settings.value("apps.default.browser").value, QString("chromium"));
+        QCOMPARE(profile.package("chromium").intent, QString("present"));
+        QVERIFY(items.value("chromium").reason.contains("Web browser"));
+        // Omarchy's defaults are not suggested; one missing here is shown, never recorded.
+        QVERIFY(!profile.hasPackage("mpv"));
+        QVERIFY(!profile.hasPackage("omarchy"));
+        QCOMPARE(items.value("typora").change, QString("suggested"));
+        QVERIFY(!profile.hasPackage("typora"));
+        // vi is there in another package's name, so it is not missing.
+        QVERIFY(!items.contains("vi"));
+        // What Omarchy installed for this hardware is never an app choice, asked for or not.
+        QVERIFY(!profile.hasPackage("thermald"));
+        // An app someone chose that Omarchy does not ship is suggested.
+        QCOMPARE(profile.package("ex-vi-compat").intent, QString("present"));
+        QString error;
+        QVERIFY2(core.profileCapture.save(store.path(), result, &error), qPrintable(error));
+
+        // Gone from this computer later: still remembered, and flagged.
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))).replace("btop 1.4.7-1 explicit -\n", ""));
+        const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+        QVERIFY(saved.ok);
+        const ProfileCapture::Result again = captureProfile(core, &saved.profile, {});
+        QVERIFY(again.ok);
+        QCOMPARE(again.profile.package("btop").intent, QString("present"));
+        bool flagged = false;
+        for (const ProfileCapture::Item &item : again.items)
+            if (item.label == "btop")
+                flagged = item.change == "kept" && item.attention;
+        QVERIFY(flagged);
+        // An app the profile's own default needs cannot also be unwanted.
+        ProfileCapture::Selection exclude;
+        exclude.excludeApps = {"chromium"};
+        const ProfileCapture::Result refused = captureProfile(core, &saved.profile, exclude);
+        QCOMPARE(refused.profile.package("chromium").intent, QString("present"));
+    }
+    void profileRestoresApps() {
+        // The P2 gate: an app and a command-line tool installed, a default switched to the new
+        // app, an unwanted default removed after it, and everything else left as it was.
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("firefox")}},
+                        {app("firefox"), app("ripgrep"), app("btop"), app("libreoffice-fresh", "absent")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"apps.default.browser"};
+        const ProfilePlan plan = planProfile(core, store.path(), options);
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "firefox").action, QString("install"));
+        QCOMPARE(planned(plan, "firefox").status, QString("ready"));
+        QCOMPARE(planned(plan, "firefox").transaction.size(), 3);
+        QCOMPARE(planned(plan, "ripgrep").status, QString("ready"));
+        QCOMPARE(planned(plan, "btop").status, QString("unchanged"));
+        QCOMPARE(planned(plan, "libreoffice-fresh").action, QString("remove"));
+        QCOMPARE(planned(plan, "libreoffice-fresh").status, QString("ready"));
+        QVERIFY(planned(plan, "libreoffice-fresh").reason.contains("Omarchy installs"));
+        QCOMPARE(planned(plan, "apps.default.browser").needs, QStringList{"package:firefox"});
+        QVERIFY(planned(plan, "apps.default.browser").willRun());
+        QCOMPARE(plan.leftOut(), 0);
+        // Apps first, then the settings that use them, then removals.
+        QStringList order;
+        for (const ProfilePlanItem &item : plan.items)
+            order << item.target;
+        QVERIFY(order.indexOf("firefox") < order.indexOf("apps.default.browser"));
+        QVERIFY(order.indexOf("apps.default.browser") < order.indexOf("libreoffice-fresh"));
+        // Planning installed nothing.
+        QVERIFY(m.transactions().isEmpty());
+
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(run.count("verified"), 4);
+        QCOMPARE(m.reason("firefox"), QString("explicit"));
+        QCOMPARE(m.reason("nss"), QString("dependency"));
+        QCOMPARE(m.reason("ripgrep"), QString("explicit"));
+        QVERIFY(!m.has("libreoffice-fresh"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("firefox"));
+        // Nothing else moved.
+        for (const char *untouched : {"chromium", "btop", "mpv", "libmpv", "my-local-tool", "omarchy", "hyprland"})
+            QVERIFY2(m.has(untouched), untouched);
+        // One transaction for both installs, one for the removal, each journaled under the run.
+        QCOMPARE(m.transactions(), (QStringList{"pacman -S --needed -- firefox ripgrep", "pacman -R -- libreoffice-fresh"}));
+        QCOMPARE(changesBy(core.coordinator, run.id), 3);
+        for (const Transaction &tx : core.coordinator.history())
+            if (tx.runId == run.id && tx.settingId == "packages")
+                QVERIFY(!tx.undoable());
+
+        // Again, with nothing left to do: no transaction, no change.
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(second.count("ready") + second.count("conflict"), 0);
+        QCOMPARE(runPlan(core, second).state, QString("completed"));
+        QCOMPARE(m.transactions().size(), 2);
+    }
+    void profileRefusesUnsafeAppRemovals() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {},
+                        {app("hyprland", "absent"), app("thermald", "absent"), app("libmpv", "absent"), app("obsidian", "absent"), app("my-local-tool", "absent", "manual"),
+                         app("no-such-app"), app("some-aur-app", "present", "aur"), app("my-build", "present", "manual"), app("libvpx")});
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "libvpx 1.15-1 dependency -\n");
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY(plan.valid);
+        QCOMPARE(planned(plan, "hyprland").status, QString("blocked"));
+        QVERIFY(planned(plan, "hyprland").reason.contains("never removes"));
+        QCOMPARE(planned(plan, "thermald").status, QString("blocked"));
+        QVERIFY(planned(plan, "thermald").reason.contains("hardware"));
+        QCOMPARE(planned(plan, "libmpv").status, QString("blocked"));
+        QVERIFY(planned(plan, "libmpv").reason.contains("Needed by mpv"));
+        QCOMPARE(planned(plan, "obsidian").status, QString("unchanged"));
+        // Not one of Omarchy's, so possibly installed here on purpose: a decision.
+        QCOMPARE(planned(plan, "my-local-tool").status, QString("conflict"));
+        QCOMPARE(planned(plan, "no-such-app").status, QString("blocked"));
+        QVERIFY(planned(plan, "no-such-app").reason.contains("No configured repository"));
+        QCOMPARE(planned(plan, "some-aur-app").status, QString("blocked"));
+        QVERIFY(planned(plan, "some-aur-app").reason.contains("AUR"));
+        QCOMPARE(planned(plan, "my-build").status, QString("manual"));
+        // Already installed as a dependency: it only becomes wanted.
+        QCOMPARE(planned(plan, "libvpx").action, QString("mark-explicit"));
+
+        // A default app whose own app the profile removes is refused outright.
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("chromium")}}, {app("chromium", "absent")});
+        const ProfilePlan contradiction = planProfile(core, store.path());
+        QVERIFY(!contradiction.valid);
+        QVERIFY(contradiction.errors.join(" ").contains("also to remove chromium"));
+    }
+    void profileAppFailuresAreReportedAsTheyAre() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("firefox")}}, {app("firefox")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"all"};
+
+        // A refused password changes nothing, and what needed the app does not happen.
+        writeFile(m.pacman("deny-sudo"), "");
+        ProfileRun run = runPlan(core, planProfile(core, store.path(), options));
+        QCOMPARE(run.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : run.items)
+            items.insert(item.target, item);
+        QCOMPARE(items.value("firefox").state, QString("failed"));
+        QVERIFY2(items.value("firefox").message.contains("did not finish"), qPrintable(items.value("firefox").message));
+        QCOMPARE(items.value("apps.default.browser").state, QString("blocked"));
+        QVERIFY(items.value("apps.default.browser").message.contains("firefox"));
+        QVERIFY(!m.has("firefox"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("chromium"));
+        QFile::remove(m.pacman("deny-sudo"));
+
+        // A transaction pacman fails is a failure, whatever came before.
+        writeFile(m.pacman("fail-install"), "");
+        run = runPlan(core, planProfile(core, store.path(), options));
+        QCOMPARE(run.state, QString("incomplete"));
+        QVERIFY(!m.has("firefox"));
+        QFile::remove(m.pacman("fail-install"));
+
+        // What pacman would do changed after the review: nothing starts.
+        const ProfilePlan reviewed = planProfile(core, store.path(), options);
+        writeFile(m.pacman("repo"), QByteArray(readAll(m.pacman("repo"))).replace("firefox 140.0-1 nss,libvpx", "firefox 141.0-1 nss,libvpx"));
+        const int before = m.transactions().size();
+        run = runPlan(core, reviewed);
+        QCOMPARE(run.state, QString("incomplete"));
+        for (const ProfileRunItem &item : run.items)
+            if (item.target == "firefox")
+                QVERIFY2(item.message.contains("changed since the plan"), qPrintable(item.message));
+        QCOMPARE(m.transactions().size(), before);
+        QVERIFY(!m.has("firefox"));
+    }
+    void profilePausesWhilePacmanIsBusy() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {}, {app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        core.profileRunner.setPacmanWait(0);
+        const QString lock = m.s.env.sys("/var/lib/pacman/db.lck");
+        writeFile(lock, "");
+        const ProfileRun paused = runPlan(core, planProfile(core, store.path()));
+        QCOMPARE(paused.state, QString("paused"));
+        QVERIFY(paused.resumable());
+        QCOMPARE(paused.items.first().state, QString("pending"));
+        // pacman's lock is waited for, never removed.
+        QVERIFY(QFile::exists(lock));
+        QVERIFY(m.transactions().isEmpty());
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+        QVERIFY(core.coordinator.leaseRun().isEmpty());
+        QFile::remove(lock);
+        const ProfileRun resumed = resumeRun(core, paused.id);
+        QCOMPARE(resumed.state, QString("completed"));
+        QCOMPARE(m.reason("ripgrep"), QString("explicit"));
+    }
+    void profileResumesAfterAnInterruptedPackageWorker() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {}, {app("firefox"), app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(plan.count("ready"), 2);
+        // The run died while pacman was working: the record says both were underway, and
+        // pacman had installed one of them.
+        ProfileRun run;
+        run.id = "run-00000000beef";
+        run.planId = plan.id;
+        run.directory = plan.directory;
+        run.profileName = plan.profileName;
+        run.profileDigest = plan.profileDigest;
+        run.state = "running";
+        for (const ProfilePlanItem &item : plan.items) {
+            ProfileRunItem step;
+            step.id = item.id;
+            step.kind = item.kind;
+            step.target = item.target;
+            step.label = item.label;
+            step.mode = item.mode;
+            step.desired = item.desired;
+            step.action = item.action;
+            step.packages = item.transaction;
+            step.planned = item.currentStatus;
+            step.state = "running";
+            run.items << step;
+        }
+        writeFile(ProfileStore::runsDir(m.s.env) + "/" + run.id + ".json", QJsonDocument(run.toJson()).toJson());
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "nss 3.110-1 dependency -\nlibvpx 1.15-1 dependency -\nfirefox 140.0-1 explicit nss,libvpx\n");
+
+        const ProfileRun resumed = resumeRun(core, run.id);
+        QCOMPARE(resumed.state, QString("completed"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : resumed.items)
+            items.insert(item.target, item);
+        QCOMPARE(items.value("firefox").state, QString("verified"));
+        QVERIFY(items.value("firefox").message.contains("already done"));
+        QCOMPARE(items.value("ripgrep").state, QString("verified"));
+        // Only what had not happened ran again.
+        QCOMPARE(m.transactions(), QStringList{"pacman -S --needed -- ripgrep"});
+    }
+    void profileCliRestoresApps() {
+        PackageMachine a;
+        QTemporaryDir store;
+        const QString dir = store.path() + "/profile";
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir, "--app", "btop", "--app", "mpv", "--exclude-app", "libreoffice-fresh"}), 0);
+        const ProfileModel::Parsed saved = ProfileModel::load(dir);
+        QVERIFY(saved.ok);
+        QCOMPARE(saved.profile.packages.size(), 3);
+        QVERIFY(a.transactions().isEmpty());
+
+        // Another computer, where btop is missing and libreoffice-fresh is still there.
+        PackageMachine b;
+        writeFile(b.pacman("installed"), QByteArray(readAll(b.pacman("installed"))).replace("btop 1.4.7-1 explicit -\n", ""));
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", dir}), 0);
+        const QStringList plans = QDir(ProfileStore::plansDir(b.s.env)).entryList({"plan-*.json"}, QDir::Files);
+        QCOMPARE(plans.size(), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", plans.first().chopped(5)}), 1);
+        QVERIFY(b.transactions().isEmpty());
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", plans.first().chopped(5), "--yes"}), 0);
+        QCOMPARE(b.transactions(), (QStringList{"pacman -S --needed -- btop", "pacman -R -- libreoffice-fresh"}));
+        QCOMPARE(b.reason("btop"), QString("explicit"));
+        QVERIFY(!b.has("libreoffice-fresh"));
+    }
+    void profileResolvesAurAppsOnlyWhenAsked() {
+        PackageMachine m;
+        m.s.command("curl", kFakeAurCurl);
+        writeFile(m.pacman("aur"), "my-local-tool 1.0-1 -\n");
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "another-build 2.0-1 explicit -\n");
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.apps = {"my-local-tool", "another-build"};
+        // Without being asked, nothing reaches the network, and neither is guessed at.
+        const ProfileCapture::Result offline = captureProfile(core, nullptr, selection);
+        QCOMPARE(offline.profile.package("my-local-tool").source, QString("manual"));
+        QVERIFY(!QFile::exists(m.pacman("curl-calls")));
+        selection.resolveAur = true;
+        const ProfileCapture::Result online = captureProfile(core, nullptr, selection);
+        QVERIFY(online.ok);
+        QCOMPARE(online.profile.package("my-local-tool").source, QString("aur"));
+        QCOMPARE(online.profile.package("another-build").source, QString("manual"));
+        // One request, holding only the names asked about.
+        QCOMPARE(QString::fromUtf8(readAll(m.pacman("curl-calls"))).trimmed(),
+                 QString("https://aur.archlinux.org/rpc/v5/info?arg%5B%5D=another-build&arg%5B%5D=my-local-tool"));
+        // The AUR unreachable: nothing is assumed, and the capture says so.
+        writeFile(m.pacman("aur-down"), "");
+        const ProfileCapture::Result down = captureProfile(core, nullptr, selection);
+        QVERIFY(down.ok);
+        QCOMPARE(down.profile.package("my-local-tool").source, QString("manual"));
+        bool said = false;
+        for (const ProfileCapture::Item &item : down.items)
+            said = said || item.reason.contains("could not be asked");
+        QVERIFY(said);
+        QFile::remove(m.pacman("aur-down"));
+        // A default app's own app is known from the catalog, with no lookup at all.
+        writeFile(m.state("browser"), "chrome\n");
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "google-chrome 142.0-1 explicit -\n");
+        const int calls = QString::fromUtf8(readAll(m.pacman("curl-calls"))).count('\n');
+        ProfileCapture::Selection browser;
+        browser.settings = {"apps.default.browser"};
+        const ProfileCapture::Result known = captureProfile(core, nullptr, browser);
+        QCOMPARE(known.profile.package("google-chrome").source, QString("aur"));
+        QCOMPARE(QString::fromUtf8(readAll(m.pacman("curl-calls"))).count('\n'), calls);
+    }
+    void profileBuildsAppsFromTheAur() {
+        PackageMachine m;
+        m.s.command("yay", kFakeYay);
+        writeFile(m.pacman("aur"), "google-chrome 142.0-1 google-chrome-stable\n");
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("chrome")}}, {app("google-chrome", "present", "aur"), app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"all"};
+        const ProfilePlan plan = planProfile(core, store.path(), options);
+        QCOMPARE(planned(plan, "google-chrome").action, QString("build"));
+        QCOMPARE(planned(plan, "google-chrome").status, QString("ready"));
+        QVERIFY(planned(plan, "google-chrome").reason.contains("review"));
+        QCOMPARE(planned(plan, "apps.default.browser").needs, QStringList{"package:google-chrome"});
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(m.reason("google-chrome"), QString("explicit"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("chrome"));
+        // Built by yay with its review offered, never with a saved answer standing in for it.
+        QVERIFY(m.transactions().contains("yay -S --needed --aur --diffmenu --noanswerdiff -- google-chrome"));
+        QVERIFY(m.transactions().contains("pacman -S --needed -- ripgrep"));
+        for (const Transaction &tx : core.coordinator.history())
+            if (tx.runId == run.id && tx.label.contains("AUR"))
+                QVERIFY(!tx.undoable());
+    }
+    void profileFailedAurBuildBlocksOnlyWhatNeedsIt() {
+        PackageMachine m;
+        m.s.command("yay", kFakeYay);
+        writeFile(m.pacman("aur"), "google-chrome 142.0-1 google-chrome-stable\n");
+        writeFile(m.pacman("fail-build"), "");
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("chrome")}, {"power.idle.lock", setTo("600")}},
+                        {app("google-chrome", "present", "aur"), app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"all"};
+        const ProfileRun run = runPlan(core, planProfile(core, store.path(), options));
+        QCOMPARE(run.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : run.items)
+            items.insert(item.target, item);
+        QCOMPARE(items.value("google-chrome").state, QString("failed"));
+        QCOMPARE(items.value("apps.default.browser").state, QString("blocked"));
+        // Work that did not depend on the build still happened, and was verified.
+        QCOMPARE(items.value("ripgrep").state, QString("verified"));
+        QCOMPARE(items.value("power.idle.lock").state, QString("verified"));
+        QVERIFY(!m.has("google-chrome"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("chromium"));
+
+        // Without yay there is nothing to build with, and the plan says so.
+        QFile::remove(m.s.bin("yay"));
+        const ProfilePlan plan = planProfile(core, store.path(), options);
+        QCOMPARE(planned(plan, "google-chrome").status, QString("blocked"));
+        QVERIFY(planned(plan, "google-chrome").reason.contains("needs yay"));
+    }
+    void profileWithoutATerminalLeavesAppsAlone() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"power.idle.lock", setTo("600")}}, {app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfileRun run = runPlan(core, planProfile(core, store.path()));
+        QCOMPARE(run.state, QString("incomplete"));
+        for (const ProfileRunItem &item : run.items) {
+            if (item.target == "ripgrep") {
+                QCOMPARE(item.state, QString("blocked"));
+                QVERIFY(item.message.contains("terminal"));
+            } else {
+                QCOMPARE(item.state, QString("verified"));
+            }
+        }
+        QVERIFY(m.transactions().isEmpty());
+        QVERIFY(!m.s.calls().join('\n').contains("sudo"));
     }
 
 };
