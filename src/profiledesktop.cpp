@@ -802,6 +802,13 @@ void ProfileDesktop::read(const QStringList &mimes, std::function<void(const Sna
         if (plugin.value("firstParty").toBool() && plugin.value("kinds").toStringList().contains(QStringLiteral("bar-widget")))
             snapshot->barWidgets.insert(plugin.value("id").toString());
     }
+    // Without Omarchy's own widgets to tell them apart, every widget would look like one
+    // installed separately: a capture would save an empty bar, and a restore of one would
+    // empty this computer's. Neither happens; the bar is unreadable instead.
+    if (snapshot->barOk && snapshot->barWidgets.isEmpty()) {
+        snapshot->barOk = false;
+        snapshot->barError = tr("Omarchy's own bar widgets could not be found here.");
+    }
     // The background: one of the current theme's own, or one of the user's for this theme.
     QByteArray inUse;
     FileOps::readFile(env.stateHome + "/omarchy/current/theme.name", &inUse);

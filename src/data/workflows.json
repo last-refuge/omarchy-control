@@ -8021,6 +8021,34 @@
   "confirmText": "Restoring replaces the running system with the snapshot you choose. Personal files are not part of a snapshot."
  },
  {
+  "id": "myomarchy.open",
+  "page": "system",
+  "section": "Snapshots and recovery",
+  "label": "Save and restore this setup",
+  "type": "action",
+  "domain": "C22",
+  "integration": "native",
+  "description": "Save this computer's settings, apps, and desktop to a profile, publish it to GitHub, and restore it on another computer.",
+  "keywords": [
+   "my omarchy",
+   "profile",
+   "backup",
+   "restore",
+   "migrate",
+   "new computer",
+   "dotfiles",
+   "github",
+   "sync settings",
+   "save settings"
+  ],
+  "sources": [],
+  "launch": {
+   "kind": "page",
+   "page": "myomarchy",
+   "focus": "block.myOmarchy"
+  }
+ },
+ {
   "id": "helper.disks",
   "page": "system",
   "section": "Snapshots and recovery",

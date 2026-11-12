@@ -102,6 +102,8 @@ Check for a new version and install it from the About page, where <code>pacman</
 </tr>
 </table>
 
+**My Omarchy** keeps what makes this computer yours: the theme and background, the bar and dock, launcher changes, shortcuts, terminal settings, and the apps you installed, saved as versions and published to a private GitHub repository when you ask. On a fresh Omarchy installation, connect that repository and restore it. Every save and every restore shows what it will change first, apps install in a terminal where `pacman` and `sudo` ask, and nothing reaches the network until you press Check GitHub or Publish. [How it works](docs/MY-OMARCHY.md).
+
 Any app can be renamed, given another icon, or hidden from the launcher, through a copy of its launcher that notices package updates and leaves the package's own untouched. It also covers services, startup apps, storage, plugins, shortcuts, window rules, file associations, typed Superwhisper settings, and guided firewall routes. Every other Omarchy workflow is one search away, handing off to the right panel, wizard, app, or config file.
 
 The window follows your theme and language live, works by keyboard alone, and mirrors for right-to-left languages. Its translations were made with AI agents, starting from Omarchy's own, and are open to review by native speakers. While it runs, its icon sits in the bar's tray: closing the window keeps it there, and a click brings the window back to the workspace you are on. Quit from the tray's menu, or with <kbd>Q</kbd>. Without a tray, closing quits. Screenshots use a synthetic machine with fictional values.
@@ -178,6 +180,11 @@ omarchy-control icons import ~/Downloads/SomePack.tar.gz
 omarchy-control apps launcher set firefox.desktop --name Browser --icon web-browser
 omarchy-control update check
 omarchy-control skill install
+omarchy-control profile capture --category appearance --desktop
+omarchy-control profile save --message "Laptop"
+omarchy-control profile connect --create my-omarchy
+omarchy-control profile publish
+omarchy-control profile plan --revision published
 ```
 
 </details>

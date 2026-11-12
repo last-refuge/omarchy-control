@@ -3,13 +3,14 @@
 // Steps, joined by "+", set up a state before the picture: select=OUT, stage=OUT/field/value,
 // focus=NAME or NAME@N (the Nth visible item of that name), click=NAME or NAME@N, text=NAME/VALUE,
 // preview, check, discard, refresh, unplug=OUT, details=ID, scroll=PX, rescan, connect=UUID/NAME, apply=ID/VALUE,
-// keep, goback, wait=MS. They act only on the sandbox's fake
+// keep, goback, wait=MS (before the picture), pause=MS (between steps). They act only on the sandbox's fake
 // displays: unplug drops a display from the fake Hyprland's list and refreshes.
 //
 // --real reads the live machine, which only ever reads: it opens pages and takes
 // pictures, and clicks nothing. Those images show personal data, so they stay local.
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -52,6 +53,12 @@ static void runSteps(QQuickWindow *window, Backend &backend, const QString &home
             displays->refresh();
         else if (name == QLatin1String("wait"))
             *wait = value.toInt();
+        else if (name == QLatin1String("pause")) {
+            // Lets work started by an earlier step finish before the next step.
+            QEventLoop loop;
+            QTimer::singleShot(value.toInt(), &loop, &QEventLoop::quit);
+            loop.exec();
+        }
         else if (name == QLatin1String("rescan"))
             backend.network()->rescan();
         else if (name == QLatin1String("connect"))

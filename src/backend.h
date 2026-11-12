@@ -15,6 +15,7 @@
 #include "iconthemeimporter.h"
 #include "networkprovider.h"
 #include "pluginsprovider.h"
+#include "profileprovider.h"
 #include "servicesprovider.h"
 #include "shortcutsprovider.h"
 #include "systemprovider.h"
@@ -54,6 +55,7 @@ class Backend : public QObject {
     Q_PROPERTY(UpdateProvider *updates READ updates CONSTANT)
     Q_PROPERTY(IconThemeImporter *iconImporter READ iconImporter CONSTANT)
     Q_PROPERTY(LauncherEditor *launchers READ launchers CONSTANT)
+    Q_PROPERTY(ProfileProvider *profiles READ profiles CONSTANT)
     Q_PROPERTY(QVariantList compatChanges READ compatChanges NOTIFY problemsChanged)
 
 public:
@@ -81,6 +83,7 @@ public:
     WindowRulesProvider *windowRules() { return &m_windowRules; }
     UpdateProvider *updates() { return &m_updates; }
     IconThemeImporter *iconImporter() { return &m_iconImporter; }
+    ProfileProvider *profiles() { return &m_profiles; }
     LauncherEditor *launchers();
     Q_INVOKABLE QVariantMap iconSamples(const QString &pack) const { return m_core->icons.samples(pack); }
     Q_INVOKABLE QString iconsFolder() const { return m_core->env.dataHome + "/icons"; }
@@ -154,6 +157,7 @@ private:
     WindowRulesProvider m_windowRules;
     UpdateProvider m_updates;
     IconThemeImporter m_iconImporter;
+    ProfileProvider m_profiles;  // My Omarchy.
     StateMap m_states;
     QHash<QString, QVariantList> m_choices;
     QHash<QString, QString> m_iconUrls;

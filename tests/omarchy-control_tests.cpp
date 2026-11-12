@@ -10,6 +10,7 @@
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDirIterator>
 #include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -66,6 +67,7 @@
 #include "iconarchive.h"
 #include "launchereditor.h"
 #include "profilefiles.h"
+#include "profileprovider.h"
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -539,6 +541,18 @@ QString commitByHand(const QString &gitDir, const QList<GitEntry> &entries, cons
     const QString commit = QString::fromLatin1(gitIn(gitDir, arguments));
     gitIn(gitDir, {"update-ref", "refs/heads/main", commit});
     return commit;
+}
+
+bool copyFolder(const QString &from, const QString &to) {
+    QDirIterator it(from, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString file = it.next();
+        const QString target = to + file.mid(from.size());
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        if (!QFile::copy(file, target))
+            return false;
+    }
+    return true;
 }
 
 ProfileRepository::Result repositoryDo(std::function<void(ProfileRepository::Done)> start) {
@@ -1818,7 +1832,7 @@ private slots:
         QSet<QString> pages;
         for (const auto &page : catalog.pages())
             pages << page.id;
-        QCOMPARE(catalog.pages().size(), 13);
+        QCOMPARE(catalog.pages().size(), 14);
         static const QSet<QString> types{"toggle", "choice", "int", "float", "slider", "text", "status", "action"};
         static const QSet<QString> modes{"native", "omarchy-panel", "omarchy-wizard", "external-helper", "advanced-config"};
         static const QSet<QString> recoveries{"auto-undo", "best-effort", "no-undo"};
@@ -2549,8 +2563,8 @@ esac)SH");
             else
                 expected << entry->id;
         }
-        QCOMPARE(expected.size() + natives.size(), 66);
-        QCOMPARE(expected.size(), 63);
+        QCOMPARE(expected.size() + natives.size(), 67);
+        QCOMPARE(expected.size(), 64);
         QCOMPARE(placed.size(), QSet<QString>(placed.begin(), placed.end()).size());
         placed.sort();
         expected.sort();
@@ -2563,7 +2577,7 @@ esac)SH");
         QCOMPARE(library.value("This computer"), 6);
         QCOMPARE(library.value("Updates"), 13);
         QCOMPARE(library.value("Language and time"), 7);
-        QCOMPARE(library.value("Snapshots and recovery"), 5);
+        QCOMPARE(library.value("Snapshots and recovery"), 6);
         QCOMPARE(library.value("Boot and firmware"), 6);
         QCOMPARE(library.value("Restart components"), 10);
         QCOMPARE(library.value("Reset to defaults"), 16);
@@ -9664,6 +9678,22 @@ esac)SH");
         core.capabilities.scanServicesBlocking();
         // A profile from a newer Omarchy can name what this one does not have.
         ProfilePlan plan = planProfile(core, store.path());
+        {
+            // With none of Omarchy's own widgets found, the bar is not read at all: never
+            // saved empty, and never emptied by a restore.
+            ProfileMachine bare;
+            AppCore lost(bare.s.env);
+            ProfileCapture::Selection bar;
+            bar.bar = true;
+            bar.settings = {"power.idle.lock"};
+            const ProfileCapture::Result captured = captureProfile(lost, nullptr, bar);
+            QVERIFY(captured.ok);
+            QVERIFY(!captured.profile.desktop.contains("bar"));
+            QTemporaryDir empty;
+            writeFile(ProfileModel::manifestPath(empty.path()),
+                      QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Empty bar"}, {"desktop", QJsonObject{{"bar", QJsonObject{{"layout", QJsonObject{{"left", QJsonArray()}}}}}}}}).toJson());
+            QCOMPARE(planned(planProfile(lost, empty.path()), "bar").status, QString("blocked"));
+        }
         QCOMPARE(planned(plan, "bar").status, QString("blocked"));
         QVERIFY(planned(plan, "bar").reason.contains("omarchy.globe"));
         QCOMPARE(planned(plan, "plugins").status, QString("blocked"));
@@ -9968,6 +9998,141 @@ esac)SH");
         QCOMPARE(Cli::run(b.s.env, {"profile", "fetch"}), 0);
         QCOMPARE(Cli::run(b.s.env, {"profile", "plan", "--revision", "published"}), 0);
         QCOMPARE(Cli::run(b.s.env, {"profile", "resolve", "--use-published", "--keep-mine"}), 1);
+    }
+
+    // ---- My Omarchy: the window --------------------------------------------------------
+    void profileWindowBackendSavesAndRestores() {
+        // What the window does, through the provider it uses: the same capture, versions,
+        // plan, and restore the command line runs, as values QML shows.
+        QTemporaryDir hub;
+        ProfileMachine m;
+        useGitHub(m.s, hub.path());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileProvider profiles(&core);
+        const auto settle = [&] { return QTest::qWaitFor([&] { return !profiles.busy(); }, 30000); };
+        profiles.startCapture(QVariantMap{{"categories", QStringList{"idle"}}});
+        QVERIFY(settle());
+        QVERIFY2(profiles.review().value("ok").toBool(), qPrintable(profiles.error()));
+        QStringList labels;
+        for (const QVariant &row : profiles.review().value("items").toList())
+            labels << row.toMap().value("label").toString();
+        QVERIFY2(labels.contains("Lock after"), qPrintable(labels.join(", ")));
+        profiles.saveReview("From the window", false);
+        QVERIFY(settle());
+        QVERIFY2(profiles.error().isEmpty(), qPrintable(profiles.error()));
+        profiles.refresh();
+        QVERIFY(QTest::qWaitFor([&] { return profiles.status().value("saved").toMap().value("message").toString() == "From the window"; }, 10000));
+        // Changed here after the save: a decision, never overwritten on its own.
+        QCOMPARE(applySetting(core.engine, "power.idle.lock", "600").phase, QString("committed"));
+        profiles.planRestore("saved");
+        QVERIFY(settle());
+        QVERIFY2(profiles.plan().value("valid").toBool(), qPrintable(profiles.error()));
+        QCOMPARE(profiles.plan().value("undecided").toInt(), 1);
+        QString lock;
+        for (const QVariant &row : profiles.plan().value("items").toList())
+            if (row.toMap().value("target").toString() == "power.idle.lock")
+                lock = row.toMap().value("id").toString();
+        QVERIFY(!lock.isEmpty());
+        profiles.startRestore(false);  // Left out without a decision, so refused unconfirmed.
+        QVERIFY(!profiles.error().isEmpty());
+        profiles.choose(lock, "use-saved");
+        QVERIFY(settle());
+        QCOMPARE(profiles.plan().value("willRun").toInt(), 1);
+        QCOMPARE(profiles.plan().value("undecided").toInt(), 0);
+        profiles.startRestore(false);
+        QVERIFY(QTest::qWaitFor([&] { return profiles.run().value("state").toString() == "completed"; }, 30000));
+        QVERIFY(readAll(m.config()).contains("\"lock\": 300"));
+        QCOMPARE(profiles.run().value("counts").toMap().value("verified").toInt(), 1);
+        profiles.clearRun();
+        profiles.clearPlan();
+        QVERIFY(profiles.run().isEmpty());
+    }
+
+    void profileWindowHandsAppsToATerminal() {
+        // Apps change only where sudo and pacman can ask: the window opens a terminal for
+        // the restore, which holds the lease and keeps going if the window closes.
+        PackageMachine m;
+        m.s.command("omarchy-launch-floating-terminal-with-presentation", "printf '%s' \"$1\" > \"$(dirname \"$HOME\")/terminal\"");
+        QTemporaryDir store;
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Apps"}, {"packages", QJsonArray{QJsonObject{{"name", "ripgrep"}, {"source", "repository"}, {"intent", "present"}}}}})
+                      .toJson());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileProvider profiles(&core);
+        // A folder that is not this computer's own profile is planned through the same path.
+        QVERIFY(copyFolder(store.path(), core.profileRepository.workingDirectory()));
+        profiles.planRestore("working");
+        QVERIFY(QTest::qWaitFor([&] { return !profiles.busy(); }, 30000));
+        QVERIFY2(profiles.plan().value("valid").toBool(), qPrintable(profiles.error()));
+        QVERIFY(profiles.plan().value("needsTerminal").toBool());
+        profiles.startRestore(false);
+        QVERIFY(QTest::qWaitFor([&] { return QFile::exists(m.s.dir.path() + "/terminal"); }, 10000));
+        const QString command = QString::fromUtf8(readAll(m.s.dir.path() + "/terminal"));
+        QVERIFY2(command.contains(" profile apply " + profiles.plan().value("id").toString() + " --yes"), qPrintable(command));
+        QVERIFY(profiles.run().value("terminal").toBool());
+        // Nothing was installed by the window itself.
+        QVERIFY(!m.has("ripgrep"));
+        profiles.clearRun();
+    }
+
+    void myOmarchyPageSavesThroughTheWindow() {
+        QTemporaryDir hub;
+        Sandbox s;
+        fakeDesktop(s);
+        useGitHub(s, hub.path());
+        QQuickStyle::setStyle("Material");
+        Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
+        Theme theme(s.env);
+        Backend backend(s.env);
+        TrayHost trayHost;
+        QQmlApplicationEngine engine;
+        QStringList warnings;
+        connect(&engine, &QQmlApplicationEngine::warnings, this, [&](const QList<QQmlError> &list) {
+            for (const auto &warning : list)
+                warnings << warning.toString();
+        });
+        engine.addImageProvider("icons", new IconProvider);
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("backend", &backend);
+        engine.rootContext()->setContextProperty("initialPage", QString("myomarchy"));
+        engine.rootContext()->setContextProperty("initialSetting", QString());
+        engine.rootContext()->setContextProperty("trayHost", &trayHost);
+        engine.load(QUrl("qrc:/Main.qml"));
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QMetaObject::invokeMethod(window, "go", Q_ARG(QVariant, "myomarchy"), Q_ARG(QVariant, QString()));
+        const auto find = [&](const QString &name) -> QQuickItem * {
+            QQuickItem *found = nullptr;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                if (!found && item->objectName() == name && item->isVisible())
+                    found = item;
+                for (QQuickItem *child : item->childItems())
+                    walk(child);
+            };
+            walk(window->contentItem());
+            return found;
+        };
+        const auto click = [&](const QString &name) {
+            QQuickItem *item = nullptr;
+            if (!QTest::qWaitFor([&] { return (item = find(name)) && item->isEnabled(); }, 20000))
+                return false;
+            QMetaObject::invokeMethod(item, "click");
+            return true;
+        };
+        QVERIFY(click("profileStartSave"));
+        QVERIFY(click("profileChoice_category.idle"));
+        QVERIFY(QTest::qWaitFor([&] { return find("profileChoice_category.idle") && find("profileChoice_category.idle")->property("on").toBool(); }, 5000));
+        QVERIFY(click("profileReviewSave"));
+        QVERIFY(click("profileSaveHere"));
+        QVERIFY(QTest::qWaitFor([&] { return find("profileSaved") && find("profileSaved")->property("text").toString().contains("Saved with Omarchy Control"); }, 20000));
+        QVERIFY(click("profileStartRestore"));
+        QVERIFY(click("profileRestoreSaved"));
+        QVERIFY(QTest::qWaitFor([&] { return backend.profiles()->plan().value("valid").toBool(); }, 20000));
+        QVERIFY(click("profileRestoreBack"));
+        QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join("\n")));
     }
 
     void profileThemeInstallFailuresAreContained() {
