@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "name": "x",
+  "desktop": {
+    "shortcuts": [
+      {
+        "id": "a",
+        "keys": "SUPER + A",
+        "command": "a"
+      },
+      {
+        "id": "a",
+        "keys": "SUPER + B",
+        "command": "b"
+      }
+    ]
+  }
+}

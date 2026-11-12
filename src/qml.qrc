@@ -37,6 +37,7 @@
         <file alias="BlockDisplays.qml">BlockDisplays.qml</file>
         <file alias="BlockHeading.qml">BlockHeading.qml</file>
         <file alias="BlockHistory.qml">BlockHistory.qml</file>
+        <file alias="BlockMyOmarchy.qml">BlockMyOmarchy.qml</file>
         <file alias="BlockHooks.qml">BlockHooks.qml</file>
         <file alias="BlockConnections.qml">BlockConnections.qml</file>
         <file alias="BlockWifi.qml">BlockWifi.qml</file>

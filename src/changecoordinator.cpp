@@ -45,6 +45,8 @@ QJsonObject Transaction::toJson() const {
         o["files"] = files;
     if (!extra.isEmpty())
         o["extra"] = extra;
+    if (!runId.isEmpty())
+        o["run"] = runId;
     return o;
 }
 
@@ -64,6 +66,7 @@ Transaction Transaction::fromJson(const QJsonObject &o) {
     tx.undoneBy = o.value("undoneBy").toString();
     tx.files = o.value("files").toObject();
     tx.extra = o.value("extra").toObject();
+    tx.runId = o.value("run").toString();
     return tx;
 }
 
@@ -81,6 +84,7 @@ QVariantMap Transaction::toVariant() const {
     m["at"] = at.toLocalTime();
     m["undoable"] = undoable();
     m["undoneBy"] = undoneBy;
+    m["runId"] = runId;
     return m;
 }
 
@@ -97,6 +101,66 @@ QString ChangeCoordinator::journalPath() const {
 
 QString ChangeCoordinator::backupDirectory() const {
     return m_env.appStateDir + "/backups";
+}
+
+QString ChangeCoordinator::leasePath() const {
+    return m_env.appStateDir + "/restore.lock";
+}
+
+bool ChangeCoordinator::acquireLease(const QString &runId, QString *error) {
+    if (m_lease) {
+        if (m_leaseRun == runId)
+            return true;
+        if (error)
+            *error = tr("Another restore is running.");
+        return false;
+    }
+    auto lease = std::make_unique<QLockFile>(leasePath());
+    // A restore can take as long as its slowest command, so age alone never frees the
+    // lease. A holder that died does: QLockFile checks whether its process still runs.
+    lease->setStaleLockTime(0);
+    if (!lease->tryLock(0)) {
+        if (error)
+            *error = lease->error() == QLockFile::LockFailedError ? tr("Another restore is running.")
+                                                                  : tr("The restore lease could not be taken in %1.").arg(m_env.appStateDir);
+        return false;
+    }
+    m_lease = std::move(lease);
+    m_leaseRun = runId;
+    return true;
+}
+
+void ChangeCoordinator::releaseLease() {
+    if (m_lease)
+        m_lease->unlock();
+    m_lease.reset();
+    m_leaseRun.clear();
+}
+
+bool ChangeCoordinator::leaseHeldElsewhere() const {
+    // No file, no restore. Probing creates the file for a moment, which another probe
+    // could mistake for a restore, so it only happens when there is something to check.
+    if (m_lease || !QFileInfo::exists(leasePath()))
+        return false;
+    QLockFile probe(leasePath());
+    probe.setStaleLockTime(0);
+    // Taking it is the only reliable look. A stale lease from a dead run is cleared by this.
+    if (probe.tryLock(0)) {
+        probe.unlock();
+        return false;
+    }
+    return probe.error() == QLockFile::LockFailedError;
+}
+
+bool ChangeCoordinator::waitUntilIdle(int timeoutMs) {
+    if (busy())
+        return false;
+    QLockFile lock(m_env.appStateDir + "/change.lock");
+    lock.setStaleLockTime(5 * 60 * 1000);
+    if (!lock.tryLock(timeoutMs))
+        return false;
+    lock.unlock();
+    return true;
 }
 
 QString ChangeCoordinator::redact(const QString &text) {
@@ -261,6 +325,7 @@ void ChangeCoordinator::run(Queued item) {
     tx.recovery = item.request.recovery;
     tx.beforeWasDefault = item.request.beforeWasDefault;
     tx.extra = item.request.extra;
+    tx.runId = item.request.runId;
     tx.at = QDateTime::currentDateTimeUtc();
 
     // A second window or the CLI must not interleave with this change.
@@ -268,6 +333,15 @@ void ChangeCoordinator::run(Queued item) {
     m_lock->setStaleLockTime(5 * 60 * 1000);
     if (!m_lock->tryLock(2000)) {
         fail(std::move(item), tx, tr("Another Omarchy Control window is applying a change. Try again in a moment."));
+        return;
+    }
+
+    // While a restore holds the lease, only its own changes go ahead. Checked after the
+    // change lock, so a restore that starts now waits for this change instead.
+    if (!m_leaseRun.isEmpty() ? item.request.runId != m_leaseRun : (!item.request.runId.isEmpty() || leaseHeldElsewhere())) {
+        fail(std::move(item), tx, !item.request.runId.isEmpty() && m_leaseRun.isEmpty()
+                                      ? tr("This restore no longer holds its lease, so nothing was changed.")
+                                      : tr("A restore is running. Changes can be made again when it finishes."));
         return;
     }
 

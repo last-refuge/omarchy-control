@@ -86,6 +86,7 @@ Env Env::sandbox(const QString &root, const QString &binDirectory) {
     }
     env.process.insert("PATH", binDirectory + ":" + safeBin);
     env.process.insert("HYPRLAND_INSTANCE_SIGNATURE", "sandbox");
+    env.gitHub = "file://" + root + "/github";
     env.process.insert("LC_ALL", "C");
     return env;
 }

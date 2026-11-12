@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Folder",
+  "desktop": {
+    "themes": {
+      "../config": {
+        "url": "https://github.com/example/nord.git"
+      }
+    }
+  }
+}

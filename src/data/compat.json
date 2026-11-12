@@ -1,4 +1,18 @@
 {
+ "adapters": {
+  "profile.bar": [
+   "omarchy-bar",
+   "omarchy-shell-config"
+  ],
+  "profile.plugins": [
+   "omarchy-plugin-disable",
+   "omarchy-plugin-enable",
+   "omarchy-plugin-list"
+  ],
+  "profile.themes": [
+   "omarchy-theme-install"
+  ]
+ },
  "commands": {
   "omarchy-bar": "7fff2a1f7ed2fcb573cd1394b71ce9f4b040e918a9240d966f788210d4a2a727",
   "omarchy-brightness-display": "044e6bcb55bb98b683acd967414e0339f95ebe21393395b3e184d35f44809596",
@@ -18,9 +32,14 @@
   "omarchy-hyprland-workspace-layout-default": "6f3f99de6b57e4aba01d9de66590897b83f3e050b8b815ed648f2af3300a2f88",
   "omarchy-language": "6f24a7fc9a2fd75c8a10054f4348a7190d792d62bf4617b7ccf48c94ae49e066",
   "omarchy-network-band": "89349eb91c7064060d108ba68abdecf887716e2b2da33c9b7682551d3fe95e79",
+  "omarchy-plugin-disable": "394414db2d5fd393080f013ba301cf44d81c7bcea7046f7b8c5e34faf1acde15",
+  "omarchy-plugin-enable": "e8e176daf0ead11b5f5f8e6b0de319c3875335eaf5face41f1bb678779526b1a",
+  "omarchy-plugin-list": "81b990d021a53cbe597c09d8bef92c8909879003db30fb8f56d9f0e03bbcb461",
   "omarchy-powerprofiles-set": "3dd63e539a26d1a8bc1338394ef0c2ba29920ef76db5dfdd85b54d67af35e98a",
   "omarchy-shell": "fd1ac699c5d83846c8eb530ead22792be61b9704f68e64caa63f7243d170fa24",
+  "omarchy-shell-config": "931df34897dba74e2a98b190040c9d50d3082d00f58c19a22ab48402cebcf539",
   "omarchy-theme-bg-set": "865beafef7643dc4aac6f2eca06d68808c197d39fba7fedaba75892cfd050a1a",
+  "omarchy-theme-install": "f08635d3d58f56ee49d94a132bcd2c36a92e7e8dc6891515d2d77edfa73bd15b",
   "omarchy-theme-set": "ab251f6cf6e07c6e07b0c4177220e4691d04a872c03694f2bdc606e17facd9da",
   "omarchy-theme-set-gnome": "942bb8fd260387a39ef664c3b172d1fe1baff265a2592a26d8efe118f35a19aa",
   "omarchy-toggle-animations": "911377069712ade3cded671a0a3d9ee118c10c23702e266486d330e6cf83f49e",

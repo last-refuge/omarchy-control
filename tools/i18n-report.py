@@ -71,6 +71,7 @@ def strings():
                  entry.get("multiLabel"), entry.get("multiDescription"), (entry.get("read") or {}).get("unsupported")], where)
             add(entry.get("effects", []), where)
             add([(entry.get("link") or {}).get("label")], where)
+            add([(entry.get("profile") or {}).get("reason")], where)
             add([c["label"] for c in entry.get("choices", [])], where)
             add(entry.get("map", {}).values() if isinstance(entry.get("map"), dict) else [], where)
     return sorted(ui - plural), sorted(plural), sorted(catalog - ui - plural), origins

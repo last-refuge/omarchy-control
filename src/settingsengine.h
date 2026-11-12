@@ -63,11 +63,21 @@ public:
     // from a live list are checked against `knownChoices`.
     ChangePlan plan(const QString &id, const QString &value, const QVariantList &knownChoices = {}) const;
 
-    void apply(const QString &id, const QString &value, ApplyCallback callback, const QString &kind = "set");
-    void reset(const QString &id, ApplyCallback callback);
+    // `runId` marks the change as part of a restore run holding the coordinator's lease.
+    void apply(const QString &id, const QString &value, ApplyCallback callback, const QString &kind = "set", const QString &runId = QString());
+    void reset(const QString &id, ApplyCallback callback, const QString &runId = QString());
     void undo(const QString &transactionId, ApplyCallback callback);
 
     QString displayValue(const CatalogEntry &entry, const QString &value, const QVariantList &choices = {}) const;
+
+    // Where a Hyprland setting's configured value comes from, read as text and never run:
+    // "control" for this app's own module, "user" for an assignment in the user's own
+    // files, "omarchy" for anything else. A restore tells your own choice from a default
+    // by this, and a hand-edited module is "custom".
+    QString hyprOrigin(const CatalogEntry &entry) const;
+    // The value this app's module holds for a setting: the choice itself, which a toggle
+    // loaded later can mask in what Hyprland reports. Empty when the module has none.
+    QString hyprModuleValue(const CatalogEntry &entry) const;
 
     static QString parseOutput(const CommandResult &result, const QJsonObject &spec, bool *ok);
     static QString parseHyprOption(const QByteArray &json, bool *ok);
@@ -86,9 +96,9 @@ private:
     QString configuredHyprValue(const CatalogEntry &entry, const QStringList &path, QString *source) const;
     void verifyValue(const QString &id, const QString &expected, int attempts, ChangeCoordinator::Done done);
     void submitHypr(const CatalogEntry &entry, const QString &value, const QString &before, bool beforeWasDefault, bool remove,
-                    const QString &kind, ApplyCallback callback);
+                    const QString &kind, ApplyCallback callback, const QString &runId = QString());
     void submitJson(const CatalogEntry &entry, const QString &value, const QString &before, bool beforeWasDefault, bool remove,
-                    const QString &kind, ApplyCallback callback);
+                    const QString &kind, ApplyCallback callback, const QString &runId = QString());
     void reloadHyprland(ChangeCoordinator::Done done, const QStringList &baseline, bool checkErrors);
     void confirmRead(const QString &id, std::shared_ptr<QString> settled, ChangeCoordinator::Done done);
 

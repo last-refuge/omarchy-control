@@ -17,6 +17,9 @@ public:
 
     // Empty if this entry may write; otherwise what changed.
     QString changedFor(const CatalogEntry &entry, const QString &hyprlandVersion) const;
+    // The same for the commands reviewed under a key that is not a setting, such as a
+    // profile adapter's "profile.themes".
+    QString changedForKey(const QString &key) const;
     QStringList changedCommands(const QString &hyprlandVersion) const;
     void acceptAll(const QString &hyprlandVersion);
     QString baseline() const;

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "x",
+  "assets": [
+    {
+      "sha256": "abc",
+      "size": 10,
+      "kind": "background",
+      "name": "a.jpg"
+    }
+  ]
+}

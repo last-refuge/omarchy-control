@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Plain http",
+  "desktop": {
+    "themes": {
+      "nord": {
+        "url": "http://github.com/example/nord.git"
+      }
+    }
+  }
+}

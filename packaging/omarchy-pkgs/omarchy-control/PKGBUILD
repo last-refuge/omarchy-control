@@ -23,6 +23,8 @@ depends=(
 )
 optdepends=(
   'bluez-utils: Bluetooth settings'
+  'git: saving versions of My Omarchy profiles'
+  'github-cli: publishing My Omarchy profiles to GitHub'
   'networkmanager: network settings'
   'pipewire-pulse: sound settings'
 )

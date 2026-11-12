@@ -13,8 +13,12 @@ Compat::Compat(const Env &env, const QString &directory) : m_env(env) {
         const auto root = QJsonDocument::fromJson(file.readAll()).object();
         m_baselineOmarchy = root.value("omarchy").toString();
         m_baselineHyprland = root.value("hyprland").toString();
-        const auto settings = root.value("settings").toObject();
-        // Usually one command; a setting that relies on how several behave together lists them.
+        // Usually one command; a setting that relies on how several behave together lists
+        // them. Profile adapters that are not settings are pinned the same way.
+        QJsonObject settings = root.value("settings").toObject();
+        const QJsonObject adapters = root.value("adapters").toObject();
+        for (auto it = adapters.begin(); it != adapters.end(); ++it)
+            settings.insert(it.key(), it.value());
         for (auto it = settings.begin(); it != settings.end(); ++it) {
             QStringList binaries;
             if (it.value().isArray()) {
@@ -64,7 +68,13 @@ QString Compat::changedFor(const CatalogEntry &entry, const QString &hyprlandVer
         return {};
     if (entry.write.value("kind").toString() == QLatin1String("hypr"))
         return hyprlandDiffers(hyprlandVersion) ? QStringLiteral("Hyprland %1").arg(hyprlandVersion) : QString();
-    for (const QString &binary : m_settingToBinaries.value(entry.id)) {
+    return changedForKey(entry.id);
+}
+
+QString Compat::changedForKey(const QString &key) const {
+    if (!m_env.enforceCompat)
+        return {};
+    for (const QString &binary : m_settingToBinaries.value(key)) {
         const QString hash = currentHash(binary);
         // A missing command is an availability problem, reported as such elsewhere.
         if (!hash.isEmpty() && hash != m_reviewed.value(binary) && !isAccepted(binary, hash))

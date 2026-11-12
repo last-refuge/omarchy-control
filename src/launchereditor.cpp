@@ -202,7 +202,7 @@ LauncherEditor::Entry LauncherEditor::find(const QString &id) const {
 // One change over the launcher's file, and any file that goes with it. A missing value
 // removes the file. The coordinator keeps what was there, for rollback and undo.
 void LauncherEditor::submit(const QString &id, const QString &label, const QString &path, const QByteArray &contents, const QStringList &extraFiles,
-                            const QHash<QString, QByteArray> &extraContents, Finished finished) {
+                            const QHash<QString, QByteArray> &extraContents, Finished finished, const QString &runId) {
     QByteArray current;
     FileOps::readFile(path, &current);
     const QStringList langs = languages(m_env);
@@ -232,6 +232,7 @@ void LauncherEditor::submit(const QString &id, const QString &label, const QStri
     for (const QString &file : std::as_const(request.files))
         request.expectedFingerprints.insert(file, FileOps::fingerprint(file));
     request.extra["launcher"] = QJsonObject{{"id", id}};
+    request.runId = runId;
     const bool remove = contents.isNull();
     request.apply = [path, contents, remove, extraFiles, extraContents](ChangeCoordinator::Done done) {
         QString error;
@@ -286,7 +287,29 @@ static Transaction failed(const QString &label, const QString &message) {
     return tx;
 }
 
-void LauncherEditor::apply(const QString &id, const Edit &edit, Finished finished) {
+LauncherEditor::Edit LauncherEditor::recordedEdit(const Entry &entry) const {
+    Edit edit;
+    QByteArray copy;
+    if (entry.kind != QLatin1String("override") || !FileOps::readFile(entry.path, &copy))
+        return edit;
+    const QStringList changed = changedFields(copy);
+    if (changed.contains(QStringLiteral("Name")))
+        edit.name = value(copy, "Name");
+    if (changed.contains(QStringLiteral("Icon")))
+        edit.icon = value(copy, "Icon");
+    if (changed.contains(QStringLiteral("NoDisplay")))
+        edit.hidden = value(copy, "NoDisplay") == QLatin1String("true");
+    return edit;
+}
+
+QJsonObject LauncherEditor::currentFields(const Entry &entry) const {
+    QByteArray document;
+    if (entry.id.isEmpty() || !FileOps::readFile(entry.path, &document))
+        return {};
+    return QJsonObject{{"name", value(document, "Name")}, {"icon", value(document, "Icon")}, {"hidden", value(document, "NoDisplay") == QLatin1String("true")}};
+}
+
+void LauncherEditor::apply(const QString &id, const Edit &edit, Finished finished, const QString &runId) {
     const QString label = QString::fromUtf8(QT_TRANSLATE_NOOP("catalog", "Change an app's launcher"));
     const Entry entry = find(id);
     if (entry.id.isEmpty()) {
@@ -343,7 +366,7 @@ void LauncherEditor::apply(const QString &id, const Edit &edit, Finished finishe
         finished(failed(label, error));
         return;
     }
-    submit(entry.id, label, path, document, extraFiles, extraContents, finished);
+    submit(entry.id, label, path, document, extraFiles, extraContents, finished, runId);
 }
 
 void LauncherEditor::reset(const QString &id, Finished finished) {

@@ -3,7 +3,7 @@ CONFIG += c++17 testcase console
 CONFIG -= app_bundle
 TARGET = omarchy-control_tests
 TEMPLATE = app
-DEFINES += APP_VERSION=\\\"0.4.0\\\" PROJECT_ROOT=\\\"$$PWD/..\\\"
+DEFINES += APP_VERSION=\\\"0.5.0\\\" PROJECT_ROOT=\\\"$$PWD/..\\\"
 
 include(../omarchy-control-sources.pri)
 

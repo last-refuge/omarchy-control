@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QJsonObject>
 #include <QObject>
 #include <QVariantList>
 #include <QVariantMap>
@@ -45,11 +46,17 @@ public:
     QVariantList entries() const { return m_entries; }
     Entry find(const QString &id) const;
 
-    void apply(const QString &id, const Edit &edit, Finished finished);
+    // `runId` marks the change as part of a restore holding the coordinator's lease.
+    void apply(const QString &id, const Edit &edit, Finished finished, const QString &runId = QString());
     void reset(const QString &id, Finished finished);
     // Takes the package's newer launcher and makes the same changes to it again.
     void update(const QString &id, Finished finished);
     void undo(const Transaction &original, Finished finished);
+
+    // The changes recorded in a package launcher's copy: just the fields changed here.
+    Edit recordedEdit(const Entry &entry) const;
+    // What the launcher has now for the name, the icon, and whether it is hidden.
+    QJsonObject currentFields(const Entry &entry) const;
 
     // An image file copied into this app's own folder, so the launcher keeps its icon if
     // the original is moved. Returns the copy's path, or empty with `error` set.
@@ -76,7 +83,7 @@ signals:
 
 private:
     void submit(const QString &id, const QString &label, const QString &path, const QByteArray &contents, const QStringList &extraFiles,
-                const QHash<QString, QByteArray> &extraContents, Finished finished);
+                const QHash<QString, QByteArray> &extraContents, Finished finished, const QString &runId = QString());
     void finishedInWindow(const Transaction &tx);
     QString currentPack() const;
 

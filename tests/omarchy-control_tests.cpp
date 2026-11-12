@@ -10,6 +10,7 @@
 #include <QImage>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDirIterator>
 #include <QProcess>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -65,6 +66,8 @@
 #include "iconlayer.h"
 #include "iconarchive.h"
 #include "launchereditor.h"
+#include "profilefiles.h"
+#include "profileprovider.h"
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -317,7 +320,282 @@ QString importPack(IconThemeImporter &importer, const QString &folder) {
     return importer.state();
 }
 
+// ---- My Omarchy profile helpers ------------------------------------------------------
+
+// A fake Omarchy machine: its omarchy commands, Hyprland, installed browsers, and a
+// shell.json holding a key of the user's own beside the idle timers.
+struct ProfileMachine {
+    Sandbox s;
+    ProfileMachine() {
+        s.minimalHyprland();
+        s.command("hyprctl", kProfileHyprctl);
+        s.omarchy(kProfileOmarchy);
+        s.command("firefox", "exit 0");
+        s.command("chromium", "exit 0");
+        writeFile(s.env.omarchyPath + "/config/omarchy/shell.json", "{\"idle\":{\"lock\":300,\"screensaver\":150},\"bar\":{\"position\":\"top\"}}\n");
+        writeFile(config(), "{\n  \"bar\": {\"position\": \"top\"},\n  \"idle\": {\"lock\": 300, \"screensaver\": 150},\n  \"mine\": {\"keep\": true}\n}\n");
+    }
+    QString config() const { return s.env.configHome + "/omarchy/shell.json"; }
+    QString state(const QString &name) const { return s.env.home + "/.fake-omarchy/" + name; }
+};
+
+ProfileCapture::Result captureProfile(AppCore &core, const Profile *existing, const ProfileCapture::Selection &selection) {
+    ProfileCapture::Result result;
+    bool done = false;
+    core.profileCapture.capture(existing, selection, [&](const ProfileCapture::Result &r) { result = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 30000))
+        result.error = "capture timed out";
+    return result;
+}
+
+bool saveProfile(AppCore &core, const QString &directory, const ProfileCapture::Selection &selection) {
+    bool exists = false;
+    const ProfileModel::Parsed saved = ProfileModel::load(directory, &exists);
+    const ProfileCapture::Result result = captureProfile(core, exists ? &saved.profile : nullptr, selection);
+    QString error;
+    return result.ok && core.profileCapture.save(directory, result, &error);
+}
+
+ProfilePlan planProfile(AppCore &core, const QString &directory, const ProfilePlanner::Options &options = {}) {
+    ProfilePlan plan;
+    bool done = false;
+    core.profilePlanner.plan(directory, options, [&](const ProfilePlan &p) { plan = p; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 30000))
+        plan.errors << "plan timed out";
+    return plan;
+}
+
+ProfileRun runPlan(AppCore &core, const ProfilePlan &plan) {
+    ProfileRun run;
+    bool done = false;
+    core.profileRunner.apply(plan, [&](const ProfileRun &r) { run = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 60000))
+        run.message = "restore timed out";
+    return run;
+}
+
+ProfileRun resumeRun(AppCore &core, const QString &id) {
+    ProfileRun run;
+    bool done = false;
+    core.profileRunner.resume(id, [&](const ProfileRun &r) { run = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 60000))
+        run.message = "resume timed out";
+    return run;
+}
+
+ProfilePlanItem planned(const ProfilePlan &plan, const QString &target) {
+    for (const ProfilePlanItem &item : plan.items)
+        if (item.target == target)
+            return item;
+    return {};
+}
+
+void writeProfile(const QString &directory, const QJsonObject &settings, const QString &name = "Test profile") {
+    writeFile(ProfileModel::manifestPath(directory),
+              QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", name}, {"settings", settings}}).toJson());
+}
+
+QJsonObject setTo(const QString &value) {
+    return QJsonObject{{"mode", "set"}, {"value", value}};
+}
+
+int changesBy(const ChangeCoordinator &coordinator, const QString &runId) {
+    int count = 0;
+    for (const Transaction &tx : coordinator.history())
+        if (tx.runId == runId)
+            ++count;
+    return count;
+}
+
+// A machine with apps: a repository, what is installed and why, and Omarchy's defaults.
+// Firefox is offered but not installed; chromium and libreoffice-fresh are Omarchy's;
+// my-local-tool is in no repository; mpv needs libmpv; omarchy needs hyprland.
+struct PackageMachine : ProfileMachine {
+    PackageMachine() {
+        s.command("pacman", kFakePacman);
+        s.command("sudo", kFakeSudo);
+        QFile::remove(s.bin("firefox"));
+        writeFile(pacman("repo"), "extra firefox 140.0-1 nss,libvpx\nextra nss 3.110-1 -\nextra libvpx 1.15-1 -\nextra ripgrep 14.1-1 -\n"
+                                  "extra libreoffice-fresh 25.2-1 -\nextra chromium 138.0-1 -\nextra hyprland 0.56.2-4 -\nextra btop 1.4.7-1 -\n"
+                                  "extra obsidian 1.8-1 -\nextra mpv 0.40-1 libmpv\nextra libmpv 0.40-1 -\nomarchy omarchy 4.5.0-3 hyprland\n");
+        writeFile(pacman("installed"), "omarchy 4.5.0-3 explicit hyprland\nhyprland 0.56.2-4 dependency -\nchromium 138.0-1 explicit -\n"
+                                       "libreoffice-fresh 25.2-1 explicit -\nbtop 1.4.7-1 explicit -\nlibmpv 0.40-1 dependency -\n"
+                                       "mpv 0.40-1 explicit libmpv\nmy-local-tool 1.0-1 explicit -\nthermald 2.5-1 explicit -\n"
+                                       "ex-vi-compat 1.0-1 explicit -\n");
+        writeFile(pacman("baseline"), "chromium\nlibreoffice-fresh\nbtop\nmpv\nhyprland\nobsidian\ntypora\nvi\n");
+        // Installed by Omarchy for this hardware, and an alternative that stands in for vi.
+        writeFile(s.env.omarchyPath + "/install/omarchy-other.packages", "# Hardware\nthermald\nintel-media-driver\n");
+        writeFile(pacman("provides"), "ex-vi-compat vi\n");
+    }
+    QString pacman(const QString &name) const { return s.env.home + "/.fake-pacman/" + name; }
+    QString reason(const QString &name) const {
+        for (const QString &line : QString::fromUtf8(readAll(pacman("installed"))).split('\n'))
+            if (line.section(' ', 0, 0) == name)
+                return line.section(' ', 2, 2);
+        return {};
+    }
+    bool has(const QString &name) const { return !reason(name).isEmpty(); }
+    QStringList transactions() const { return QString::fromUtf8(readAll(pacman("transactions"))).split('\n', Qt::SkipEmptyParts); }
+};
+
+QJsonObject app(const QString &name, const QString &intent = "present", const QString &source = "repository") {
+    return QJsonObject{{"name", name}, {"source", source}, {"intent", intent}};
+}
+
+void writeAppProfile(const QString &directory, const QJsonObject &settings, const QJsonArray &packages) {
+    writeFile(ProfileModel::manifestPath(directory),
+              QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Apps"}, {"settings", settings}, {"packages", packages}}).toJson());
+}
+
+// A machine with desktop choices to carry: two apps with launchers, Omarchy's default dock,
+// file associations kept by a fake xdg-mime, and the Hyprland binds list.
+struct DesktopMachine : ProfileMachine {
+    DesktopMachine() {
+        s.command("xdg-mime", kFakeXdgMime);
+        const QString apps = s.env.dataDirs.last() + "/applications";
+        addLauncher(apps, "org.example.Browser", "Browser", "web-browser");
+        addLauncher(apps, "org.example.TextEditor", "Text Editor", "accessories-text-editor", "MimeType=text/plain;\n");
+        writeFile(s.env.omarchyPath + "/config/omarchy/shell.json",
+                  "{\"idle\":{\"lock\":300,\"screensaver\":150},\"dock\":{\"pinned\":[\"org.gnome.Nautilus\",\"chromium\"]}}\n");
+    }
+    QString pins() const { return QString::fromUtf8(readAll(state("pins"))).trimmed(); }
+    QString mime(const QString &type) const { return QString::fromUtf8(readAll(state("mime-" + QString(type).replace('/', '_')))).trimmed(); }
+    void setMime(const QString &type, const QString &app) const { writeFile(state("mime-" + QString(type).replace('/', '_')), app.toUtf8() + "\n"); }
+};
+
+// A theme in use, with one background of its own and a folder for the user's.
+void useTheme(Sandbox &s, const QString &theme, const QStringList &shipped = {"1.png", "2.png"}) {
+    const QString current = s.env.stateHome + "/omarchy/current";
+    writeFile(current + "/theme.name", theme.toUtf8() + "\n");
+    for (const QString &name : shipped) {
+        QImage image(8, 8, QImage::Format_RGB32);
+        image.fill(Qt::darkCyan);
+        QDir().mkpath(current + "/theme/backgrounds");
+        QDir().mkpath(s.env.omarchyPath + "/themes/" + theme + "/backgrounds");
+        image.save(current + "/theme/backgrounds/" + name);
+        image.save(s.env.omarchyPath + "/themes/" + theme + "/backgrounds/" + name);
+    }
+    QFile::remove(current + "/background");
+    QFile::link(current + "/theme/backgrounds/" + shipped.first(), current + "/background");
+}
+
+QString pngFile(const QString &path, Qt::GlobalColor color) {
+    QImage image(16, 16, QImage::Format_RGB32);
+    image.fill(color);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    image.save(path);
+    return path;
+}
+
+// Real git, which profile repositories are tested with, against local bare repositories
+// standing in for GitHub at `hub`, and a fake GitHub CLI signed in as "tester".
+void useGitHub(Sandbox &s, const QString &hub) {
+    QFile::link(QStandardPaths::findExecutable("git"), s.bin("git"));
+    s.env.gitHub = "file://" + hub;
+    s.env.process.insert("FAKE_GITHUB", hub);
+    s.command("gh", kFakeGh);
+}
+
+// Git run directly, as someone with their own copy of the repository would.
+QByteArray gitIn(const QString &gitDir, const QStringList &arguments, const QByteArray &input = {}, const QString &indexFile = {}) {
+    QProcess git;
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    for (const char *variable : {"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=Someone", "GIT_AUTHOR_EMAIL=someone@example.com",
+                                 "GIT_COMMITTER_NAME=Someone", "GIT_COMMITTER_EMAIL=someone@example.com"})
+        environment.insert(QString::fromLatin1(variable).section('=', 0, 0), QString::fromLatin1(variable).section('=', 1));
+    if (!indexFile.isEmpty())
+        environment.insert("GIT_INDEX_FILE", indexFile);
+    git.setProcessEnvironment(environment);
+    git.start("git", QStringList{"--git-dir=" + gitDir} + arguments);
+    git.write(input);
+    git.closeWriteChannel();
+    git.waitForFinished(30000);
+    return git.readAllStandardOutput().trimmed();
+}
+
+QString bareRepository(const QString &hub, const QString &fullName) {
+    const QString path = hub + "/" + fullName + ".git";
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QProcess::execute("git", {"init", "--bare", "--quiet", path});
+    return path;
+}
+
+// A commit made by hand in a repository, holding exactly these entries: mode, path, and
+// contents (a link's target, or a submodule's commit).
+struct GitEntry {
+    QString mode, path;
+    QByteArray contents;
+};
+QString commitByHand(const QString &gitDir, const QList<GitEntry> &entries, const QString &parent = {}) {
+    QTemporaryDir scratch;
+    QByteArray info;
+    for (const GitEntry &entry : entries) {
+        const QByteArray object = entry.mode == "160000" ? entry.contents : gitIn(gitDir, {"hash-object", "-w", "--stdin"}, entry.contents);
+        info += entry.mode.toLatin1() + " " + object + "\t" + entry.path.toUtf8() + "\n";
+    }
+    gitIn(gitDir, {"update-index", "--add", "--index-info"}, info, scratch.path() + "/index");
+    const QByteArray tree = gitIn(gitDir, {"write-tree"}, {}, scratch.path() + "/index");
+    QStringList arguments{"commit-tree", QString::fromLatin1(tree), "-m", "By hand"};
+    if (!parent.isEmpty())
+        arguments << "-p" << parent;
+    const QString commit = QString::fromLatin1(gitIn(gitDir, arguments));
+    gitIn(gitDir, {"update-ref", "refs/heads/main", commit});
+    return commit;
+}
+
+bool copyFolder(const QString &from, const QString &to) {
+    QDirIterator it(from, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString file = it.next();
+        const QString target = to + file.mid(from.size());
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        if (!QFile::copy(file, target))
+            return false;
+    }
+    return true;
+}
+
+ProfileRepository::Result repositoryDo(std::function<void(ProfileRepository::Done)> start) {
+    ProfileRepository::Result result;
+    bool done = false;
+    start([&](const ProfileRepository::Result &r) { result = r; done = true; });
+    if (!QTest::qWaitFor([&] { return done; }, 60000))
+        result.error = "timed out";
+    return result;
+}
+
+ProfileRepository::Status repositoryStatus(AppCore &core) {
+    ProfileRepository::Status status;
+    bool done = false;
+    core.profileRepository.status([&](const ProfileRepository::Status &s) { status = s; done = true; });
+    QTest::qWaitFor([&] { return done; }, 30000);
+    return status;
+}
+
+// Omarchy's own plugins, as their manifests declare them.
+void omarchyPlugins(Sandbox &s, const QStringList &ids, const QString &kind = "bar-widget") {
+    for (const QString &id : ids)
+        writeFile(s.env.omarchyPath + "/shell/plugins/" + id.mid(8) + "/manifest.json",
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"id", id}, {"name", id}, {"kinds", QJsonArray{kind}}}).toJson());
+}
+
+QJsonObject barLayoutIn(const QString &shellJson) {
+    return QJsonDocument::fromJson(readAll(shellJson)).object().value("bar").toObject().value("layout").toObject();
+}
+
+const char kGhosttyMine[] = "# Mine\nconfig-file = ?\"~/.local/state/omarchy/current/theme/ghostty.conf\"\nfont-size = 12\nwindow-padding-x = 4\n";
+const char kGhosttyOmarchy[] = "config-file = ?\"~/.local/state/omarchy/current/theme/ghostty.conf\"\nfont-size = 9\n";
+const char kAlacrittyMine[] = "general.import = [ \"~/.local/state/omarchy/current/theme/alacritty.toml\" ]\n\n[font]\nsize = 11\n";
+const char kAlacrittyOmarchy[] = "general.import = [ \"~/.local/state/omarchy/current/theme/alacritty.toml\" ]\n\n[font]\nsize = 9\n";
+
+void omarchyTerminalDefaults(Sandbox &s) {
+    writeFile(s.env.omarchyPath + "/config/ghostty/config", kGhosttyOmarchy);
+    writeFile(s.env.omarchyPath + "/config/alacritty/alacritty.toml", kAlacrittyOmarchy);
+}
+
 }  // namespace
+
+Q_DECLARE_METATYPE(GitEntry)
 
 class OmarchyControlTests : public QObject {
     Q_OBJECT
@@ -1554,7 +1832,7 @@ private slots:
         QSet<QString> pages;
         for (const auto &page : catalog.pages())
             pages << page.id;
-        QCOMPARE(catalog.pages().size(), 13);
+        QCOMPARE(catalog.pages().size(), 14);
         static const QSet<QString> types{"toggle", "choice", "int", "float", "slider", "text", "status", "action"};
         static const QSet<QString> modes{"native", "omarchy-panel", "omarchy-wizard", "external-helper", "advanced-config"};
         static const QSet<QString> recoveries{"auto-undo", "best-effort", "no-undo"};
@@ -2285,8 +2563,8 @@ esac)SH");
             else
                 expected << entry->id;
         }
-        QCOMPARE(expected.size() + natives.size(), 66);
-        QCOMPARE(expected.size(), 63);
+        QCOMPARE(expected.size() + natives.size(), 67);
+        QCOMPARE(expected.size(), 64);
         QCOMPARE(placed.size(), QSet<QString>(placed.begin(), placed.end()).size());
         placed.sort();
         expected.sort();
@@ -2299,7 +2577,7 @@ esac)SH");
         QCOMPARE(library.value("This computer"), 6);
         QCOMPARE(library.value("Updates"), 13);
         QCOMPARE(library.value("Language and time"), 7);
-        QCOMPARE(library.value("Snapshots and recovery"), 5);
+        QCOMPARE(library.value("Snapshots and recovery"), 6);
         QCOMPARE(library.value("Boot and firmware"), 6);
         QCOMPARE(library.value("Restart components"), 10);
         QCOMPARE(library.value("Reset to defaults"), 16);
@@ -3537,6 +3815,12 @@ esac
         QVERIFY(root.value("settings").toObject().size() > 25);
         for (const auto &key : root.value("settings").toObject().keys())
             QVERIFY2(catalog.find(key), qPrintable(key));
+        // Profile adapters are pinned apart from settings, and every command they name is too.
+        const QJsonObject adapters = root.value("adapters").toObject();
+        QCOMPARE(adapters.keys(), (QStringList{"profile.bar", "profile.plugins", "profile.themes"}));
+        for (const QJsonValue &binaries : adapters)
+            for (const QJsonValue &binary : binaries.toArray())
+                QVERIFY2(root.value("commands").toObject().contains(binary.toString()), qPrintable(binary.toString()));
     }
     void packageWorkWaitsForPacman() {
         Sandbox s;
@@ -7699,6 +7983,2197 @@ esac)SH");
         QMetaObject::invokeMethod(named("iconImportButton").first(), "clicked");
         QTest::qWait(100);
         QAccessible::setActive(false);
+    }
+
+    // ---- My Omarchy: profiles -------------------------------------------------------
+    void profileAcceptsValidFixtures_data() {
+        QTest::addColumn<QString>("path");
+        const QDir dir(PROJECT_ROOT "/tests/fixtures/profiles/valid");
+        for (const QString &name : dir.entryList({"*.json"}, QDir::Files, QDir::Name))
+            QTest::newRow(qPrintable(name)) << dir.filePath(name);
+    }
+    void profileAcceptsValidFixtures() {
+        QFETCH(QString, path);
+        const ProfileModel::Parsed parsed = ProfileModel::parse(readAll(path));
+        QVERIFY2(parsed.ok, qPrintable(parsed.errors.join("\n")));
+        // Canonical bytes read back as the same profile, and write the same bytes again.
+        const QByteArray canonical = parsed.profile.serialize();
+        const ProfileModel::Parsed again = ProfileModel::parse(canonical);
+        QVERIFY(again.ok);
+        QCOMPARE(again.profile.serialize(), canonical);
+        QCOMPARE(again.profile.digest(), parsed.profile.digest());
+    }
+    void profileRefusesInvalidFixtures_data() {
+        QTest::addColumn<QString>("path");
+        QTest::addColumn<QString>("expected");
+        const QHash<QString, QString> expected{
+            {"not-json", "not valid JSON"}, {"comments", "not valid JSON"}, {"trailing-comma", "not valid JSON"},
+            {"array-root", "one object"}, {"newer-schema", "newer Omarchy Control"}, {"schema-zero", "schemaVersion"},
+            {"schema-text", "schemaVersion"}, {"schema-fraction", "schemaVersion"}, {"missing-name", "needs name"},
+            {"blank-name", "needs a name"}, {"duplicate-key", "name appears twice"}, {"duplicate-setting", "settings.power.idle.lock appears twice"},
+            {"unknown-section", "unknown field, hooks"}, {"source-home-path", "unknown field, home"}, {"bad-mode", "mode must be"},
+            {"inherit-with-value", "cannot also have a value"}, {"set-without-value", "needs value"}, {"setting-number-value", "must be text"},
+            {"bad-setting-id", "not a setting id"}, {"setting-extra-field", "unknown field, command"}, {"control-character", "no control characters"},
+            {"package-both-ways", "Package firefox appears twice"}, {"package-bad-name", "not a package name"}, {"package-bad-source", "source must be"},
+            {"package-bad-intent", "intent must be"}, {"package-install-command", "unknown field, install"},
+            {"unknown-file-adapter", "zshrc file adapter"}, {"file-path-traversal", "plain file name"}, {"file-hidden-name", "plain file name"},
+            {"file-duplicate", "ghostty/config appears twice"}, {"asset-bad-digest", "SHA-256"}, {"asset-oversized", "25 MiB"},
+            {"profile-too-large", "100 MiB"}, {"dock-duplicate", "pinned twice"}, {"dock-not-desktop-id", "not an app id"},
+            {"shortcut-missing-command", "needs command"}, {"shortcut-duplicate-id", "Shortcut a appears twice"},
+            {"window-rule-unknown-action", "not a window rule"}, {"launcher-changes-nothing", "changes nothing"}, {"deeply-nested", "nested too deeply"},
+            {"asset-reference-missing", "names a file the profile does not hold"},
+            {"theme-source-not-https", "must be an https address"}, {"theme-source-with-password", "must be an https address"},
+            {"theme-folder-not-a-name", "not a theme's folder name"}, {"bar-widget-runs-command", "exec option is not one a profile carries"},
+            {"bar-widget-not-omarchys", "not one of Omarchy's own widgets"}, {"plugins-not-omarchys", "not one of Omarchy's own plugins"},
+            {"bar-option-home-path", "path in a home folder"},
+        };
+        const QDir dir(PROJECT_ROOT "/tests/fixtures/profiles/invalid");
+        const QStringList files = dir.entryList({"*.json"}, QDir::Files, QDir::Name);
+        QCOMPARE(files.size(), expected.size());
+        for (const QString &name : files) {
+            QVERIFY2(expected.contains(name.chopped(5)), qPrintable(name + " has no expected error"));
+            QTest::newRow(qPrintable(name)) << dir.filePath(name) << expected.value(name.chopped(5));
+        }
+    }
+    void profileRefusesInvalidFixtures() {
+        QFETCH(QString, path);
+        QFETCH(QString, expected);
+        const ProfileModel::Parsed parsed = ProfileModel::parse(readAll(path));
+        QVERIFY(!parsed.ok);
+        QVERIFY2(parsed.errors.join("\n").contains(expected), qPrintable(parsed.errors.join("\n")));
+    }
+    void profileSchemaMatchesTheValidator() {
+        // The published schema and the validator describe one contract: the same sections,
+        // record fields, and closed sets of values.
+        const QJsonObject schema = QJsonDocument::fromJson(readAll(PROJECT_ROOT "/docs/profile.schema.json")).object();
+        QVERIFY(!schema.isEmpty());
+        QCOMPARE(schema.value("additionalProperties").toBool(true), false);
+        const QJsonObject properties = schema.value("properties").toObject();
+        const QStringList sections = properties.keys();
+        QCOMPARE(QSet<QString>(sections.begin(), sections.end()),
+                 (QSet<QString>{"schemaVersion", "name", "source", "settings", "packages", "desktop", "files", "assets"}));
+        QCOMPARE(properties.value("schemaVersion").toObject().value("maximum").toInt(), Profile::SchemaVersion);
+        const auto enumOf = [](const QJsonValue &value) {
+            QStringList out;
+            for (const QJsonValue &item : value.toObject().value("enum").toArray())
+                out << item.toString();
+            return out;
+        };
+        const QJsonObject file = properties.value("files").toObject().value("items").toObject().value("properties").toObject();
+        QCOMPARE(enumOf(file.value("adapter")), ProfileModel::fileAdapters());
+        const QJsonObject package = properties.value("packages").toObject().value("items").toObject().value("properties").toObject();
+        QCOMPARE(enumOf(package.value("source")), (QStringList{"repository", "aur", "manual"}));
+        QCOMPARE(enumOf(package.value("intent")), (QStringList{"present", "absent"}));
+        const QStringList desktop = properties.value("desktop").toObject().value("properties").toObject().keys();
+        QCOMPARE(QSet<QString>(desktop.begin(), desktop.end()),
+                 (QSet<QString>{"dockPins", "launchers", "associations", "shortcuts", "windowRules", "background", "themes", "bar", "plugins"}));
+        QCOMPARE(schema.value("$defs").toObject().value("size").toObject().value("maximum").toInteger(), ProfileModel::MaxFileBytes);
+        // The bar options a profile carries, and the sections, are one list in both places.
+        QStringList options = schema.value("$defs").toObject().value("barSection").toObject().value("items").toObject().value("properties").toObject().keys();
+        options.removeAll("id");
+        QStringList carried = ProfileModel::barOptionKeys();
+        carried.sort();
+        QCOMPARE(options, carried);
+        const QStringList barSections = properties.value("desktop").toObject().value("properties").toObject().value("bar").toObject().value("properties").toObject()
+                                            .value("layout").toObject().value("properties").toObject().keys();
+        const QStringList drawn = ProfileModel::barSections();
+        QCOMPARE(QSet<QString>(barSections.begin(), barSections.end()), QSet<QString>(drawn.begin(), drawn.end()));
+        // Every id the catalog has fits the pattern the schema gives setting ids.
+        const QRegularExpression id(properties.value("settings").toObject().value("propertyNames").toObject().value("pattern").toString());
+        const Catalog catalog;
+        for (const CatalogEntry &entry : catalog.entries())
+            if (entry.isEditable())
+                QVERIFY2(id.match(entry.id).hasMatch() && ProfileModel::isSettingId(entry.id), qPrintable(entry.id));
+    }
+    void profileBytesAreCanonical() {
+        // The same choices written in any order give the same file, and where they were
+        // saved from is not a choice.
+        const auto a = ProfileModel::parse(R"({"name":"P","schemaVersion":1,"settings":{"power.idle.lock":{"value":"600","mode":"set"},"appearance.theme":{"mode":"set","value":"Nord"}},
+            "packages":[{"name":"zed","source":"repository","intent":"present"},{"name":"btop","source":"repository","intent":"present"}]})");
+        const auto b = ProfileModel::parse(R"({"schemaVersion":1,"settings":{"appearance.theme":{"mode":"set","value":"Nord"},"power.idle.lock":{"mode":"set","value":"600"}},"name":"P",
+            "source":{"omarchy":"4.5.0-3"},"packages":[{"intent":"present","name":"btop","source":"repository"},{"name":"zed","source":"repository","intent":"present"}]})");
+        QVERIFY(a.ok && b.ok);
+        QVERIFY(a.profile.sameChoices(b.profile));
+        QVERIFY(a.profile.serialize() != b.profile.serialize());
+        Profile c = b.profile;
+        c.source = QJsonObject();
+        QCOMPARE(c.serialize(), a.profile.serialize());
+        QVERIFY(a.profile.serialize().indexOf("btop") < a.profile.serialize().indexOf("zed"));
+        // Saving refuses what it could not read back, and never follows a link.
+        QTemporaryDir dir;
+        Profile bad = a.profile;
+        bad.settings.insert("not an id", ProfileSetting{"set", "x"});
+        QString error;
+        QVERIFY(!ProfileModel::save(dir.path(), bad, &error));
+        QVERIFY(!QFile::exists(ProfileModel::manifestPath(dir.path())));
+        writeFile(dir.path() + "/elsewhere.json", "{}");
+        QVERIFY(QFile::link(dir.path() + "/elsewhere.json", ProfileModel::manifestPath(dir.path())));
+        QVERIFY(!ProfileModel::save(dir.path(), a.profile, &error));
+        QVERIFY(!ProfileModel::load(dir.path()).ok);
+        QCOMPARE(readAll(dir.path() + "/elsewhere.json"), QByteArray("{}"));
+    }
+    void profileMetadataCoversEveryEditableSetting() {
+        // Being editable does not make a setting portable: every one is reviewed either way,
+        // so a new setting cannot travel, or vanish from a capture, without a decision.
+        const Catalog catalog;
+        QHash<QString, int> order;
+        for (int i = 0; i < catalog.entries().size(); ++i)
+            order.insert(catalog.entries()[i].id, i);
+        int portable = 0;
+        for (const CatalogEntry &entry : catalog.entries()) {
+            const ProfileTraits traits = ProfileTraits::of(entry);
+            if (!entry.isEditable()) {
+                QVERIFY2(entry.profile.isEmpty(), qPrintable(entry.id));
+                continue;
+            }
+            QVERIFY2(QStringList({"portable", "later", "machine", "runtime"}).contains(traits.portability), qPrintable(entry.id));
+            QVERIFY2(!traits.category.isEmpty(), qPrintable(entry.id));
+            if (!traits.portable()) {
+                QVERIFY2(!traits.reason.isEmpty(), qPrintable(entry.id + " needs a reason"));
+                QVERIFY2(!traits.hasStock && !traits.inherit, qPrintable(entry.id));
+                continue;
+            }
+            ++portable;
+            QVERIFY2(ProfileTraits::categories().contains(traits.category), qPrintable(entry.id));
+            QVERIFY2(entry.target.isEmpty(), qPrintable(entry.id + " belongs to one device"));
+            // "Use the default" only where returning to it is reliable.
+            const QString kind = entry.write.value("kind").toString();
+            if (traits.inherit)
+                QVERIFY2(kind == "json" || kind == "hypr" || !entry.reset.isEmpty(), qPrintable(entry.id));
+            for (const QString &before : traits.after) {
+                QVERIFY2(order.contains(before), qPrintable(entry.id + " is after an unknown " + before));
+                QVERIFY2(order.value(before) < order.value(entry.id), qPrintable(entry.id + " comes before " + before));
+            }
+            for (const ProfileTraits::Overlap &overlap : traits.overlaps)
+                QVERIFY2(catalog.find(overlap.setting), qPrintable(entry.id));
+            for (const QString &key : traits.activation)
+                QVERIFY2(ProfileTraits::describeActivation(key) != key, qPrintable(entry.id + ": " + key));
+        }
+        QCOMPARE(portable, 40);
+    }
+    void profileRoundTripsBetweenMachines() {
+        QTemporaryDir store;
+        const QString dir = store.path() + "/my-omarchy";
+        // Machine A: someone's own choices, made the usual ways.
+        {
+            ProfileMachine a;
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            QCOMPARE(applySetting(core.engine, "appearance.theme", "Catppuccin").phase, QString("committed"));
+            QCOMPARE(applySetting(core.engine, "power.idle.lock", "600").phase, QString("committed"));
+            QCOMPARE(applySetting(core.engine, "input.repeat_rate", "31").phase, QString("committed"));
+            QCOMPARE(applySetting(core.engine, "apps.default.browser", "firefox").phase, QString("committed"));
+            ProfileCapture::Selection selection;
+            selection.settings = {"appearance.theme", "power.idle.lock", "power.idle.screensaver", "input.repeat_rate", "apps.default.browser"};
+            const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+            QVERIFY2(result.ok, qPrintable(result.error));
+            QVERIFY(result.changed);
+            QString error;
+            QVERIFY2(core.profileCapture.save(dir, result, &error), qPrintable(error));
+            const ProfileModel::Parsed saved = ProfileModel::load(dir);
+            QVERIFY2(saved.ok, qPrintable(saved.errors.join("\n")));
+            QCOMPARE(saved.profile.settings.size(), 5);
+            QCOMPARE(saved.profile.settings.value("appearance.theme"), (ProfileSetting{"set", "Catppuccin"}));
+            QCOMPARE(saved.profile.settings.value("power.idle.lock"), (ProfileSetting{"set", "600"}));
+            QCOMPARE(saved.profile.settings.value("power.idle.screensaver"), (ProfileSetting{"set", "150"}));
+            QCOMPARE(saved.profile.settings.value("input.repeat_rate"), (ProfileSetting{"set", "31"}));
+            QCOMPARE(saved.profile.settings.value("apps.default.browser"), (ProfileSetting{"set", "firefox"}));
+            QCOMPARE(saved.profile.source.value("hyprland").toString(), QString("0.56.2"));
+            // Nothing of this computer's home folder travels in it.
+            QVERIFY(!readAll(ProfileModel::manifestPath(dir)).contains(a.s.env.home.toUtf8()));
+            // Capturing the same choices again writes nothing at all.
+            const QByteArray bytes = readAll(ProfileModel::manifestPath(dir));
+            const ProfileCapture::Result again = captureProfile(core, &saved.profile, {});
+            QVERIFY(again.ok);
+            QVERIFY(!again.changed);
+            QVERIFY(core.profileCapture.save(dir, again, &error));
+            QCOMPARE(readAll(ProfileModel::manifestPath(dir)), bytes);
+        }
+
+        // Machine B: a fresh installation, with another home folder.
+        ProfileMachine b;
+        QVERIFY(b.s.dir.path() != store.path());
+        const QByteArray shellJson = readAll(b.config());
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, dir);
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "appearance.theme").status, QString("ready"));
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("ready"));
+        QCOMPARE(planned(plan, "power.idle.screensaver").status, QString("unchanged"));
+        QCOMPARE(planned(plan, "input.repeat_rate").status, QString("ready"));
+        QVERIFY(planned(plan, "input.repeat_rate").needsOwnership);
+        // Nothing shows whether this computer's browser was chosen, so it is a decision.
+        QCOMPARE(planned(plan, "apps.default.browser").status, QString("conflict"));
+        QVERIFY(!planned(plan, "apps.default.browser").willRun());
+        // Planning changed nothing.
+        QCOMPARE(readAll(b.config()), shellJson);
+        QVERIFY(!QFile::exists(b.state("theme")));
+
+        ProfilePlanner::Options options;
+        options.useSaved = {"apps.default.browser"};
+        const ProfilePlan decided = planProfile(core, dir, options);
+        QVERIFY(planned(decided, "apps.default.browser").willRun());
+        QCOMPARE(decided.leftOut(), 0);
+        // Restoring follows the reviewed order: the theme before anything else.
+        QCOMPARE(decided.items.first().target, QString("appearance.theme"));
+        QString error;
+        QVERIFY(core.profilePlanner.save(decided, &error));
+        const ProfilePlan reloaded = core.profilePlanner.load(decided.id, &error);
+        QCOMPARE(reloaded.items.size(), decided.items.size());
+
+        const ProfileRun run = runPlan(core, reloaded);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(run.count("verified"), 4);
+        QCOMPARE(readSetting(core.engine, "appearance.theme").value, QString("Catppuccin"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+        QCOMPARE(readSetting(core.engine, "input.repeat_rate").value, QString("31"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("firefox"));
+        // Only the restored value changed; the user's own key and the rest stay as they were.
+        QCOMPARE(readAll(b.config()), QByteArray(shellJson).replace("\"lock\": 300", "\"lock\": 600"));
+        QVERIFY(readAll(b.s.env.configHome + "/hypr/hyprland.lua").contains("hypr.mine"));
+        // Each change went through the journal, tied to this restore, and can be undone alone.
+        QCOMPARE(changesBy(core.coordinator, run.id), 4);
+        for (const Transaction &tx : core.coordinator.history())
+            if (tx.runId == run.id)
+                QVERIFY2(tx.undoable() || tx.recovery == "best-effort", qPrintable(tx.settingId));
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+        QVERIFY(core.coordinator.leaseRun().isEmpty());
+
+        // A second restore of the same profile does nothing at all.
+        const ProfilePlan second = planProfile(core, dir);
+        QCOMPARE(second.count("ready") + second.count("conflict"), 0);
+        QCOMPARE(second.count("unchanged"), 5);
+        const int journal = core.coordinator.history().size();
+        const ProfileRun noop = runPlan(core, second);
+        QCOMPARE(noop.state, QString("completed"));
+        QVERIFY(noop.items.isEmpty());
+        QCOMPARE(core.coordinator.history().size(), journal);
+        QCOMPARE(QString::fromUtf8(readAll(b.state("theme-sets"))).count('\n'), 1);
+    }
+    void profileCaptureListsWhatItCannotCarry() {
+        ProfileMachine m;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.categories = {"input"};
+        selection.settings = {"displays.scale", "no.such.setting", "appearance.background"};
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QHash<QString, ProfileCapture::Item> items;
+        for (const ProfileCapture::Item &item : result.items)
+            items.insert(item.id, item);
+        // Shown with a reason, never dropped quietly: the device toggles and dictation.
+        QCOMPARE(items.value("input.touchpad").change, QString("excluded"));
+        QVERIFY(items.value("input.touchpad").reason.contains("touchpad"));
+        QCOMPARE(items.value("input.dictation.mode").change, QString("excluded"));
+        QCOMPARE(items.value("displays.scale").change, QString("excluded"));
+        QCOMPARE(items.value("appearance.background").change, QString("excluded"));
+        QCOMPARE(items.value("no.such.setting").change, QString("excluded"));
+        QCOMPARE(items.value("input.repeat_rate").change, QString("added"));
+        QVERIFY(!result.profile.settings.contains("input.touchpad"));
+        // Touchpad choices cannot be read without a touchpad, so they are shown, not saved.
+        QCOMPARE(items.value("input.tp_natural").change, QString("excluded"));
+        QVERIFY(items.value("input.tp_natural").reason.contains("touchpad"));
+        QCOMPARE(result.profile.settings.size(), 7);
+        // A category that does not exist is refused, not guessed at.
+        selection = {};
+        selection.categories = {"everything"};
+        QVERIFY(!captureProfile(core, nullptr, selection).ok);
+        // So is a first capture that finds nothing to remember.
+        selection = {};
+        selection.settings = {"displays.scale"};
+        QVERIFY(!captureProfile(core, nullptr, selection).ok);
+        // "Use the default" only where that is reliable.
+        selection = {};
+        selection.inherit = {"appearance.theme", "power.idle.lock"};
+        const ProfileCapture::Result inherit = captureProfile(core, nullptr, selection);
+        QVERIFY(inherit.ok);
+        QCOMPARE(inherit.profile.settings.value("power.idle.lock"), (ProfileSetting{"inherit", QString()}));
+        QVERIFY(!inherit.profile.settings.contains("appearance.theme"));
+    }
+    void profileSuggestionsFollowProvenance() {
+        ProfileMachine m;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        // Stock everywhere: nothing to suggest but what nothing can tell about.
+        ProfileCapture::Selection selection;
+        selection.suggested = true;
+        const ProfileCapture::Result stock = captureProfile(core, nullptr, selection);
+        QVERIFY(!stock.profile.settings.contains("appearance.theme"));
+        QVERIFY(!stock.profile.settings.contains("power.idle.lock"));
+        QVERIFY(!stock.profile.settings.contains("input.repeat_rate"));
+        QVERIFY(!stock.profile.settings.contains("apps.default.browser"));
+        QCOMPARE(applySetting(core.engine, "appearance.theme", "Everforest").phase, QString("committed"));
+        QCOMPARE(applySetting(core.engine, "power.idle.lock", "900").phase, QString("committed"));
+        QCOMPARE(applySetting(core.engine, "input.repeat_rate", "35").phase, QString("committed"));
+        const ProfileCapture::Result changed = captureProfile(core, nullptr, selection);
+        QVERIFY(changed.ok);
+        QCOMPARE(changed.profile.settings.value("appearance.theme").value, QString("Everforest"));
+        QCOMPARE(changed.profile.settings.value("power.idle.lock").value, QString("900"));
+        QCOMPARE(changed.profile.settings.value("input.repeat_rate").value, QString("35"));
+        QVERIFY(!changed.profile.settings.contains("power.idle.screensaver"));
+    }
+    void profileCaptureKeepsWhatItCannotRead() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"appearance.theme", setTo("Catppuccin")}, {"power.idle.lock", setTo("600")}, {"future.setting", setTo("x")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        writeFile(m.state("theme-unreadable"), "");
+        const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+        QVERIFY(saved.ok);
+        const ProfileCapture::Result result = captureProfile(core, &saved.profile, {});
+        QVERIFY(result.ok);
+        // A failed read never turns into forgetting the choice, or into a different one.
+        QCOMPARE(result.profile.settings.value("appearance.theme"), (ProfileSetting{"set", "Catppuccin"}));
+        QCOMPARE(result.profile.settings.value("future.setting"), (ProfileSetting{"set", "x"}));
+        QCOMPARE(result.profile.settings.value("power.idle.lock"), (ProfileSetting{"set", "300"}));
+        bool attention = false;
+        for (const ProfileCapture::Item &item : result.items) {
+            if (item.id == "appearance.theme") {
+                QCOMPARE(item.change, QString("kept"));
+                attention = item.attention;
+            }
+            if (item.id == "power.idle.lock")
+                QCOMPARE(item.change, QString("modified"));
+        }
+        QVERIFY(attention);
+        // Forgetting is explicit, and only then does a choice leave the profile.
+        ProfileCapture::Selection forget;
+        forget.forget = {"appearance.theme"};
+        const ProfileCapture::Result forgotten = captureProfile(core, &saved.profile, forget);
+        QVERIFY(!forgotten.profile.settings.contains("appearance.theme"));
+    }
+    void profilePlanFindsLocalEdits() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        // No record of an agreed value, and this computer has its own: a decision.
+        QCOMPARE(applySetting(core.engine, "power.idle.lock", "900").phase, QString("committed"));
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}});
+        ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("conflict"));
+        QVERIFY(!planned(plan, "power.idle.lock").willRun());
+        ProfilePlanner::Options keep;
+        keep.keepLocal = {"all"};
+        QCOMPARE(planned(planProfile(core, store.path(), keep), "power.idle.lock").resolution, QString("keep-local"));
+        ProfilePlanner::Options use;
+        use.useSaved = {"power.idle.lock"};
+        plan = planProfile(core, store.path(), use);
+        QVERIFY(planned(plan, "power.idle.lock").willRun());
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+
+        // Restored, so this computer agrees. A new saved value is safe to restore...
+        writeProfile(store.path(), {{"power.idle.lock", setTo("1200")}});
+        QCOMPARE(planned(planProfile(core, store.path()), "power.idle.lock").status, QString("ready"));
+        // ...unless the value was changed here since, outside this app.
+        writeFile(m.config(), QByteArray(readAll(m.config())).replace("600", "1800"));
+        plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("conflict"));
+        QVERIFY(planned(plan, "power.idle.lock").reason.contains("Changed on this computer"));
+    }
+    void profileApplyRefusesAStalePlan() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}, {"appearance.theme", setTo("Catppuccin")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("ready"));
+        // Edited after the review: the plan no longer describes this computer.
+        writeFile(m.config(), QByteArray(readAll(m.config())).replace("300", "450"));
+        const QByteArray edited = readAll(m.config());
+        const ProfileRun refused = runPlan(core, plan);
+        QVERIFY(refused.state.isEmpty());
+        QVERIFY2(refused.message.contains("Lock after"), qPrintable(refused.message));
+        QCOMPARE(readAll(m.config()), edited);
+        QVERIFY(!QFile::exists(m.state("theme")));
+        QVERIFY(core.coordinator.leaseRun().isEmpty());
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+
+        // So is a plan whose profile changed after it was made.
+        const ProfilePlan fresh = planProfile(core, store.path());
+        writeProfile(store.path(), {{"power.idle.lock", setTo("60")}});
+        const ProfileRun changed = runPlan(core, fresh);
+        QVERIFY(changed.state.isEmpty());
+        QVERIFY(changed.message.contains("profile changed"));
+        QCOMPARE(readAll(m.config()), edited);
+    }
+    void profileRefusesABrokenProfileBeforeAnything() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeFile(ProfileModel::manifestPath(store.path()), R"({"schemaVersion": 7, "name": "From the future"})");
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY(!plan.valid);
+        QVERIFY(plan.items.isEmpty());
+        QVERIFY(plan.errors.join(" ").contains("newer"));
+        const ProfileRun run = runPlan(core, plan);
+        QVERIFY(run.state.isEmpty());
+        QCOMPARE(core.coordinator.history().size(), 0);
+        // A capture never overwrites a profile it cannot read.
+        QCOMPARE(Cli::run(m.s.env, {"profile", "capture", store.path(), "--category", "idle"}), 1);
+        QVERIFY(readAll(ProfileModel::manifestPath(store.path())).contains("From the future"));
+    }
+    void profilePlanHoldsBackMaskedAndUnsupportedItems() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        const QJsonObject settings{{"appearance.gaps", setTo("false")},
+                                   {"appearance.gaps_in", setTo("12")},
+                                   {"appearance.background", setTo("/home/someone/Pictures/x.png")},
+                                   {"displays.scale", setTo("2")},
+                                   {"future.setting", setTo("x")},
+                                   {"appearance.theme", setTo("Not Installed Here")},
+                                   {"input.repeat_rate", QJsonObject{{"mode", "inherit"}}}};
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Mixed"}, {"settings", settings},
+                                            {"packages", QJsonArray{QJsonObject{{"name", "firefox"}, {"source", "repository"}, {"intent", "present"}}}}})
+                      .toJson());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY(plan.valid);
+        QCOMPARE(planned(plan, "appearance.gaps").status, QString("ready"));
+        QCOMPARE(planned(plan, "appearance.gaps_in").status, QString("blocked"));
+        QVERIFY(planned(plan, "appearance.gaps_in").reason.contains("Window gaps"));
+        QCOMPARE(planned(plan, "appearance.background").status, QString("manual"));
+        QCOMPARE(planned(plan, "displays.scale").status, QString("manual"));
+        QCOMPARE(planned(plan, "future.setting").status, QString("manual"));
+        QCOMPARE(planned(plan, "appearance.theme").status, QString("blocked"));
+        QCOMPARE(planned(plan, "input.repeat_rate").status, QString("unchanged"));
+        // This machine has no pacman to ask, so the app is held back, with the reason.
+        QCOMPARE(planned(plan, "firefox").status, QString("blocked"));
+        QVERIFY(planned(plan, "firefox").reason.contains("could not be read"));
+        QCOMPARE(plan.leftOut(), 6);
+        // A restore that leaves things out says so, and is never called complete.
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("partial"));
+        QCOMPARE(run.leftOut, 6);
+        QVERIFY(QFile::exists(m.s.env.stateHome + "/omarchy/toggles/hypr/window-no-gaps.lua"));
+        QVERIFY(!readAll(m.s.env.configHome + "/hypr/omarchy-control.lua").contains("gaps_in"));
+    }
+    void profileInheritRemovesAnOverride() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        QCOMPARE(applySetting(core.engine, "input.repeat_rate", "31").phase, QString("committed"));
+        // Saved here as this computer's default, after being set: the capture is the agreement.
+        ProfileCapture::Selection selection;
+        selection.settings = {"input.repeat_rate"};
+        QVERIFY(saveProfile(core, store.path(), selection));
+        writeProfile(store.path(), {{"input.repeat_rate", QJsonObject{{"mode", "inherit"}}}});
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "input.repeat_rate").status, QString("ready"));
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(readSetting(core.engine, "input.repeat_rate").value, QString("40"));
+        QVERIFY(!readSetting(core.engine, "input.repeat_rate").isOverride);
+        QCOMPARE(planned(planProfile(core, store.path()), "input.repeat_rate").status, QString("unchanged"));
+    }
+    void profileRunResumesAfterACrash() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}, {"power.idle.screensaver", setTo("60")}, {"appearance.theme", setTo("Catppuccin")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(plan.count("ready"), 3);
+
+        // The record a run leaves when its process dies partway: the theme landed but was
+        // not yet confirmed, the lock never started, and the screensaver was underway and
+        // then changed by someone else.
+        ProfileRun run;
+        run.id = "run-0123456789ab";
+        run.planId = plan.id;
+        run.directory = plan.directory;
+        run.profileName = plan.profileName;
+        run.profileDigest = plan.profileDigest;
+        run.state = "running";
+        run.startedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+        for (const ProfilePlanItem &item : plan.items) {
+            ProfileRunItem step;
+            step.id = item.id;
+            step.kind = item.kind;
+            step.target = item.target;
+            step.label = item.label;
+            step.mode = item.mode;
+            step.desired = item.desired;
+            step.planned = item.current;
+            step.state = item.target == "power.idle.lock" ? "pending" : "running";
+            run.items << step;
+        }
+        writeFile(ProfileStore::runsDir(m.s.env) + "/" + run.id + ".json", QJsonDocument(run.toJson()).toJson());
+        writeFile(m.state("theme"), "Catppuccin\n");
+        writeFile(m.config(), QByteArray(readAll(m.config())).replace("150", "90"));
+        Transaction underway;
+        underway.id = "crashed00001";
+        underway.settingId = "appearance.theme";
+        underway.label = "Theme";
+        underway.phase = "applying";
+        underway.runId = run.id;
+        writeFile(core.coordinator.journalPath(), QJsonDocument(underway.toJson()).toJson(QJsonDocument::Compact) + "\n");
+
+        const ProfileRun resumed = resumeRun(core, run.id);
+        QCOMPARE(resumed.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : resumed.items)
+            items.insert(item.target, item);
+        // Found done by reading it, so it is not run again.
+        QCOMPARE(items.value("appearance.theme").state, QString("verified"));
+        QVERIFY(!QFile::exists(m.state("theme-sets")));
+        // Never started, still as planned: done now.
+        QCOMPARE(items.value("power.idle.lock").state, QString("verified"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+        // Neither planned nor wanted: someone else's value, left for a person to check.
+        QCOMPARE(items.value("power.idle.screensaver").state, QString("interrupted"));
+        QCOMPARE(readSetting(core.engine, "power.idle.screensaver").value, QString("90"));
+        // The coordinator settled its own record of the interrupted change too.
+        QCOMPARE(core.coordinator.transaction("crashed00001").phase, QString("interrupted"));
+        QCOMPARE(core.coordinator.transaction("crashed00001").runId, run.id);
+        // A finished run has nothing left to resume.
+        QVERIFY(resumeRun(core, run.id).state.isEmpty());
+        QVERIFY(resumeRun(core, "../../etc/passwd").message.contains("not a restore id"));
+    }
+    void profileLeaseExcludesOtherChanges() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        {
+            // Another process holds the lease: a restore is running there.
+            QLockFile other(core.coordinator.leasePath());
+            QVERIFY(other.tryLock(0));
+            QVERIFY(core.coordinator.leaseHeldElsewhere());
+            const Transaction refused = applySetting(core.engine, "power.idle.screensaver", "60");
+            QCOMPARE(refused.phase, QString("failed"));
+            QVERIFY(refused.message.contains("restore is running"));
+            QCOMPARE(Cli::run(m.s.env, {"apply", "power.idle.screensaver", "60"}), 1);
+            // Nor can a second restore start.
+            const ProfileRun second = runPlan(core, plan);
+            QVERIFY(second.state.isEmpty());
+            QVERIFY(second.message.contains("Another restore"));
+            QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("300"));
+        }
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+        QCOMPARE(applySetting(core.engine, "power.idle.screensaver", "60").phase, QString("committed"));
+
+        // While this process holds it, only the run's own changes go ahead.
+        QVERIFY(core.coordinator.acquireLease("run-aaaaaaaaaaaa"));
+        QCOMPARE(applySetting(core.engine, "power.idle.screensaver", "120").phase, QString("failed"));
+        Transaction own;
+        bool done = false;
+        core.engine.apply("power.idle.screensaver", "120", [&](const Transaction &tx) { own = tx; done = true; }, "set", "run-aaaaaaaaaaaa");
+        QTRY_VERIFY_WITH_TIMEOUT(done, 8000);
+        QCOMPARE(own.phase, QString("committed"));
+        QCOMPARE(own.runId, QString("run-aaaaaaaaaaaa"));
+        core.coordinator.releaseLease();
+        // A change claiming a run that holds no lease is refused too.
+        done = false;
+        core.engine.apply("power.idle.screensaver", "150", [&](const Transaction &tx) { own = tx; done = true; }, "set", "run-aaaaaaaaaaaa");
+        QTRY_VERIFY_WITH_TIMEOUT(done, 8000);
+        QCOMPARE(own.phase, QString("failed"));
+    }
+    void profileCliRoundTrip() {
+        ProfileMachine a;
+        QTemporaryDir store;
+        const QString dir = store.path() + "/profile";
+        QCOMPARE(Cli::run(a.s.env, {"apply", "power.idle.lock", "600"}), 0);
+        // A first capture needs a choice of what to remember.
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir}), 1);
+        QVERIFY(!QFile::exists(ProfileModel::manifestPath(dir)));
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir, "--setting", "power.idle.lock", "--dry-run"}), 0);
+        QVERIFY(!QFile::exists(ProfileModel::manifestPath(dir)));
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir, "--category", "idle", "--name", "Laptop"}), 0);
+        QVERIFY(ProfileModel::load(dir).ok);
+        QCOMPARE(ProfileModel::load(dir).profile.name, QString("Laptop"));
+        QCOMPARE(Cli::run(a.s.env, {"profile", "inspect", dir, "--json"}), 0);
+
+        ProfileMachine b;
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", dir}), 0);
+        const QStringList plans = QDir(ProfileStore::plansDir(b.s.env)).entryList({"plan-*.json"}, QDir::Files);
+        QCOMPARE(plans.size(), 1);
+        const QString planId = plans.first().chopped(5);
+        // Nothing happens without --yes, and nothing changed by planning.
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", planId}), 1);
+        QVERIFY(readAll(b.config()).contains("\"lock\": 300"));
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", planId, "--yes"}), 0);
+        QVERIFY(readAll(b.config()).contains("\"lock\": 600"));
+        QCOMPARE(Cli::run(b.s.env, {"profile", "status", "--json"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", "plan-nothere00000", "--yes"}), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "resume", "not-a-run"}), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "frobnicate"}), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile"}), 0);
+    }
+
+    // ---- My Omarchy: apps -----------------------------------------------------------
+    void packageInventoryReadsPacmanWithoutChangingAnything() {
+        PackageMachine m;
+        AppCore core(m.s.env);
+        PackageProvider::Inventory inventory;
+        bool done = false;
+        core.packages.readInventory([&](const PackageProvider::Inventory &read) { inventory = read; done = true; });
+        QVERIFY(QTest::qWaitFor([&] { return done; }, 15000));
+        QVERIFY2(inventory.ok, qPrintable(inventory.error));
+        QVERIFY(inventory.installed.value("chromium").explicitly);
+        QCOMPARE(inventory.installed.value("chromium").repository, QString("extra"));
+        QCOMPARE(inventory.installed.value("omarchy").repository, QString("omarchy"));
+        QVERIFY(!inventory.installed.value("hyprland").explicitly);
+        QVERIFY(inventory.installed.value("my-local-tool").foreign);
+        QVERIFY(inventory.installed.value("my-local-tool").repository.isEmpty());
+        QVERIFY(inventory.hasBaseline);
+        QVERIFY(inventory.baseline.contains("libreoffice-fresh"));
+
+        PackageProvider::Preview preview;
+        const auto wait = [&](const std::function<void(std::function<void(const PackageProvider::Preview &)>)> &start) {
+            done = false;
+            start([&](const PackageProvider::Preview &result) { preview = result; done = true; });
+            return QTest::qWaitFor([&] { return done; }, 15000);
+        };
+        QVERIFY(wait([&](auto callback) { core.packages.previewInstall({"firefox"}, callback); }));
+        QVERIFY(preview.ok);
+        QStringList brings = preview.packages;
+        brings.sort();
+        QCOMPARE(brings, (QStringList{"firefox 140.0-1 extra", "libvpx 1.15-1 extra", "nss 3.110-1 extra"}));
+        QVERIFY(wait([&](auto callback) { core.packages.previewInstall({"no-such-app"}, callback); }));
+        QVERIFY(!preview.ok);
+        QCOMPARE(preview.missing, QStringList{"no-such-app"});
+        QVERIFY(wait([&](auto callback) { core.packages.previewRemoval({"hyprland"}, callback); }));
+        QVERIFY(!preview.ok);
+        QCOMPARE(preview.requiredBy, QStringList{"omarchy"});
+        QVERIFY(wait([&](auto callback) { core.packages.previewRemoval({"libreoffice-fresh"}, callback); }));
+        QVERIFY(preview.ok);
+        QCOMPARE(preview.packages, QStringList{"libreoffice-fresh 25.2-1"});
+
+        QVERIFY(PackageProvider::isProtected("omarchy-control"));
+        QVERIFY(PackageProvider::isProtected("linux-firmware-intel"));
+        QVERIFY(!PackageProvider::isProtected("firefox"));
+        QVERIFY(PackageProvider::isSystemPackage("nvidia-open-dkms"));
+        QVERIFY(PackageProvider::isSystemPackage("intel-ucode"));
+        QVERIFY(!PackageProvider::isSystemPackage("ripgrep"));
+        // Reading all of that ran no transaction and asked sudo for nothing.
+        QVERIFY(m.transactions().isEmpty());
+        QVERIFY(!m.s.calls().join('\n').contains("sudo"));
+    }
+    void profileCapturesApps() {
+        PackageMachine m;
+        QTemporaryDir store;
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.apps = {"btop", "ripgrep", "my-local-tool", "linux-firmware", "--force", "thermald"};
+        selection.excludeApps = {"libreoffice-fresh", "hyprland", "obsidian"};
+        selection.suggestedApps = true;
+        selection.settings = {"apps.default.browser"};
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QHash<QString, ProfileCapture::Item> items;
+        for (const ProfileCapture::Item &item : result.items)
+            if (item.kind == "package")
+                items.insert(item.label, item);
+        const Profile &profile = result.profile;
+        QCOMPARE(profile.package("btop"), (ProfilePackage{"btop", "repository", "present", "extra"}));
+        QCOMPARE(items.value("ripgrep").change, QString("excluded"));
+        // In no repository: kept in view, for a person to install.
+        QCOMPARE(profile.package("my-local-tool").source, QString("manual"));
+        QCOMPARE(items.value("linux-firmware").change, QString("excluded"));
+        QCOMPARE(items.value("thermald").change, QString("excluded"));
+        QVERIFY(items.value("thermald").reason.contains("hardware"));
+        QCOMPARE(items.value("--force").change, QString("excluded"));
+        QCOMPARE(profile.package("libreoffice-fresh").intent, QString("absent"));
+        QVERIFY(items.value("libreoffice-fresh").reason.contains("Still installed"));
+        QCOMPARE(items.value("hyprland").change, QString("excluded"));
+        QCOMPARE(profile.package("obsidian").intent, QString("absent"));
+        // The default browser brings the app it opens.
+        QCOMPARE(profile.settings.value("apps.default.browser").value, QString("chromium"));
+        QCOMPARE(profile.package("chromium").intent, QString("present"));
+        QVERIFY(items.value("chromium").reason.contains("Web browser"));
+        // Omarchy's defaults are not suggested; one missing here is shown, never recorded.
+        QVERIFY(!profile.hasPackage("mpv"));
+        QVERIFY(!profile.hasPackage("omarchy"));
+        QCOMPARE(items.value("typora").change, QString("suggested"));
+        QVERIFY(!profile.hasPackage("typora"));
+        // vi is there in another package's name, so it is not missing.
+        QVERIFY(!items.contains("vi"));
+        // What Omarchy installed for this hardware is never an app choice, asked for or not.
+        QVERIFY(!profile.hasPackage("thermald"));
+        // An app someone chose that Omarchy does not ship is suggested.
+        QCOMPARE(profile.package("ex-vi-compat").intent, QString("present"));
+        QString error;
+        QVERIFY2(core.profileCapture.save(store.path(), result, &error), qPrintable(error));
+
+        // Gone from this computer later: still remembered, and flagged.
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))).replace("btop 1.4.7-1 explicit -\n", ""));
+        const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+        QVERIFY(saved.ok);
+        const ProfileCapture::Result again = captureProfile(core, &saved.profile, {});
+        QVERIFY(again.ok);
+        QCOMPARE(again.profile.package("btop").intent, QString("present"));
+        bool flagged = false;
+        for (const ProfileCapture::Item &item : again.items)
+            if (item.label == "btop")
+                flagged = item.change == "kept" && item.attention;
+        QVERIFY(flagged);
+        // An app the profile's own default needs cannot also be unwanted.
+        ProfileCapture::Selection exclude;
+        exclude.excludeApps = {"chromium"};
+        const ProfileCapture::Result refused = captureProfile(core, &saved.profile, exclude);
+        QCOMPARE(refused.profile.package("chromium").intent, QString("present"));
+    }
+    void profileRestoresApps() {
+        // The P2 gate: an app and a command-line tool installed, a default switched to the new
+        // app, an unwanted default removed after it, and everything else left as it was.
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("firefox")}},
+                        {app("firefox"), app("ripgrep"), app("btop"), app("libreoffice-fresh", "absent")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"apps.default.browser"};
+        const ProfilePlan plan = planProfile(core, store.path(), options);
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "firefox").action, QString("install"));
+        QCOMPARE(planned(plan, "firefox").status, QString("ready"));
+        QCOMPARE(planned(plan, "firefox").transaction.size(), 3);
+        QCOMPARE(planned(plan, "ripgrep").status, QString("ready"));
+        QCOMPARE(planned(plan, "btop").status, QString("unchanged"));
+        QCOMPARE(planned(plan, "libreoffice-fresh").action, QString("remove"));
+        QCOMPARE(planned(plan, "libreoffice-fresh").status, QString("ready"));
+        QVERIFY(planned(plan, "libreoffice-fresh").reason.contains("Omarchy installs"));
+        QCOMPARE(planned(plan, "apps.default.browser").needs, QStringList{"package:firefox"});
+        QVERIFY(planned(plan, "apps.default.browser").willRun());
+        QCOMPARE(plan.leftOut(), 0);
+        // Apps first, then the settings that use them, then removals.
+        QStringList order;
+        for (const ProfilePlanItem &item : plan.items)
+            order << item.target;
+        QVERIFY(order.indexOf("firefox") < order.indexOf("apps.default.browser"));
+        QVERIFY(order.indexOf("apps.default.browser") < order.indexOf("libreoffice-fresh"));
+        // Planning installed nothing.
+        QVERIFY(m.transactions().isEmpty());
+
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(run.count("verified"), 4);
+        QCOMPARE(m.reason("firefox"), QString("explicit"));
+        QCOMPARE(m.reason("nss"), QString("dependency"));
+        QCOMPARE(m.reason("ripgrep"), QString("explicit"));
+        QVERIFY(!m.has("libreoffice-fresh"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("firefox"));
+        // Nothing else moved.
+        for (const char *untouched : {"chromium", "btop", "mpv", "libmpv", "my-local-tool", "omarchy", "hyprland"})
+            QVERIFY2(m.has(untouched), untouched);
+        // One transaction for both installs, one for the removal, each journaled under the run.
+        QCOMPARE(m.transactions(), (QStringList{"pacman -S --needed -- firefox ripgrep", "pacman -R -- libreoffice-fresh"}));
+        QCOMPARE(changesBy(core.coordinator, run.id), 3);
+        for (const Transaction &tx : core.coordinator.history())
+            if (tx.runId == run.id && tx.settingId == "packages")
+                QVERIFY(!tx.undoable());
+
+        // Again, with nothing left to do: no transaction, no change.
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(second.count("ready") + second.count("conflict"), 0);
+        QCOMPARE(runPlan(core, second).state, QString("completed"));
+        QCOMPARE(m.transactions().size(), 2);
+    }
+    void profileRefusesUnsafeAppRemovals() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {},
+                        {app("hyprland", "absent"), app("thermald", "absent"), app("libmpv", "absent"), app("obsidian", "absent"), app("my-local-tool", "absent", "manual"),
+                         app("no-such-app"), app("some-aur-app", "present", "aur"), app("my-build", "present", "manual"), app("libvpx")});
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "libvpx 1.15-1 dependency -\n");
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY(plan.valid);
+        QCOMPARE(planned(plan, "hyprland").status, QString("blocked"));
+        QVERIFY(planned(plan, "hyprland").reason.contains("never removes"));
+        QCOMPARE(planned(plan, "thermald").status, QString("blocked"));
+        QVERIFY(planned(plan, "thermald").reason.contains("hardware"));
+        QCOMPARE(planned(plan, "libmpv").status, QString("blocked"));
+        QVERIFY(planned(plan, "libmpv").reason.contains("Needed by mpv"));
+        QCOMPARE(planned(plan, "obsidian").status, QString("unchanged"));
+        // Not one of Omarchy's, so possibly installed here on purpose: a decision.
+        QCOMPARE(planned(plan, "my-local-tool").status, QString("conflict"));
+        QCOMPARE(planned(plan, "no-such-app").status, QString("blocked"));
+        QVERIFY(planned(plan, "no-such-app").reason.contains("No configured repository"));
+        QCOMPARE(planned(plan, "some-aur-app").status, QString("blocked"));
+        QVERIFY(planned(plan, "some-aur-app").reason.contains("AUR"));
+        QCOMPARE(planned(plan, "my-build").status, QString("manual"));
+        // Already installed as a dependency: it only becomes wanted.
+        QCOMPARE(planned(plan, "libvpx").action, QString("mark-explicit"));
+
+        // A default app whose own app the profile removes is refused outright.
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("chromium")}}, {app("chromium", "absent")});
+        const ProfilePlan contradiction = planProfile(core, store.path());
+        QVERIFY(!contradiction.valid);
+        QVERIFY(contradiction.errors.join(" ").contains("also to remove chromium"));
+    }
+    void profileAppFailuresAreReportedAsTheyAre() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("firefox")}}, {app("firefox")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"all"};
+
+        // A refused password changes nothing, and what needed the app does not happen.
+        writeFile(m.pacman("deny-sudo"), "");
+        ProfileRun run = runPlan(core, planProfile(core, store.path(), options));
+        QCOMPARE(run.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : run.items)
+            items.insert(item.target, item);
+        QCOMPARE(items.value("firefox").state, QString("failed"));
+        QVERIFY2(items.value("firefox").message.contains("did not finish"), qPrintable(items.value("firefox").message));
+        QCOMPARE(items.value("apps.default.browser").state, QString("blocked"));
+        QVERIFY(items.value("apps.default.browser").message.contains("firefox"));
+        QVERIFY(!m.has("firefox"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("chromium"));
+        QFile::remove(m.pacman("deny-sudo"));
+
+        // A transaction pacman fails is a failure, whatever came before.
+        writeFile(m.pacman("fail-install"), "");
+        run = runPlan(core, planProfile(core, store.path(), options));
+        QCOMPARE(run.state, QString("incomplete"));
+        QVERIFY(!m.has("firefox"));
+        QFile::remove(m.pacman("fail-install"));
+
+        // What pacman would do changed after the review: nothing starts.
+        const ProfilePlan reviewed = planProfile(core, store.path(), options);
+        writeFile(m.pacman("repo"), QByteArray(readAll(m.pacman("repo"))).replace("firefox 140.0-1 nss,libvpx", "firefox 141.0-1 nss,libvpx"));
+        const int before = m.transactions().size();
+        run = runPlan(core, reviewed);
+        QCOMPARE(run.state, QString("incomplete"));
+        for (const ProfileRunItem &item : run.items)
+            if (item.target == "firefox")
+                QVERIFY2(item.message.contains("changed since the plan"), qPrintable(item.message));
+        QCOMPARE(m.transactions().size(), before);
+        QVERIFY(!m.has("firefox"));
+    }
+    void profilePausesWhilePacmanIsBusy() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {}, {app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        core.profileRunner.setPacmanWait(0);
+        const QString lock = m.s.env.sys("/var/lib/pacman/db.lck");
+        writeFile(lock, "");
+        const ProfileRun paused = runPlan(core, planProfile(core, store.path()));
+        QCOMPARE(paused.state, QString("paused"));
+        QVERIFY(paused.resumable());
+        QCOMPARE(paused.items.first().state, QString("pending"));
+        // pacman's lock is waited for, never removed.
+        QVERIFY(QFile::exists(lock));
+        QVERIFY(m.transactions().isEmpty());
+        QVERIFY(!core.coordinator.leaseHeldElsewhere());
+        QVERIFY(core.coordinator.leaseRun().isEmpty());
+        QFile::remove(lock);
+        const ProfileRun resumed = resumeRun(core, paused.id);
+        QCOMPARE(resumed.state, QString("completed"));
+        QCOMPARE(m.reason("ripgrep"), QString("explicit"));
+    }
+    void profileResumesAfterAnInterruptedPackageWorker() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {}, {app("firefox"), app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        const ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(plan.count("ready"), 2);
+        // The run died while pacman was working: the record says both were underway, and
+        // pacman had installed one of them.
+        ProfileRun run;
+        run.id = "run-00000000beef";
+        run.planId = plan.id;
+        run.directory = plan.directory;
+        run.profileName = plan.profileName;
+        run.profileDigest = plan.profileDigest;
+        run.state = "running";
+        for (const ProfilePlanItem &item : plan.items) {
+            ProfileRunItem step;
+            step.id = item.id;
+            step.kind = item.kind;
+            step.target = item.target;
+            step.label = item.label;
+            step.mode = item.mode;
+            step.desired = item.desired;
+            step.action = item.action;
+            step.packages = item.transaction;
+            step.planned = item.currentStatus;
+            step.state = "running";
+            run.items << step;
+        }
+        writeFile(ProfileStore::runsDir(m.s.env) + "/" + run.id + ".json", QJsonDocument(run.toJson()).toJson());
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "nss 3.110-1 dependency -\nlibvpx 1.15-1 dependency -\nfirefox 140.0-1 explicit nss,libvpx\n");
+
+        const ProfileRun resumed = resumeRun(core, run.id);
+        QCOMPARE(resumed.state, QString("completed"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : resumed.items)
+            items.insert(item.target, item);
+        QCOMPARE(items.value("firefox").state, QString("verified"));
+        QVERIFY(items.value("firefox").message.contains("already done"));
+        QCOMPARE(items.value("ripgrep").state, QString("verified"));
+        // Only what had not happened ran again.
+        QCOMPARE(m.transactions(), QStringList{"pacman -S --needed -- ripgrep"});
+    }
+    void profileCliRestoresApps() {
+        PackageMachine a;
+        QTemporaryDir store;
+        const QString dir = store.path() + "/profile";
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", dir, "--app", "btop", "--app", "mpv", "--exclude-app", "libreoffice-fresh"}), 0);
+        const ProfileModel::Parsed saved = ProfileModel::load(dir);
+        QVERIFY(saved.ok);
+        QCOMPARE(saved.profile.packages.size(), 3);
+        QVERIFY(a.transactions().isEmpty());
+
+        // Another computer, where btop is missing and libreoffice-fresh is still there.
+        PackageMachine b;
+        writeFile(b.pacman("installed"), QByteArray(readAll(b.pacman("installed"))).replace("btop 1.4.7-1 explicit -\n", ""));
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", dir}), 0);
+        const QStringList plans = QDir(ProfileStore::plansDir(b.s.env)).entryList({"plan-*.json"}, QDir::Files);
+        QCOMPARE(plans.size(), 1);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", plans.first().chopped(5)}), 1);
+        QVERIFY(b.transactions().isEmpty());
+        QCOMPARE(Cli::run(b.s.env, {"profile", "apply", plans.first().chopped(5), "--yes"}), 0);
+        QCOMPARE(b.transactions(), (QStringList{"pacman -S --needed -- btop", "pacman -R -- libreoffice-fresh"}));
+        QCOMPARE(b.reason("btop"), QString("explicit"));
+        QVERIFY(!b.has("libreoffice-fresh"));
+    }
+    void profileResolvesAurAppsOnlyWhenAsked() {
+        PackageMachine m;
+        m.s.command("curl", kFakeAurCurl);
+        writeFile(m.pacman("aur"), "my-local-tool 1.0-1 -\n");
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "another-build 2.0-1 explicit -\n");
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.apps = {"my-local-tool", "another-build"};
+        // Without being asked, nothing reaches the network, and neither is guessed at.
+        const ProfileCapture::Result offline = captureProfile(core, nullptr, selection);
+        QCOMPARE(offline.profile.package("my-local-tool").source, QString("manual"));
+        QVERIFY(!QFile::exists(m.pacman("curl-calls")));
+        selection.resolveAur = true;
+        const ProfileCapture::Result online = captureProfile(core, nullptr, selection);
+        QVERIFY(online.ok);
+        QCOMPARE(online.profile.package("my-local-tool").source, QString("aur"));
+        QCOMPARE(online.profile.package("another-build").source, QString("manual"));
+        // One request, holding only the names asked about.
+        QCOMPARE(QString::fromUtf8(readAll(m.pacman("curl-calls"))).trimmed(),
+                 QString("https://aur.archlinux.org/rpc/v5/info?arg%5B%5D=another-build&arg%5B%5D=my-local-tool"));
+        // The AUR unreachable: nothing is assumed, and the capture says so.
+        writeFile(m.pacman("aur-down"), "");
+        const ProfileCapture::Result down = captureProfile(core, nullptr, selection);
+        QVERIFY(down.ok);
+        QCOMPARE(down.profile.package("my-local-tool").source, QString("manual"));
+        bool said = false;
+        for (const ProfileCapture::Item &item : down.items)
+            said = said || item.reason.contains("could not be asked");
+        QVERIFY(said);
+        QFile::remove(m.pacman("aur-down"));
+        // A default app's own app is known from the catalog, with no lookup at all.
+        writeFile(m.state("browser"), "chrome\n");
+        writeFile(m.pacman("installed"), QByteArray(readAll(m.pacman("installed"))) + "google-chrome 142.0-1 explicit -\n");
+        const int calls = QString::fromUtf8(readAll(m.pacman("curl-calls"))).count('\n');
+        ProfileCapture::Selection browser;
+        browser.settings = {"apps.default.browser"};
+        const ProfileCapture::Result known = captureProfile(core, nullptr, browser);
+        QCOMPARE(known.profile.package("google-chrome").source, QString("aur"));
+        QCOMPARE(QString::fromUtf8(readAll(m.pacman("curl-calls"))).count('\n'), calls);
+    }
+    void profileBuildsAppsFromTheAur() {
+        PackageMachine m;
+        m.s.command("yay", kFakeYay);
+        writeFile(m.pacman("aur"), "google-chrome 142.0-1 google-chrome-stable\n");
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("chrome")}}, {app("google-chrome", "present", "aur"), app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"all"};
+        const ProfilePlan plan = planProfile(core, store.path(), options);
+        QCOMPARE(planned(plan, "google-chrome").action, QString("build"));
+        QCOMPARE(planned(plan, "google-chrome").status, QString("ready"));
+        QVERIFY(planned(plan, "google-chrome").reason.contains("review"));
+        QCOMPARE(planned(plan, "apps.default.browser").needs, QStringList{"package:google-chrome"});
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(m.reason("google-chrome"), QString("explicit"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("chrome"));
+        // Built by yay with its review offered, never with a saved answer standing in for it.
+        QVERIFY(m.transactions().contains("yay -S --needed --aur --diffmenu --noanswerdiff -- google-chrome"));
+        QVERIFY(m.transactions().contains("pacman -S --needed -- ripgrep"));
+        for (const Transaction &tx : core.coordinator.history())
+            if (tx.runId == run.id && tx.label.contains("AUR"))
+                QVERIFY(!tx.undoable());
+    }
+    void profileFailedAurBuildBlocksOnlyWhatNeedsIt() {
+        PackageMachine m;
+        m.s.command("yay", kFakeYay);
+        writeFile(m.pacman("aur"), "google-chrome 142.0-1 google-chrome-stable\n");
+        writeFile(m.pacman("fail-build"), "");
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"apps.default.browser", setTo("chrome")}, {"power.idle.lock", setTo("600")}},
+                        {app("google-chrome", "present", "aur"), app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        core.profileRunner.setPackageTerminal(true);
+        ProfilePlanner::Options options;
+        options.useSaved = {"all"};
+        const ProfileRun run = runPlan(core, planProfile(core, store.path(), options));
+        QCOMPARE(run.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> items;
+        for (const ProfileRunItem &item : run.items)
+            items.insert(item.target, item);
+        QCOMPARE(items.value("google-chrome").state, QString("failed"));
+        QCOMPARE(items.value("apps.default.browser").state, QString("blocked"));
+        // Work that did not depend on the build still happened, and was verified.
+        QCOMPARE(items.value("ripgrep").state, QString("verified"));
+        QCOMPARE(items.value("power.idle.lock").state, QString("verified"));
+        QVERIFY(!m.has("google-chrome"));
+        QCOMPARE(readSetting(core.engine, "apps.default.browser").value, QString("chromium"));
+
+        // Without yay there is nothing to build with, and the plan says so.
+        QFile::remove(m.s.bin("yay"));
+        const ProfilePlan plan = planProfile(core, store.path(), options);
+        QCOMPARE(planned(plan, "google-chrome").status, QString("blocked"));
+        QVERIFY(planned(plan, "google-chrome").reason.contains("needs yay"));
+    }
+    void profileWithoutATerminalLeavesAppsAlone() {
+        PackageMachine m;
+        QTemporaryDir store;
+        writeAppProfile(store.path(), {{"power.idle.lock", setTo("600")}}, {app("ripgrep")});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfileRun run = runPlan(core, planProfile(core, store.path()));
+        QCOMPARE(run.state, QString("incomplete"));
+        for (const ProfileRunItem &item : run.items) {
+            if (item.target == "ripgrep") {
+                QCOMPARE(item.state, QString("blocked"));
+                QVERIFY(item.message.contains("terminal"));
+            } else {
+                QCOMPARE(item.state, QString("verified"));
+            }
+        }
+        QVERIFY(m.transactions().isEmpty());
+        QVERIFY(!m.s.calls().join('\n').contains("sudo"));
+    }
+
+    // ---- My Omarchy: desktop choices ------------------------------------------------
+    void profileCapturesDesktopChoices() {
+        DesktopMachine a;
+        AppCore core(a.s.env);
+        core.capabilities.scanServicesBlocking();
+        writeFile(a.state("pins"), "firefox\norg.gnome.Nautilus\n");
+        a.setMime("text/plain", "org.example.TextEditor.desktop");
+        LauncherEditor::Edit rename;
+        rename.name = "Web";
+        rename.hidden = true;
+        QCOMPARE(launcherChange([&](auto done) { core.launchers.apply("org.example.Browser.desktop", rename, done); }).phase, QString("committed"));
+        HyprModule module(a.s.env);
+        QVERIFY(module.load());
+        module.setBinds(QJsonArray{QJsonObject{{"keys", "SUPER + ALT + N"}, {"description", "Notes"}, {"command", "uwsm-app -- obsidian"}}});
+        module.setRules(QJsonArray{QJsonObject{{"match", "org.gnome.Calculator"}, {"action", "float"}, {"value", ""}}});
+        QVERIFY(module.save());
+
+        ProfileCapture::Selection selection;
+        selection.dock = selection.launchers = selection.associations = selection.shortcuts = selection.windowRules = true;
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        const QJsonObject desktop = result.profile.desktop;
+        QCOMPARE(desktop.value("dockPins").toArray(), (QJsonArray{"firefox", "org.gnome.Nautilus"}));
+        // Only what was changed here, nothing the package set.
+        QCOMPARE(desktop.value("launchers").toObject().value("org.example.Browser.desktop").toObject(),
+                 (QJsonObject{{"name", "Web"}, {"hidden", true}}));
+        QVERIFY(!desktop.value("launchers").toObject().contains("org.example.TextEditor.desktop"));
+        QCOMPARE(desktop.value("associations").toObject().value("text/plain").toString(), QString("org.example.TextEditor.desktop"));
+        QCOMPARE(desktop.value("shortcuts").toArray().first().toObject().value("id").toString(), QString("super-alt-n"));
+        QCOMPARE(desktop.value("shortcuts").toArray().first().toObject().value("command").toString(), QString("uwsm-app -- obsidian"));
+        QCOMPARE(desktop.value("windowRules").toArray().first().toObject().value("id").toString(), QString("float-org-gnome-calculator"));
+        // Saved, and read back exactly.
+        QTemporaryDir store;
+        QString error;
+        QVERIFY2(core.profileCapture.save(store.path(), result, &error), qPrintable(error));
+        const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+        QVERIFY2(saved.ok, qPrintable(saved.errors.join("\n")));
+        // A change undone here leaves the profile on the next save, and an unreadable
+        // association stays as saved.
+        QCOMPARE(launcherChange([&](auto done) { core.launchers.reset("org.example.Browser.desktop", done); }).phase, QString("committed"));
+        QFile::remove(a.state("mime-text_plain"));
+        const ProfileCapture::Result again = captureProfile(core, &saved.profile, {});
+        QVERIFY(again.ok);
+        QVERIFY(!again.profile.desktop.contains("launchers"));
+        QCOMPARE(again.profile.desktop.value("associations").toObject().value("text/plain").toString(), QString("org.example.TextEditor.desktop"));
+    }
+    void profileRestoresDesktopChoices() {
+        // The P3 gate's desktop part: on another computer, the dock, a launcher, a file
+        // association, and an owned shortcut and rule, each verified, then nothing to do.
+        QTemporaryDir store;
+        {
+            DesktopMachine a;
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            writeFile(a.state("pins"), "firefox\norg.gnome.Nautilus\n");
+            a.setMime("text/plain", "org.example.TextEditor.desktop");
+            LauncherEditor::Edit rename;
+            rename.name = "Web";
+            QCOMPARE(launcherChange([&](auto done) { core.launchers.apply("org.example.Browser.desktop", rename, done); }).phase, QString("committed"));
+            HyprModule module(a.s.env);
+            QVERIFY(module.load());
+            module.setBinds(QJsonArray{QJsonObject{{"keys", "SUPER + ALT + N"}, {"description", "Notes"}, {"command", "uwsm-app -- obsidian"}}});
+            module.setRules(QJsonArray{QJsonObject{{"match", "org.gnome.Calculator"}, {"action", "float"}, {"value", ""}}});
+            QVERIFY(module.save());
+            ProfileCapture::Selection selection;
+            selection.dock = selection.launchers = selection.associations = selection.shortcuts = selection.windowRules = true;
+            QVERIFY(saveProfile(core, store.path(), selection));
+        }
+        DesktopMachine b;
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        for (const char *target : {"dock", "launcher:org.example.Browser.desktop", "association:text/plain", "shortcut:super-alt-n", "rule:float-org-gnome-calculator"})
+            QVERIFY2(planned(plan, target).status == "ready", qPrintable(QString(target) + ": " + planned(plan, target).status + " " + planned(plan, target).reason));
+        // A restored shortcut runs a command, so the review says which.
+        QVERIFY(planned(plan, "shortcut:super-alt-n").effects.join(" ").contains("uwsm-app -- obsidian"));
+        QVERIFY(planned(plan, "shortcut:super-alt-n").needsOwnership);
+        QCOMPARE(b.pins(), QString());
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("completed"));
+        QCOMPARE(b.pins(), QString("firefox\norg.gnome.Nautilus"));
+        QCOMPARE(core.launchers.find("org.example.Browser.desktop").name, QString("Web"));
+        QCOMPARE(b.mime("text/plain"), QString("org.example.TextEditor.desktop"));
+        HyprModule module(b.s.env);
+        QVERIFY(module.load());
+        QCOMPARE(module.binds().size(), 1);
+        QCOMPARE(module.rules().size(), 1);
+        QVERIFY(module.importInstalled());
+        QVERIFY(readAll(b.s.env.configHome + "/hypr/hyprland.lua").contains("hypr.mine"));
+        // Each was one journaled change under the run.
+        QCOMPARE(changesBy(core.coordinator, run.id), 5);
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(second.count("ready") + second.count("conflict"), 0);
+        QCOMPARE(second.count("unchanged"), 5);
+    }
+    void profileDesktopConflictsAndBlocks() {
+        DesktopMachine b;
+        QTemporaryDir store;
+        const QJsonObject desktop{
+            {"dockPins", QJsonArray{"firefox"}},
+            {"launchers", QJsonObject{{"org.example.Missing.desktop", QJsonObject{{"name", "Gone"}}},
+                                      {"org.example.Browser.desktop", QJsonObject{{"icon", "sha256:" + QString(64, 'a')}}}}},
+            {"shortcuts", QJsonArray{QJsonObject{{"id", "super-return"}, {"keys", "SUPER + RETURN"}, {"description", "Mine"}, {"command", "foot"}}}},
+        };
+        // The icon is one of the profile's files, recorded but not in its folder.
+        const QJsonArray assets{QJsonObject{{"sha256", QString(64, 'a')}, {"size", 10}, {"kind", "icon"}, {"name", "web.png"}}};
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Desktop"}, {"desktop", desktop}, {"assets", assets}}).toJson());
+        writeFile(b.state("pins"), "my-own-app\n");
+        writeFile(b.s.env.home + "/.fake-binds", "64 RETURN Terminal\n");
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        // A dock someone made here is theirs until they choose otherwise.
+        QCOMPARE(planned(plan, "dock").status, QString("conflict"));
+        QCOMPARE(planned(plan, "launcher:org.example.Missing.desktop").status, QString("blocked"));
+        QCOMPARE(planned(plan, "launcher:org.example.Browser.desktop").status, QString("blocked"));
+        QVERIFY(planned(plan, "launcher:org.example.Browser.desktop").reason.contains("missing"));
+        // Keys that already do something are only taken over by a decision.
+        QCOMPARE(planned(plan, "shortcut:super-return").status, QString("conflict"));
+        QVERIFY(planned(plan, "shortcut:super-return").reason.contains("Terminal"));
+
+        ProfilePlanner::Options options;
+        options.useSaved = {"shortcut:super-return"};
+        plan = planProfile(core, store.path(), options);
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("partial"));
+        HyprModule module(b.s.env);
+        QVERIFY(module.load());
+        QVERIFY(module.binds().first().toObject().value("replaces").toBool());
+        QVERIFY(readAll(module.path()).contains("hl.unbind(\"SUPER + RETURN\")"));
+        QCOMPARE(b.pins(), QString("my-own-app"));
+
+        // A module someone edited by hand is never written over.
+        writeFile(module.path(), QByteArray(readAll(module.path())) + "-- my own line\n");
+        // Its records can no longer be told apart from the edit, so even the one restored
+        // above is held back, with the reason.
+        const ProfilePlan edited = planProfile(core, store.path(), options);
+        QCOMPARE(planned(edited, "shortcut:super-return").status, QString("blocked"));
+        QVERIFY(planned(edited, "shortcut:super-return").reason.contains("edited by hand"));
+        QJsonObject other{{"shortcuts", QJsonArray{QJsonObject{{"id", "super-alt-q"}, {"keys", "SUPER + ALT + Q"}, {"command", "true"}}}}};
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Desktop"}, {"desktop", other}}).toJson());
+        const ProfilePlan handEdited = planProfile(core, store.path());
+        QCOMPARE(planned(handEdited, "shortcut:super-alt-q").status, QString("blocked"));
+        QVERIFY(planned(handEdited, "shortcut:super-alt-q").reason.contains("edited by hand"));
+    }
+
+    void profileCarriesBackgroundsAndIconFiles() {
+        // Files go with the profile, by digest, and arrive where their adapter puts them,
+        // under another user's home folder.
+        QTemporaryDir store;
+        QString backgroundDigest;
+        {
+            DesktopMachine a;
+            useTheme(a.s, "tokyo-night");
+            const QString mine = pngFile(a.s.env.configHome + "/omarchy/backgrounds/tokyo-night/mine.png", Qt::magenta);
+            QFile::remove(a.s.env.stateHome + "/omarchy/current/background");
+            QVERIFY(QFile::link(mine, a.s.env.stateHome + "/omarchy/current/background"));
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            QString error;
+            const QString icon = core.launchers.importIcon(pngFile(a.s.dir.path() + "/downloads/web.png", Qt::yellow), &error);
+            QVERIFY2(!icon.isEmpty(), qPrintable(error));
+            LauncherEditor::Edit edit;
+            edit.icon = icon;
+            QCOMPARE(launcherChange([&](auto done) { core.launchers.apply("org.example.Browser.desktop", edit, done); }).phase, QString("committed"));
+            ProfileCapture::Selection selection;
+            selection.background = selection.launchers = true;
+            const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+            QVERIFY2(result.ok, qPrintable(result.error));
+            QVERIFY2(core.profileCapture.save(store.path(), result, &error), qPrintable(error));
+            const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+            QVERIFY2(saved.ok, qPrintable(saved.errors.join("\n")));
+            const QJsonObject background = saved.profile.desktop.value("background").toObject();
+            QCOMPARE(background.value("theme").toString(), QString("tokyo-night"));
+            QCOMPARE(background.value("name").toString(), QString("mine.png"));
+            backgroundDigest = background.value("sha256").toString();
+            QVERIFY(QFile::exists(ProfileFiles::assetPath(store.path(), backgroundDigest)));
+            const QString iconRef = saved.profile.desktop.value("launchers").toObject().value("org.example.Browser.desktop").toObject().value("icon").toString();
+            QVERIFY(iconRef.startsWith("sha256:"));
+            QVERIFY(QFile::exists(ProfileFiles::assetPath(store.path(), iconRef.mid(7))));
+            QCOMPARE(saved.profile.assets.size(), 2);
+            // No path of this home folder is in the profile.
+            QVERIFY(!readAll(ProfileModel::manifestPath(store.path())).contains(a.s.env.home.toUtf8()));
+        }
+        DesktopMachine b;
+        useTheme(b.s, "tokyo-night");
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "background").status, QString("ready"));
+        QCOMPARE(planned(plan, "launcher:org.example.Browser.desktop").status, QString("ready"));
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        const QString placed = b.s.env.configHome + "/omarchy/backgrounds/tokyo-night/mine.png";
+        QVERIFY(QFile::exists(placed));
+        QCOMPARE(QFileInfo(b.s.env.stateHome + "/omarchy/current/background").canonicalFilePath(), QFileInfo(placed).canonicalFilePath());
+        const QString restoredIcon = core.launchers.find("org.example.Browser.desktop").icon;
+        QVERIFY2(restoredIcon.startsWith(core.launchers.iconFolder()), qPrintable(restoredIcon));
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(planned(second, "background").status, QString("unchanged"));
+        QCOMPARE(planned(second, "launcher:org.example.Browser.desktop").status, QString("unchanged"));
+
+        // A file that does not match its digest is never used, and neither is a missing one.
+        DesktopMachine c;
+        useTheme(c.s, "tokyo-night");
+        AppCore other(c.s.env);
+        other.capabilities.scanServicesBlocking();
+        writeFile(ProfileFiles::assetPath(store.path(), backgroundDigest), "not the picture");
+        ProfilePlan tampered = planProfile(other, store.path());
+        QCOMPARE(planned(tampered, "background").status, QString("blocked"));
+        QVERIFY(planned(tampered, "background").reason.contains("size") || planned(tampered, "background").reason.contains("digest"));
+        QFile::remove(ProfileFiles::assetPath(store.path(), backgroundDigest));
+        tampered = planProfile(other, store.path());
+        QCOMPARE(planned(tampered, "background").status, QString("blocked"));
+        QVERIFY(planned(tampered, "background").reason.contains("missing"));
+        QVERIFY(!QFile::exists(c.s.env.configHome + "/omarchy/backgrounds/tokyo-night/mine.png"));
+    }
+    void profileRestoresAThemesOwnBackgroundForItsThemeOnly() {
+        DesktopMachine b;
+        useTheme(b.s, "catppuccin");
+        QTemporaryDir store;
+        const QJsonObject desktop{{"background", QJsonObject{{"theme", "tokyo-night"}, {"name", "2.png"}}}};
+        writeFile(ProfileModel::manifestPath(store.path()), QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Background"}, {"desktop", desktop}}).toJson());
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        // Another theme in use, and the profile does not change it: the background waits.
+        ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "background").status, QString("blocked"));
+        QVERIFY(planned(plan, "background").reason.contains("tokyo-night"));
+        // With that theme in use, one of its own backgrounds is chosen by name.
+        useTheme(b.s, "tokyo-night");
+        plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "background").status, QString("ready"));
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        QCOMPARE(QFileInfo(b.s.env.stateHome + "/omarchy/current/background").fileName(), QString("background"));
+        QVERIFY(QFileInfo(b.s.env.stateHome + "/omarchy/current/background").canonicalFilePath().endsWith("/2.png"));
+        QCOMPARE(planned(planProfile(core, store.path()), "background").status, QString("unchanged"));
+    }
+
+    void profileCarriesTerminalConfigs() {
+        QTemporaryDir store;
+        {
+            ProfileMachine a;
+            omarchyTerminalDefaults(a.s);
+            writeFile(a.s.env.configHome + "/ghostty/config", kGhosttyMine);
+            writeFile(a.s.env.configHome + "/alacritty/alacritty.toml", kAlacrittyMine);
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            ProfileCapture::Selection selection;
+            selection.configFiles = {"ghostty", "alacritty"};
+            selection.settings = {"power.idle.lock"};
+            QVERIFY(saveProfile(core, store.path(), selection));
+            const ProfileModel::Parsed saved = ProfileModel::load(store.path());
+            QVERIFY2(saved.ok, qPrintable(saved.errors.join("\n")));
+            QCOMPARE(saved.profile.files.size(), 2);
+            QCOMPARE(readAll(ProfileFiles::configPath(store.path(), "ghostty", "config")), QByteArray(kGhosttyMine));
+            QCOMPARE(readAll(ProfileFiles::configPath(store.path(), "alacritty", "alacritty.toml")), QByteArray(kAlacrittyMine));
+        }
+        ProfileMachine b;
+        omarchyTerminalDefaults(b.s);
+        // Omarchy's own Alacritty file is here; there is no Ghostty file at all.
+        writeFile(b.s.env.configHome + "/alacritty/alacritty.toml", kAlacrittyOmarchy);
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "file:ghostty/config").status, QString("ready"));
+        QCOMPARE(planned(plan, "file:alacritty/alacritty.toml").status, QString("ready"));
+        // Files come before settings, so a font or text size restored with them lands on top.
+        QStringList order;
+        for (const ProfilePlanItem &item : plan.items)
+            order << item.target;
+        QVERIFY(order.indexOf("file:ghostty/config") < order.indexOf("power.idle.lock"));
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        QCOMPARE(readAll(b.s.env.configHome + "/ghostty/config"), QByteArray(kGhosttyMine));
+        QCOMPARE(readAll(b.s.env.configHome + "/alacritty/alacritty.toml"), QByteArray(kAlacrittyMine));
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(planned(second, "file:ghostty/config").status, QString("unchanged"));
+        QCOMPARE(planned(second, "file:alacritty/alacritty.toml").status, QString("unchanged"));
+
+        // A computer with its own Ghostty file decides; a damaged or edited copy is refused.
+        ProfileMachine c;
+        omarchyTerminalDefaults(c.s);
+        writeFile(c.s.env.configHome + "/ghostty/config", "font-size = 14\n");
+        AppCore other(c.s.env);
+        other.capabilities.scanServicesBlocking();
+        QCOMPARE(planned(planProfile(other, store.path()), "file:ghostty/config").status, QString("conflict"));
+        writeFile(ProfileFiles::configPath(store.path(), "ghostty", "config"), QByteArray(kGhosttyMine).replace("12", "13"));
+        const ProfilePlan damaged = planProfile(other, store.path());
+        QCOMPARE(planned(damaged, "file:ghostty/config").status, QString("blocked"));
+        QVERIFY(planned(damaged, "file:ghostty/config").reason.contains("digest"));
+        // Edited to run a program, with its digest fixed to match: still refused, by review.
+        const QByteArray runs = QByteArray(kGhosttyMine) + "command = /usr/bin/fish\n";
+        writeFile(ProfileFiles::configPath(store.path(), "ghostty", "config"), runs);
+        QJsonObject manifest = QJsonDocument::fromJson(readAll(ProfileModel::manifestPath(store.path()))).object();
+        QJsonArray files = manifest.value("files").toArray();
+        for (int i = 0; i < files.size(); ++i) {
+            QJsonObject file = files[i].toObject();
+            if (file.value("adapter").toString() == "ghostty") {
+                file["sha256"] = QString::fromLatin1(QCryptographicHash::hash(runs, QCryptographicHash::Sha256).toHex());
+                file["size"] = double(runs.size());
+                files[i] = file;
+            }
+        }
+        manifest["files"] = files;
+        writeFile(ProfileModel::manifestPath(store.path()), QJsonDocument(manifest).toJson());
+        const ProfilePlan edited = planProfile(other, store.path());
+        QCOMPARE(planned(edited, "file:ghostty/config").status, QString("blocked"));
+        QVERIFY(planned(edited, "file:ghostty/config").reason.contains("command"));
+        QCOMPARE(readAll(c.s.env.configHome + "/ghostty/config"), QByteArray("font-size = 14\n"));
+    }
+    void profileLeavesOutConfigsItCannotCarry_data() {
+        QTest::addColumn<QString>("adapter");
+        QTest::addColumn<QByteArray>("contents");
+        QTest::addColumn<QString>("reason");
+        QTest::newRow("ghostty runs a program") << "ghostty" << QByteArray("command = /usr/bin/fish\n") << "command";
+        QTest::newRow("ghostty loads another file") << "ghostty" << QByteArray("config-file = ~/.config/ghostty/extra\n") << "loads";
+        QTest::newRow("ghostty shader") << "ghostty" << QByteArray("custom-shader = ~/shaders/crt.glsl\n") << "custom-shader";
+        QTest::newRow("home path") << "ghostty" << QByteArray("working-directory = /home/someone/code\n") << "home folder";
+        QTest::newRow("alacritty shell") << "alacritty" << QByteArray("[terminal.shell]\nprogram = \"zsh\"\n") << "program";
+        QTest::newRow("alacritty import") << "alacritty" << QByteArray("general.import = [ \"~/mine.toml\" ]\n") << "imports";
+        QTest::newRow("alacritty hint") << "alacritty" << QByteArray("[[hints.enabled]]\ncommand = \"xdg-open\"\n") << "program";
+    }
+    void profileLeavesOutConfigsItCannotCarry() {
+        QFETCH(QString, adapter);
+        QFETCH(QByteArray, contents);
+        QFETCH(QString, reason);
+        ProfileMachine m;
+        omarchyTerminalDefaults(m.s);
+        ProfileFiles::ConfigAdapter target;
+        QVERIFY(ProfileFiles::configAdapter(m.s.env, adapter, &target));
+        writeFile(target.destination, contents);
+        AppCore core(m.s.env);
+        ProfileCapture::Selection selection;
+        selection.configFiles = {adapter};
+        selection.settings = {"power.idle.lock"};
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY(result.ok);
+        QVERIFY(result.profile.files.isEmpty());
+        bool said = false;
+        for (const ProfileCapture::Item &item : result.items)
+            said = said || (item.change == "excluded" && item.reason.contains(reason));
+        QVERIFY2(said, qPrintable(reason));
+    }
+
+    void profileThemeSourcesAreHttpsOnly() {
+        // SSH needs keys a fresh computer lacks, so it travels as https where that is known
+        // to be the same repository; a name or password never travels at all.
+        QCOMPARE(ProfileDesktop::themeSource("https://github.com/a/omarchy-b-theme.git"), QString("https://github.com/a/omarchy-b-theme.git"));
+        QCOMPARE(ProfileDesktop::themeSource("https://me:token@github.com/a/b.git"), QString("https://github.com/a/b.git"));
+        QCOMPARE(ProfileDesktop::themeSource("git@github.com:a/b.git"), QString("https://github.com/a/b.git"));
+        QCOMPARE(ProfileDesktop::themeSource("ssh://git@Codeberg.org/a/b.git"), QString("https://codeberg.org/a/b.git"));
+        QCOMPARE(ProfileDesktop::themeSource("git@git.sr.ht:~a/b"), QString("https://git.sr.ht/~a/b"));
+        for (const QString &origin : {"git@example.com:a/b.git", "http://github.com/a/b.git", "ext::sh -c touch% /tmp/x", "/home/me/themes/b",
+                                      "file:///srv/b.git", "https://github.com/a/b?x=1", "https://me:p@ss@github.com/a/b", "https://github.com"}) {
+            QString problem;
+            QVERIFY2(ProfileDesktop::themeSource(origin, &problem).isEmpty(), qPrintable(origin));
+            QVERIFY(!problem.isEmpty());
+        }
+        QVERIFY(ProfileDesktop::sameSource("https://GitHub.com/a/b.git/", "https://github.com/a/b"));
+        QVERIFY(!ProfileDesktop::sameSource("https://github.com/a/b", "https://github.com/A/b"));
+        QVERIFY(!ProfileDesktop::sameSource("", ""));
+        for (const QString &name : {"tokyo-night", "_x+y.z", "9"})
+            QVERIFY2(ProfileModel::isThemeFolder(name), qPrintable(name));
+        for (const QString &name : {"..", ".hidden", "-x", "a/b", "Tokyo", "", "a b"})
+            QVERIFY2(!ProfileModel::isThemeFolder(name), qPrintable(name));
+        QCOMPARE(ProfileDesktop::themeName("obsidian-circuit"), QString("Obsidian Circuit"));
+    }
+
+    void profileCarriesThemeSources() {
+        ProfileMachine a;
+        const QString themes = a.s.env.configHome + "/omarchy/themes/";
+        const auto gitTheme = [&](const QString &folder, const QString &origin) {
+            writeFile(themes + folder + "/.git/config", ("[core]\n\tbare = false\n[remote \"origin\"]\n\turl = " + origin + "\n").toUtf8());
+            writeFile(themes + folder + "/colors.toml", "accent = \"#123456\"\n");
+        };
+        gitTheme("obsidian-circuit", "git@github.com:someone/omarchy-obsidian-circuit-theme.git");
+        gitTheme("secret", "https://someone:hunter2@example.com/themes/secret.git");
+        gitTheme("private", "git@example.com:someone/private.git");
+        writeFile(themes + "hand-made/colors.toml", "accent = \"#654321\"\n");
+        writeFile(a.state("theme"), "Obsidian Circuit\n");
+        AppCore core(a.s.env);
+        core.capabilities.scanServicesBlocking();
+        QTemporaryDir store;
+        // Remembering the theme brings its source along, unasked: restoring it needs one.
+        ProfileCapture::Selection selection;
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(core, store.path(), selection));
+        ProfileModel::Parsed saved = ProfileModel::load(store.path());
+        QVERIFY2(saved.ok, qPrintable(saved.errors.join("\n")));
+        QCOMPARE(saved.profile.settings.value("appearance.theme").value, QString("Obsidian Circuit"));
+        QCOMPARE(saved.profile.desktop.value("themes").toObject().keys(), QStringList{"obsidian-circuit"});
+        QCOMPARE(saved.profile.desktop.value("themes").toObject().value("obsidian-circuit").toObject().value("url").toString(),
+                 QString("https://github.com/someone/omarchy-obsidian-circuit-theme.git"));
+        // Every Git theme when asked. What has no address a profile can carry is listed with
+        // why, and a password in an address stays on this computer.
+        selection = {};
+        selection.themes = true;
+        const ProfileCapture::Result result = captureProfile(core, &saved.profile, selection);
+        QVERIFY2(result.ok, qPrintable(result.error));
+        const QJsonObject captured = result.profile.desktop.value("themes").toObject();
+        QCOMPARE(captured.keys(), (QStringList{"obsidian-circuit", "secret"}));
+        QCOMPARE(captured.value("secret").toObject().value("url").toString(), QString("https://example.com/themes/secret.git"));
+        QHash<QString, QString> excluded;
+        for (const ProfileCapture::Item &item : result.items)
+            if (item.change == "excluded")
+                excluded.insert(item.id, item.reason);
+        QVERIFY2(excluded.value("desktop:theme:hand-made").contains("not installed from Git"), qPrintable(excluded.value("desktop:theme:hand-made")));
+        QVERIFY2(excluded.value("desktop:theme:private").contains("not https"), qPrintable(excluded.value("desktop:theme:private")));
+        QString error;
+        QVERIFY2(core.profileCapture.save(store.path(), result, &error), qPrintable(error));
+        QVERIFY(!readAll(ProfileModel::manifestPath(store.path())).contains("hunter2"));
+        // A theme removed here leaves the profile, as a shortcut removed here does.
+        QDir(themes + "secret").removeRecursively();
+        saved = ProfileModel::load(store.path());
+        const ProfileCapture::Result again = captureProfile(core, &saved.profile, {});
+        QVERIFY(again.ok);
+        QCOMPARE(again.profile.desktop.value("themes").toObject().keys(), QStringList{"obsidian-circuit"});
+    }
+
+    void profileInstallsAThemeBeforeSelectingIt() {
+        QTemporaryDir store;
+        const QString url = "https://github.com/someone/omarchy-obsidian-circuit-theme.git";
+        const QJsonObject desktop{{"themes", QJsonObject{{"obsidian-circuit", QJsonObject{{"url", url}}}}},
+                                  {"background", QJsonObject{{"theme", "obsidian-circuit"}, {"name", "1.png"}}}};
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Theme"}, {"settings", QJsonObject{{"appearance.theme", setTo("Obsidian Circuit")}}},
+                                            {"desktop", desktop}})
+                      .toJson());
+        ProfileMachine b;
+        b.s.command("git", kFakeGit);
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        const ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        const ProfilePlanItem theme = planned(plan, "theme:obsidian-circuit");
+        QCOMPARE(theme.status, QString("ready"));
+        QVERIFY(theme.effects.join(" ").contains(url));
+        // The setting that selects it, and the background that belongs to it, wait for it.
+        const ProfilePlanItem setting = planned(plan, "appearance.theme");
+        QCOMPARE(setting.status, QString("ready"));
+        QCOMPARE(setting.needs, QStringList{"desktop:theme:obsidian-circuit"});
+        QVERIFY2(setting.reason.contains("Obsidian Circuit theme"), qPrintable(setting.reason));
+        QCOMPARE(planned(plan, "background").status, QString("ready"));
+        QCOMPARE(planned(plan, "background").needs, QStringList{"desktop:theme:obsidian-circuit"});
+        QStringList order;
+        for (const ProfilePlanItem &item : plan.items)
+            order << item.target;
+        QVERIFY(order.indexOf("theme:obsidian-circuit") < order.indexOf("appearance.theme"));
+        QVERIFY(order.indexOf("appearance.theme") < order.indexOf("background"));
+        const ProfileRun run = runPlan(core, plan);
+        QVERIFY2(run.state == "completed", qPrintable(run.message));
+        QVERIFY(QFileInfo(b.s.env.configHome + "/omarchy/themes/obsidian-circuit/colors.toml").isFile());
+        // Cloned without a prompt, over https alone, and the address never read as an option.
+        QString clone;
+        for (const QString &call : b.s.calls())
+            if (call.startsWith("git "))
+                clone = call;
+        QVERIFY2(clone.contains("protocol.allow=never") && clone.endsWith("-- " + url + " " + b.s.env.configHome + "/omarchy/themes/obsidian-circuit"),
+                 qPrintable(clone));
+        QCOMPARE(readAll(b.state("theme")).trimmed(), QByteArray("Obsidian Circuit"));
+        QVERIFY(QFileInfo(b.s.env.stateHome + "/omarchy/current/background").canonicalFilePath().endsWith("/obsidian-circuit/backgrounds/1.png"));
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(planned(second, "theme:obsidian-circuit").status, QString("unchanged"));
+        QCOMPARE(planned(second, "appearance.theme").status, QString("unchanged"));
+        QCOMPARE(planned(second, "background").status, QString("unchanged"));
+    }
+
+    void profileNeverReplacesAThemeAlreadyHere() {
+        QTemporaryDir store;
+        const QJsonObject themes{{"obsidian-circuit", QJsonObject{{"url", "https://github.com/someone/omarchy-obsidian-circuit-theme.git"}}},
+                                 {"tokyo-night", QJsonObject{{"url", "https://github.com/someone/tokyo-night.git"}}}};
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Theme"}, {"settings", QJsonObject{{"appearance.theme", setTo("Obsidian Circuit")}}},
+                                            {"desktop", QJsonObject{{"themes", themes}}}})
+                      .toJson());
+        ProfileMachine b;
+        b.s.command("git", kFakeGit);
+        const QString folder = b.s.env.configHome + "/omarchy/themes/obsidian-circuit";
+        writeFile(folder + "/colors.toml", "accent = \"#000000\"\n");
+        QDir().mkpath(b.s.env.omarchyPath + "/themes/tokyo-night");
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        // One made by hand under that name is left alone, and the setting selects it as it is.
+        ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "theme:obsidian-circuit").status, QString("blocked"));
+        QVERIFY2(planned(plan, "theme:obsidian-circuit").reason.contains("not from Git"), qPrintable(planned(plan, "theme:obsidian-circuit").reason));
+        QVERIFY(planned(plan, "appearance.theme").needs.isEmpty());
+        QCOMPARE(planned(plan, "appearance.theme").status, QString("ready"));
+        // One Omarchy ships under that name is what the setting would select.
+        QCOMPARE(planned(plan, "theme:tokyo-night").status, QString("unchanged"));
+        QVERIFY(!planned(plan, "theme:tokyo-night").reason.isEmpty());
+        // One from somewhere else is named, and left alone too.
+        writeFile(folder + "/.git/config", "[remote \"origin\"]\n\turl = https://github.com/other/obsidian.git\n");
+        plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "theme:obsidian-circuit").status, QString("blocked"));
+        QVERIFY(planned(plan, "theme:obsidian-circuit").reason.contains("https://github.com/other/obsidian.git"));
+        // The same source, written another way, is the same theme.
+        writeFile(folder + "/.git/config", "[remote \"origin\"]\n\turl = git@github.com:someone/omarchy-obsidian-circuit-theme\n");
+        QCOMPARE(planned(planProfile(core, store.path()), "theme:obsidian-circuit").status, QString("unchanged"));
+        QCOMPARE(readAll(folder + "/colors.toml"), QByteArray("accent = \"#000000\"\n"));
+        QVERIFY(!b.s.calls().join("\n").contains("git "));
+    }
+
+    void profileCarriesTheBarLayout() {
+        QTemporaryDir store;
+        const QStringList widgets{"omarchy.menu", "omarchy.clock", "omarchy.weather", "omarchy.tray"};
+        {
+            ProfileMachine a;
+            omarchyPlugins(a.s, widgets);
+            writeFile(a.config(), R"({"bar": {"position": "top", "layout": {
+                "left": [{"id": "omarchy.menu"}],
+                "center": [{"id": "omarchy.clock", "format": "HH:mm", "exec": "notify-send hi"}],
+                "centerEnd": [{"id": "omarchy.weather", "units": "metric"}],
+                "right": [{"id": "nixfred.blip"}, "omarchy.tray"]}}})");
+            writeFile(a.state("disabled-plugins"), "omarchy.emojis\n");
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            ProfileCapture::Selection selection;
+            selection.bar = true;
+            selection.plugins = true;
+            const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+            QVERIFY2(result.ok, qPrintable(result.error));
+            // Omarchy's own widgets in order, with options that are only data. A widget from
+            // a plugin installed separately, and an option that runs something, are named.
+            const QJsonObject layout = result.profile.desktop.value("bar").toObject().value("layout").toObject();
+            QCOMPARE(QJsonDocument(layout.value("center").toArray()).toJson(QJsonDocument::Compact), QByteArray(R"([{"format":"HH:mm","id":"omarchy.clock"}])"));
+            QCOMPARE(QJsonDocument(layout.value("right").toArray()).toJson(QJsonDocument::Compact), QByteArray(R"([{"id":"omarchy.tray"}])"));
+            QCOMPARE(layout.value("tray").toArray().size(), 0);
+            QString reason;
+            for (const ProfileCapture::Item &item : result.items)
+                if (item.id == "desktop:bar")
+                    reason = item.reason;
+            QVERIFY2(reason.contains("nixfred.blip") && reason.contains("exec"), qPrintable(reason));
+            QCOMPARE(result.profile.desktop.value("plugins").toObject().value("disabled").toArray(), QJsonArray{"omarchy.emojis"});
+            QString error;
+            QVERIFY2(core.profileCapture.save(store.path(), result, &error), qPrintable(error));
+        }
+        ProfileMachine b;
+        omarchyPlugins(b.s, widgets);
+        // A bar of its own, with a widget installed separately and an option the profile does
+        // not carry: both stay.
+        writeFile(b.config(), R"({"mine": {"keep": true}, "bar": {"position": "left", "layout": {
+            "left": [{"id": "omarchy.menu"}],
+            "center": [{"id": "omarchy.clock", "format": "dddd HH:mm", "verticalFormat": "HH", "compact": true}],
+            "right": [{"id": "facet.hardware"}, {"id": "omarchy.tray"}]}}})");
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfilePlan plan = planProfile(core, store.path());
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "bar").status, QString("conflict"));
+        QCOMPARE(planned(plan, "plugins").status, QString("ready"));
+        ProfilePlanner::Options options;
+        options.useSaved = {"bar"};
+        plan = planProfile(core, store.path(), options);
+        const ProfileRun run = runPlan(core, plan);
+        QVERIFY2(run.state == "completed", qPrintable(run.message));
+        const QJsonObject layout = barLayoutIn(b.config());
+        QCOMPARE(QJsonDocument(layout.value("center").toArray()).toJson(QJsonDocument::Compact),
+                 QByteArray(R"([{"compact":true,"format":"HH:mm","id":"omarchy.clock"}])"));
+        QCOMPARE(QJsonDocument(layout.value("right").toArray()).toJson(QJsonDocument::Compact), QByteArray(R"([{"id":"omarchy.tray"},{"id":"facet.hardware"}])"));
+        QCOMPARE(QJsonDocument(layout.value("centerEnd").toArray()).toJson(QJsonDocument::Compact), QByteArray(R"([{"id":"omarchy.weather","units":"metric"}])"));
+        const QJsonObject config = QJsonDocument::fromJson(readAll(b.config())).object();
+        QCOMPARE(config.value("mine").toObject().value("keep").toBool(), true);
+        QCOMPARE(config.value("bar").toObject().value("position").toString(), QString("left"));
+        QVERIFY(b.s.calls().contains("omarchy shell -q shell reloadConfig"));
+        QVERIFY(b.s.calls().contains("omarchy plugin disable omarchy.emojis"));
+        const ProfilePlan second = planProfile(core, store.path());
+        QCOMPARE(planned(second, "bar").status, QString("unchanged"));
+        QCOMPARE(planned(second, "plugins").status, QString("unchanged"));
+
+        // A profile that names one section manages that one only, as a setting it leaves out
+        // is left alone, except that a widget it places there moves rather than appear twice.
+        QTemporaryDir partial;
+        const QJsonObject left{{"layout", QJsonObject{{"left", QJsonArray{QJsonObject{{"id", "omarchy.weather"}}, QJsonObject{{"id", "omarchy.menu"}}}}}}};
+        writeFile(ProfileModel::manifestPath(partial.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Left"}, {"desktop", QJsonObject{{"bar", left}}}}).toJson());
+        ProfilePlanner::Options keep;
+        keep.useSaved = {"bar"};
+        QCOMPARE(runPlan(core, planProfile(core, partial.path(), keep)).state, QString("completed"));
+        const QJsonObject after = barLayoutIn(b.config());
+        QCOMPARE(QJsonDocument(after.value("left").toArray()).toJson(QJsonDocument::Compact), QByteArray(R"([{"id":"omarchy.weather"},{"id":"omarchy.menu"}])"));
+        QCOMPARE(after.value("centerEnd").toArray().size(), 0);
+        QCOMPARE(after.value("center").toArray(), layout.value("center").toArray());
+        QCOMPARE(after.value("right").toArray(), layout.value("right").toArray());
+        QCOMPARE(planned(planProfile(core, partial.path()), "bar").status, QString("unchanged"));
+    }
+
+    void profileBarAndPluginsRefuseWhatIsNotHere() {
+        QTemporaryDir store;
+        const QJsonObject desktop{{"bar", QJsonObject{{"layout", QJsonObject{{"left", QJsonArray{QJsonObject{{"id", "omarchy.globe"}}}}}}}},
+                                  {"plugins", QJsonObject{{"disabled", QJsonArray{"omarchy.teleport"}}}}};
+        writeFile(ProfileModel::manifestPath(store.path()), QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Bar"}, {"desktop", desktop}}).toJson());
+        ProfileMachine b;
+        omarchyPlugins(b.s, {"omarchy.menu"});
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        // A profile from a newer Omarchy can name what this one does not have.
+        ProfilePlan plan = planProfile(core, store.path());
+        {
+            // With none of Omarchy's own widgets found, the bar is not read at all: never
+            // saved empty, and never emptied by a restore.
+            ProfileMachine bare;
+            AppCore lost(bare.s.env);
+            ProfileCapture::Selection bar;
+            bar.bar = true;
+            bar.settings = {"power.idle.lock"};
+            const ProfileCapture::Result captured = captureProfile(lost, nullptr, bar);
+            QVERIFY(captured.ok);
+            QVERIFY(!captured.profile.desktop.contains("bar"));
+            QTemporaryDir empty;
+            writeFile(ProfileModel::manifestPath(empty.path()),
+                      QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Empty bar"}, {"desktop", QJsonObject{{"bar", QJsonObject{{"layout", QJsonObject{{"left", QJsonArray()}}}}}}}}).toJson());
+            QCOMPARE(planned(planProfile(lost, empty.path()), "bar").status, QString("blocked"));
+        }
+        QCOMPARE(planned(plan, "bar").status, QString("blocked"));
+        QVERIFY(planned(plan, "bar").reason.contains("omarchy.globe"));
+        QCOMPARE(planned(plan, "plugins").status, QString("blocked"));
+        QVERIFY(planned(plan, "plugins").reason.contains("omarchy.teleport"));
+        // Without the shell, its plugins cannot be read, and nothing is switched.
+        writeFile(b.state("shell-down"), "");
+        plan = planProfile(core, store.path());
+        QVERIFY(planned(plan, "plugins").reason.contains("could not be read"));
+        // A capture leaves out what it cannot read, rather than recording nothing as a choice.
+        ProfileCapture::Selection selection;
+        selection.plugins = true;
+        selection.settings = {"power.idle.lock"};
+        const ProfileCapture::Result result = captureProfile(core, nullptr, selection);
+        QVERIFY(result.ok);
+        QVERIFY(!result.profile.desktop.contains("plugins"));
+    }
+
+    // ---- My Omarchy: versions and GitHub -------------------------------------------
+    void profileRepositorySavesVersionsWithoutTheNetwork() {
+        QTemporaryDir hub;
+        ProfileMachine m;
+        useGitHub(m.s, hub.path());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileRepository &repository = core.profileRepository;
+        QCOMPARE(repositoryStatus(core).relation, QString("nothing"));
+        // Nothing to save before there is a profile.
+        QVERIFY(!repositoryDo([&](auto done) { repository.save("First", done); }).ok);
+        ProfileCapture::Selection selection;
+        selection.settings = {"power.idle.lock"};
+        QVERIFY(saveProfile(core, repository.workingDirectory(), selection));
+        QCOMPARE(repositoryStatus(core).relation, QString("unsaved-only"));
+        const ProfileRepository::Result first = repositoryDo([&](auto done) { repository.save("First", done); });
+        QVERIFY2(first.ok, qPrintable(first.error));
+        // The same profile again is no new version.
+        const ProfileRepository::Result again = repositoryDo([&](auto done) { repository.save("Again", done); });
+        QVERIFY(again.ok);
+        QCOMPARE(again.commit, first.commit);
+        QVERIFY(again.message.contains("Nothing changed"));
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(core, repository.workingDirectory(), selection));
+        ProfileRepository::Status status = repositoryStatus(core);
+        QVERIFY(status.unsavedChanges);
+        const ProfileRepository::Result second = repositoryDo([&](auto done) { repository.save("Second", done); });
+        QVERIFY(second.ok && second.commit != first.commit);
+        status = repositoryStatus(core);
+        QCOMPARE(status.relation, QString("saved"));
+        QVERIFY(!status.unsavedChanges);
+        QCOMPARE(status.saved.parents, QStringList{first.commit});
+        QList<ProfileRepository::Version> versions;
+        bool listed = false;
+        repository.history(false, 10, [&](const QList<ProfileRepository::Version> &list, const QString &) { versions = list; listed = true; });
+        QVERIFY(QTest::qWaitFor([&] { return listed; }, 10000));
+        QCOMPARE(versions.size(), 2);
+        QCOMPARE(versions[0].message, QString("Second"));
+        // A version holds the profile and nothing else, and the history has no hooks, no
+        // remote, and none of the user's configuration.
+        QCOMPARE(QString::fromLatin1(gitIn(repository.repositoryPath(), {"ls-tree", "-r", "--name-only", second.commit})), QString("profile.json"));
+        QVERIFY(!QFileInfo::exists(repository.repositoryPath() + "/hooks"));
+        QVERIFY(!readAll(repository.repositoryPath() + "/config").contains("remote"));
+        const ProfileRepository::Result read = repositoryDo([&](auto done) { repository.read(first.commit.left(9), done); });
+        QVERIFY2(read.ok, qPrintable(read.error));
+        QVERIFY(ProfileModel::load(read.directory).profile.settings.contains("power.idle.lock"));
+        QVERIFY(!ProfileModel::load(read.directory).profile.settings.contains("appearance.theme"));
+        // Saving never reached GitHub.
+        QVERIFY(!m.s.calls().join("\n").contains("gh "));
+        // What changed between the two, record by record.
+        const ProfileRepository::Result older = repositoryDo([&](auto done) { repository.read(first.commit, done); });
+        const QJsonArray rows = ProfileRepository::differences(ProfileModel::load(older.directory).profile, ProfileModel::load(repository.workingDirectory()).profile);
+        QCOMPARE(rows.size(), 1);
+        QCOMPARE(rows[0].toObject().value("id").toString(), QString("appearance.theme"));
+        QCOMPARE(rows[0].toObject().value("change").toString(), QString("added"));
+        QCOMPARE(Cli::run(m.s.env, {"profile", "diff", first.commit.left(7), "saved", "--json"}), 0);
+        QCOMPARE(Cli::run(m.s.env, {"profile", "diff", "nothere"}), 1);
+        // Connecting on a branch of its own takes the versions saved so far along.
+        bareRepository(hub.path(), "tester/elsewhere");
+        QVERIFY(repositoryDo([&](auto done) { repository.connectTo("tester/elsewhere", "profiles", false, done); }).ok);
+        QCOMPARE(repositoryStatus(core).saved.commit, second.commit);
+    }
+
+    void profileRepositoryRoundTripsThroughGitHub() {
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        QString published;
+        {
+            ProfileMachine a;
+            useGitHub(a.s, hub.path());
+            writeFile(a.config(), "{\"idle\": {\"lock\": 600, \"screensaver\": 150}}\n");
+            AppCore core(a.s.env);
+            core.capabilities.scanServicesBlocking();
+            ProfileCapture::Selection selection;
+            selection.settings = {"power.idle.lock"};
+            QVERIFY(saveProfile(core, core.profileRepository.workingDirectory(), selection));
+            QVERIFY(repositoryDo([&](auto done) { core.profileRepository.save("From the laptop", done); }).ok);
+            const ProfileRepository::Result connected = repositoryDo([&](auto done) { core.profileRepository.connectTo("https://github.com/tester/my-omarchy", {}, false, done); });
+            QVERIFY2(connected.ok, qPrintable(connected.error));
+            QCOMPARE(core.profileRepository.connection().visibility, QString("private"));
+            // Versions carry the account's no-reply address, never a real one.
+            QCOMPARE(core.profileRepository.connection().authorEmail, QString("4242+tester@users.noreply.github.com"));
+            QCOMPARE(repositoryStatus(core).relation, QString("ahead"));
+            const ProfileRepository::Result pushed = repositoryDo([&](auto done) { core.profileRepository.publish(done); });
+            QVERIFY2(pushed.ok, qPrintable(pushed.error));
+            published = pushed.commit;
+            QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), published);
+            QCOMPARE(repositoryStatus(core).relation, QString("same"));
+            // Publishing again adds nothing.
+            QVERIFY(repositoryDo([&](auto done) { core.profileRepository.publish(done); }).message.contains("Already published"));
+        }
+        // A fresh computer: connect, fetch, and restore the published version.
+        ProfileMachine b;
+        useGitHub(b.s, hub.path());
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/my-omarchy", {}, false, done); }).ok);
+        QVERIFY(!QFileInfo::exists(core.profileRepository.repositoryPath() + "/HEAD") || repositoryStatus(core).published.isEmpty());
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.fetch(done); }).ok);
+        QCOMPARE(repositoryStatus(core).relation, QString("published-only"));
+        // Fetching changed nothing on the desktop.
+        QVERIFY(readAll(b.config()).contains("\"lock\": 300"));
+        const ProfileRepository::Result version = repositoryDo([&](auto done) { core.profileRepository.read("published", done); });
+        QVERIFY2(version.ok, qPrintable(version.error));
+        QCOMPARE(version.commit, published);
+        const ProfilePlan plan = planProfile(core, version.directory);
+        QVERIFY2(plan.valid, qPrintable(plan.errors.join("\n")));
+        QCOMPARE(planned(plan, "power.idle.lock").status, QString("ready"));
+        QCOMPARE(runPlan(core, plan).state, QString("completed"));
+        QVERIFY(readAll(b.config()).contains("\"lock\": 600"));
+        // Its own profile starts from the published one, so a save adds to that history.
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.prepareWorking(done); }).ok);
+        ProfileCapture::Selection selection;
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(core, core.profileRepository.workingDirectory(), selection));
+        const ProfileModel::Parsed working = ProfileModel::load(core.profileRepository.workingDirectory());
+        QVERIFY(working.profile.settings.contains("power.idle.lock") && working.profile.settings.contains("appearance.theme"));
+        const ProfileRepository::Result saved = repositoryDo([&](auto done) { core.profileRepository.save("From the desktop", done); });
+        QCOMPARE(repositoryStatus(core).saved.parents, QStringList{published});
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.publish(done); }).ok);
+        QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), saved.commit);
+    }
+
+    void profileRepositoryNeverLosesAVersion() {
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        ProfileMachine a, b;
+        useGitHub(a.s, hub.path());
+        useGitHub(b.s, hub.path());
+        AppCore one(a.s.env), two(b.s.env);
+        one.capabilities.scanServicesBlocking();
+        two.capabilities.scanServicesBlocking();
+        ProfileCapture::Selection selection;
+        selection.settings = {"power.idle.lock"};
+        QVERIFY(saveProfile(one, one.profileRepository.workingDirectory(), selection));
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.save("Base", done); }).ok);
+        for (AppCore *core : {&one, &two})
+            QVERIFY(repositoryDo([&](auto done) { core->profileRepository.connectTo("tester/my-omarchy", {}, false, done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.publish(done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { two.profileRepository.fetch(done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { two.profileRepository.prepareWorking(done); }).ok);
+        // Both change the same profile after it.
+        selection.settings = {"appearance.theme"};
+        QVERIFY(saveProfile(one, one.profileRepository.workingDirectory(), selection));
+        const QString theirs = repositoryDo([&](auto done) { one.profileRepository.save("Theme", done); }).commit;
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.publish(done); }).ok);
+        selection.settings = {"power.idle.screensaver"};
+        QVERIFY(saveProfile(two, two.profileRepository.workingDirectory(), selection));
+        const QString mine = repositoryDo([&](auto done) { two.profileRepository.save("Screensaver", done); }).commit;
+        // Publishing stops, with both versions where they were.
+        const ProfileRepository::Result refused = repositoryDo([&](auto done) { two.profileRepository.publish(done); });
+        QVERIFY(!refused.ok);
+        QVERIFY(refused.error.contains("Both"));
+        QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), theirs);
+        QCOMPARE(repositoryStatus(two).saved.commit, mine);
+        QCOMPARE(repositoryStatus(two).relation, QString("diverged"));
+        // Offline: saving still works, and publishing fails without losing anything.
+        {
+            Sandbox offline;
+            Env away = b.s.env;
+            away.gitHub = "file://" + offline.dir.path() + "/nowhere";
+            AppCore cut(away);
+            const ProfileRepository::Result failed = repositoryDo([&](auto done) { cut.profileRepository.publish(done); });
+            QVERIFY(!failed.ok);
+            QVERIFY(failed.error.contains("stay saved"));
+            QCOMPARE(repositoryStatus(cut).saved.commit, mine);
+        }
+        // Keeping this computer's: a new version with both behind it, which only adds.
+        const ProfileRepository::Result kept = repositoryDo([&](auto done) { two.profileRepository.resolve("mine", done); });
+        QVERIFY2(kept.ok, qPrintable(kept.error));
+        QCOMPARE(repositoryStatus(two).saved.parents, (QStringList{theirs, mine}));
+        QVERIFY(repositoryDo([&](auto done) { two.profileRepository.publish(done); }).ok);
+        QCOMPARE(QString::fromLatin1(gitIn(remote, {"rev-parse", "main"})), kept.commit);
+        // The other computer takes the published version; what it had is kept, not lost.
+        selection.settings = {"input.repeat_rate"};
+        QVERIFY(saveProfile(one, one.profileRepository.workingDirectory(), selection));
+        QVERIFY(repositoryDo([&](auto done) { one.profileRepository.fetch(done); }).ok);
+        const ProfileRepository::Result taken = repositoryDo([&](auto done) { one.profileRepository.resolve("published", done); });
+        QVERIFY2(taken.ok, qPrintable(taken.error));
+        QCOMPARE(repositoryStatus(one).saved.commit, kept.commit);
+        QVERIFY(!repositoryStatus(one).unsavedChanges);
+        const QStringList keptRefs = QString::fromLatin1(gitIn(one.profileRepository.repositoryPath(), {"for-each-ref", "--format=%(objectname)", "refs/omarchy-control/kept"}))
+                                         .split('\n', Qt::SkipEmptyParts);
+        QCOMPARE(keptRefs.size(), 1);
+        // The unsaved change went into the kept version.
+        QVERIFY(QString::fromLatin1(gitIn(one.profileRepository.repositoryPath(), {"show", keptRefs.first() + ":profile.json"})).contains("input.repeat_rate"));
+        QVERIFY(ProfileModel::load(one.profileRepository.workingDirectory()).profile.settings.contains("power.idle.screensaver"));
+    }
+
+    void profileRepositoryRefusesWhatAProfileNeverHolds_data() {
+        const QByteArray profile = QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "By hand"}, {"settings", QJsonObject{{"power.idle.lock", setTo("600")}}}}).toJson();
+        const QString digest = QString::fromLatin1(QCryptographicHash::hash("an image", QCryptographicHash::Sha256).toHex());
+        const QJsonObject background{{"theme", "nord"}, {"name", "a.png"}, {"sha256", digest}};
+        const QJsonObject asset{{"sha256", digest}, {"size", 8}, {"kind", "background"}, {"name", "a.png"}};
+        const QByteArray withAsset =
+            QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "By hand"}, {"desktop", QJsonObject{{"background", background}}}, {"assets", QJsonArray{asset}}}).toJson();
+        const QByteArray future = QJsonDocument(QJsonObject{{"schemaVersion", 2}, {"name", "Future"}}).toJson();
+        const QByteArray script = QByteArray("#!") + "/bin/sh\nid\n";
+        QTest::addColumn<QList<GitEntry>>("entries");
+        QTest::addColumn<QString>("problem");
+        QTest::newRow("hook") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100755", "hooks/post-checkout", script}} << "folder hooks";
+        QTest::newRow("submodules file") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100644", ".gitmodules", "[submodule \"x\"]\n"}} << ".gitmodules";
+        QTest::newRow("attributes") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100644", ".gitattributes", "* filter=x\n"}} << ".gitattributes";
+        QTest::newRow("link") << QList<GitEntry>{{"120000", "profile.json", "/etc/passwd"}} << "is a link";
+        QTest::newRow("program") << QList<GitEntry>{{"100644", "profile.json", profile}, {"100755", "files/ghostty/config", "font-size = 9\n"}} << "marked as a program";
+        QTest::newRow("submodule") << QList<GitEntry>{{"100644", "profile.json", profile}, {"160000", "files/ghostty", QByteArray(40, 'a')}} << "submodule";
+        QTest::newRow("too large") << QList<GitEntry>{{"100644", "profile.json", QByteArray(ProfileModel::MaxManifestBytes + 1, ' ')}} << "larger than a profile allows";
+        QTest::newRow("no manifest") << QList<GitEntry>{{"100644", "files/ghostty/config", "font-size = 9\n"}} << "no profile.json";
+        QTest::newRow("newer schema") << QList<GitEntry>{{"100644", "profile.json", future}} << "newer";
+        QTest::newRow("damaged asset") << QList<GitEntry>{{"100644", "profile.json", withAsset}, {"100644", "assets/sha256/" + digest, "an imagX"}}
+                                       << "digest";
+    }
+    void profileRepositoryRefusesWhatAProfileNeverHolds() {
+        QFETCH(QList<GitEntry>, entries);
+        QFETCH(QString, problem);
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        const QString commit = commitByHand(remote, entries);
+        ProfileMachine b;
+        useGitHub(b.s, hub.path());
+        AppCore core(b.s.env);
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/my-omarchy", {}, false, done); }).ok);
+        QVERIFY(repositoryDo([&](auto done) { core.profileRepository.fetch(done); }).ok);
+        const ProfileRepository::Result read = repositoryDo([&](auto done) { core.profileRepository.read("published", done); });
+        QVERIFY(!read.ok);
+        QVERIFY2((read.error + " " + read.problems.join(" ")).contains(problem), qPrintable(read.error + " | " + read.problems.join(" | ")));
+        // Nothing of it is left to plan from, and nothing reached the working profile.
+        QVERIFY(!QFileInfo::exists(ProfileStore::root(b.s.env) + "/revisions/" + commit));
+        QVERIFY(!repositoryDo([&](auto done) { core.profileRepository.prepareWorking(done); }).ok);
+        QVERIFY(!QFileInfo::exists(ProfileModel::manifestPath(core.profileRepository.workingDirectory())));
+    }
+
+    void profileRepositoryConnectsOnlyToGitHub() {
+        ProfileRepository::Connection connection;
+        for (const QString &form : {"owner/name", "https://github.com/owner/name", "https://github.com/owner/name.git", "github.com/owner/name/", "https://www.github.com/owner/name"}) {
+            QVERIFY2(ProfileRepository::parseGitHub(form, &connection, nullptr), qPrintable(form));
+            QCOMPARE(connection.fullName(), QString("owner/name"));
+        }
+        for (const QString &form : {"git@github.com:owner/name.git", "https://gitlab.com/owner/name", "https://user:token@github.com/owner/name", "https://github.com/owner/name/tree/main",
+                                    "owner/name?x=1", "../name", "owner/..", "-owner/name", "http://github.com/owner/name", "file:///srv/name.git"})
+            QVERIFY2(!ProfileRepository::parseGitHub(form, &connection, nullptr), qPrintable(form));
+        QTemporaryDir hub;
+        bareRepository(hub.path(), "tester/open");
+        writeFile(hub.path() + "/tester/open.public", "");
+        ProfileMachine m;
+        useGitHub(m.s, hub.path());
+        AppCore core(m.s.env);
+        // A public repository is refused unless that is asked for by name.
+        ProfileRepository::Result result = repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/open", {}, false, done); });
+        QVERIFY(!result.ok);
+        QVERIFY(result.error.contains("public"));
+        QVERIFY(core.profileRepository.connection().isEmpty());
+        result = repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/open", {}, true, done); });
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QVERIFY(core.profileRepository.connection().publicAllowed);
+        // One this account cannot see is refused.
+        QVERIFY(!repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/missing", {}, false, done); }).ok);
+        QVERIFY(!repositoryDo([&](auto done) { core.profileRepository.connectTo("tester/open", "bad..branch", true, done); }).ok);
+        // Creating one makes it private.
+        result = repositoryDo([&](auto done) { core.profileRepository.create("my-omarchy", done); });
+        QVERIFY2(result.ok, qPrintable(result.error));
+        QCOMPARE(core.profileRepository.connection().fullName(), QString("tester/my-omarchy"));
+        QCOMPARE(core.profileRepository.connection().visibility, QString("private"));
+        QVERIFY(m.s.calls().join("\n").contains("gh repo create my-omarchy --private"));
+    }
+
+    void profileCliSavesAndPublishes() {
+        QTemporaryDir hub;
+        const QString remote = bareRepository(hub.path(), "tester/my-omarchy");
+        ProfileMachine a;
+        useGitHub(a.s, hub.path());
+        QCOMPARE(Cli::run(a.s.env, {"profile", "capture", "--setting", "power.idle.lock"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "save", "--message", "First"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "history", "--json"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "publish"}), 1);  // Not connected yet.
+        QCOMPARE(Cli::run(a.s.env, {"profile", "connect", "tester/my-omarchy"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "publish"}), 0);
+        QVERIFY(!gitIn(remote, {"rev-parse", "main"}).isEmpty());
+        QCOMPARE(Cli::run(a.s.env, {"profile", "status"}), 0);
+        QCOMPARE(Cli::run(a.s.env, {"profile", "inspect", "--revision", "saved"}), 0);
+        ProfileMachine b;
+        useGitHub(b.s, hub.path());
+        QCOMPARE(Cli::run(b.s.env, {"profile", "connect", "https://github.com/tester/my-omarchy"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", "--revision", "published"}), 1);  // Not fetched yet.
+        QCOMPARE(Cli::run(b.s.env, {"profile", "fetch"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "plan", "--revision", "published"}), 0);
+        QCOMPARE(Cli::run(b.s.env, {"profile", "resolve", "--use-published", "--keep-mine"}), 1);
+    }
+
+    // ---- My Omarchy: the window --------------------------------------------------------
+    void profileWindowBackendSavesAndRestores() {
+        // What the window does, through the provider it uses: the same capture, versions,
+        // plan, and restore the command line runs, as values QML shows.
+        QTemporaryDir hub;
+        ProfileMachine m;
+        useGitHub(m.s, hub.path());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileProvider profiles(&core);
+        const auto settle = [&] { return QTest::qWaitFor([&] { return !profiles.busy(); }, 30000); };
+        profiles.startCapture(QVariantMap{{"categories", QStringList{"idle"}}});
+        QVERIFY(settle());
+        QVERIFY2(profiles.review().value("ok").toBool(), qPrintable(profiles.error()));
+        QStringList labels;
+        for (const QVariant &row : profiles.review().value("items").toList())
+            labels << row.toMap().value("label").toString();
+        QVERIFY2(labels.contains("Lock after"), qPrintable(labels.join(", ")));
+        profiles.saveReview("From the window", false);
+        QVERIFY(settle());
+        QVERIFY2(profiles.error().isEmpty(), qPrintable(profiles.error()));
+        profiles.refresh();
+        QVERIFY(QTest::qWaitFor([&] { return profiles.status().value("saved").toMap().value("message").toString() == "From the window"; }, 10000));
+        // Changed here after the save: a decision, never overwritten on its own.
+        QCOMPARE(applySetting(core.engine, "power.idle.lock", "600").phase, QString("committed"));
+        profiles.planRestore("saved");
+        QVERIFY(settle());
+        QVERIFY2(profiles.plan().value("valid").toBool(), qPrintable(profiles.error()));
+        QCOMPARE(profiles.plan().value("undecided").toInt(), 1);
+        QString lock;
+        for (const QVariant &row : profiles.plan().value("items").toList())
+            if (row.toMap().value("target").toString() == "power.idle.lock")
+                lock = row.toMap().value("id").toString();
+        QVERIFY(!lock.isEmpty());
+        profiles.startRestore(false);  // Left out without a decision, so refused unconfirmed.
+        QVERIFY(!profiles.error().isEmpty());
+        profiles.choose(lock, "use-saved");
+        QVERIFY(settle());
+        QCOMPARE(profiles.plan().value("willRun").toInt(), 1);
+        QCOMPARE(profiles.plan().value("undecided").toInt(), 0);
+        profiles.startRestore(false);
+        QVERIFY(QTest::qWaitFor([&] { return profiles.run().value("state").toString() == "completed"; }, 30000));
+        QVERIFY(readAll(m.config()).contains("\"lock\": 300"));
+        QCOMPARE(profiles.run().value("counts").toMap().value("verified").toInt(), 1);
+        profiles.clearRun();
+        profiles.clearPlan();
+        QVERIFY(profiles.run().isEmpty());
+    }
+
+    void profileWindowHandsAppsToATerminal() {
+        // Apps change only where sudo and pacman can ask: the window opens a terminal for
+        // the restore, which holds the lease and keeps going if the window closes.
+        PackageMachine m;
+        m.s.command("omarchy-launch-floating-terminal-with-presentation", "printf '%s' \"$1\" > \"$(dirname \"$HOME\")/terminal\"");
+        QTemporaryDir store;
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Apps"}, {"packages", QJsonArray{QJsonObject{{"name", "ripgrep"}, {"source", "repository"}, {"intent", "present"}}}}})
+                      .toJson());
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        ProfileProvider profiles(&core);
+        // A folder that is not this computer's own profile is planned through the same path.
+        QVERIFY(copyFolder(store.path(), core.profileRepository.workingDirectory()));
+        profiles.planRestore("working");
+        QVERIFY(QTest::qWaitFor([&] { return !profiles.busy(); }, 30000));
+        QVERIFY2(profiles.plan().value("valid").toBool(), qPrintable(profiles.error()));
+        QVERIFY(profiles.plan().value("needsTerminal").toBool());
+        profiles.startRestore(false);
+        QVERIFY(QTest::qWaitFor([&] { return QFile::exists(m.s.dir.path() + "/terminal"); }, 10000));
+        const QString command = QString::fromUtf8(readAll(m.s.dir.path() + "/terminal"));
+        QVERIFY2(command.contains(" profile apply " + profiles.plan().value("id").toString() + " --yes"), qPrintable(command));
+        QVERIFY(profiles.run().value("terminal").toBool());
+        // Nothing was installed by the window itself.
+        QVERIFY(!m.has("ripgrep"));
+        profiles.clearRun();
+    }
+
+    void myOmarchyPageSavesThroughTheWindow() {
+        QTemporaryDir hub;
+        Sandbox s;
+        fakeDesktop(s);
+        useGitHub(s, hub.path());
+        QQuickStyle::setStyle("Material");
+        Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
+        Theme theme(s.env);
+        Backend backend(s.env);
+        TrayHost trayHost;
+        QQmlApplicationEngine engine;
+        QStringList warnings;
+        connect(&engine, &QQmlApplicationEngine::warnings, this, [&](const QList<QQmlError> &list) {
+            for (const auto &warning : list)
+                warnings << warning.toString();
+        });
+        engine.addImageProvider("icons", new IconProvider);
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("backend", &backend);
+        engine.rootContext()->setContextProperty("initialPage", QString("myomarchy"));
+        engine.rootContext()->setContextProperty("initialSetting", QString());
+        engine.rootContext()->setContextProperty("trayHost", &trayHost);
+        engine.load(QUrl("qrc:/Main.qml"));
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QMetaObject::invokeMethod(window, "go", Q_ARG(QVariant, "myomarchy"), Q_ARG(QVariant, QString()));
+        const auto find = [&](const QString &name) -> QQuickItem * {
+            QQuickItem *found = nullptr;
+            std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+                if (!found && item->objectName() == name && item->isVisible())
+                    found = item;
+                for (QQuickItem *child : item->childItems())
+                    walk(child);
+            };
+            walk(window->contentItem());
+            return found;
+        };
+        const auto click = [&](const QString &name) {
+            QQuickItem *item = nullptr;
+            if (!QTest::qWaitFor([&] { return (item = find(name)) && item->isEnabled(); }, 20000))
+                return false;
+            QMetaObject::invokeMethod(item, "click");
+            return true;
+        };
+        QVERIFY(click("profileStartSave"));
+        QVERIFY(click("profileChoice_category.idle"));
+        QVERIFY(QTest::qWaitFor([&] { return find("profileChoice_category.idle") && find("profileChoice_category.idle")->property("on").toBool(); }, 5000));
+        QVERIFY(click("profileReviewSave"));
+        QVERIFY(click("profileSaveHere"));
+        QVERIFY(QTest::qWaitFor([&] { return find("profileSaved") && find("profileSaved")->property("text").toString().contains("Saved with Omarchy Control"); }, 20000));
+        QVERIFY(click("profileStartRestore"));
+        QVERIFY(click("profileRestoreSaved"));
+        QVERIFY(QTest::qWaitFor([&] { return backend.profiles()->plan().value("valid").toBool(); }, 20000));
+        QVERIFY(click("profileRestoreBack"));
+        QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join("\n")));
+    }
+
+    void profileThemeInstallFailuresAreContained() {
+        QTemporaryDir store;
+        writeFile(ProfileModel::manifestPath(store.path()),
+                  QJsonDocument(QJsonObject{{"schemaVersion", 1}, {"name", "Theme"}, {"settings", QJsonObject{{"appearance.theme", setTo("Obsidian Circuit")}}},
+                                            {"desktop", QJsonObject{{"themes", QJsonObject{{"obsidian-circuit", QJsonObject{{"url", "https://github.com/someone/obsidian.git"}}}}}}}})
+                      .toJson());
+        ProfileMachine b;
+        AppCore core(b.s.env);
+        core.capabilities.scanServicesBlocking();
+        // Without git there is no way to install it, and nothing selects a theme not here.
+        ProfilePlan plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "theme:obsidian-circuit").status, QString("blocked"));
+        QVERIFY(planned(plan, "theme:obsidian-circuit").reason.contains("git"));
+        QCOMPARE(planned(plan, "appearance.theme").status, QString("blocked"));
+        // A clone that fails takes back what it left, and the setting that needed it waits.
+        b.s.command("git", kFakeGit);
+        writeFile(b.s.dir.path() + "/git-fails", "");
+        plan = planProfile(core, store.path());
+        QCOMPARE(planned(plan, "theme:obsidian-circuit").status, QString("ready"));
+        const ProfileRun run = runPlan(core, plan);
+        QCOMPARE(run.state, QString("incomplete"));
+        QHash<QString, ProfileRunItem> steps;
+        for (const ProfileRunItem &step : run.items)
+            steps.insert(step.target, step);
+        QCOMPARE(steps.value("theme:obsidian-circuit").state, QString("failed"));
+        QVERIFY2(steps.value("theme:obsidian-circuit").message.contains("resolve host"), qPrintable(steps.value("theme:obsidian-circuit").message));
+        QCOMPARE(steps.value("appearance.theme").state, QString("blocked"));
+        QVERIFY(!QFileInfo::exists(b.s.env.configHome + "/omarchy/themes/obsidian-circuit"));
+        QVERIFY(!QFile::exists(b.state("theme-sets")));
+        // An installer that changed since it was reviewed pauses theme installs.
+        ProfileMachine c;
+        c.s.env.enforceCompat = true;
+        c.s.command("git", kFakeGit);
+        c.s.command("omarchy-theme-install", "exit 0");
+        AppCore paused(c.s.env);
+        paused.capabilities.scanServicesBlocking();
+        plan = planProfile(paused, store.path());
+        QCOMPARE(planned(plan, "theme:obsidian-circuit").status, QString("blocked"));
+        QVERIFY2(planned(plan, "theme:obsidian-circuit").reason.contains("omarchy-theme-install"), qPrintable(planned(plan, "theme:obsidian-circuit").reason));
     }
 
 };

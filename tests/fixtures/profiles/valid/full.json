@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "name": "Everything v1 defines",
+  "source": {
+    "control": "0.5.0",
+    "omarchy": "4.5.0-3",
+    "hyprland": "0.56.2",
+    "architecture": "x86_64"
+  },
+  "settings": {
+    "power.idle.lock": {
+      "mode": "set",
+      "value": "600"
+    }
+  },
+  "packages": [
+    {
+      "name": "firefox",
+      "source": "repository",
+      "intent": "present",
+      "repository": "extra"
+    },
+    {
+      "name": "yay-bin",
+      "source": "aur",
+      "intent": "present"
+    },
+    {
+      "name": "chromium",
+      "source": "repository",
+      "intent": "absent"
+    },
+    {
+      "name": "some-local-build",
+      "source": "manual",
+      "intent": "present"
+    }
+  ],
+  "desktop": {
+    "themes": {
+      "obsidian-circuit": {
+        "url": "https://github.com/example/omarchy-obsidian-circuit-theme.git"
+      }
+    },
+    "dockPins": [
+      "firefox.desktop",
+      "com.mitchellh.ghostty.desktop"
+    ],
+    "launchers": {
+      "org.example.App.desktop": {
+        "name": "App",
+        "icon": "web-browser",
+        "hidden": false
+      },
+      "other.desktop": {
+        "icon": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "associations": {
+      "text/plain": "nvim.desktop",
+      "x-scheme-handler/https": "firefox.desktop"
+    },
+    "shortcuts": [
+      {
+        "id": "open-notes",
+        "keys": "SUPER + ALT + N",
+        "description": "Notes",
+        "command": "uwsm-app -- obsidian"
+      }
+    ],
+    "windowRules": [
+      {
+        "id": "float-calculator",
+        "match": "org.gnome.Calculator",
+        "action": "float"
+      },
+      {
+        "id": "pip",
+        "match": "firefox",
+        "action": "opacity",
+        "value": "0.9"
+      }
+    ],
+    "bar": {
+      "layout": {
+        "left": [
+          {
+            "id": "omarchy.menu"
+          },
+          {
+            "id": "omarchy.workspaces"
+          }
+        ],
+        "center": [
+          {
+            "id": "omarchy.clock",
+            "format": "HH:mm",
+            "verticalFormat": "HH\n—\nmm"
+          }
+        ],
+        "centerEnd": [
+          {
+            "id": "omarchy.elsewhen",
+            "cities": [
+              {
+                "name": "Tokyo",
+                "zone": "Asia/Tokyo"
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "omarchy.tray"
+          },
+          {
+            "id": "omarchy.power",
+            "showPercentage": true
+          }
+        ]
+      }
+    },
+    "plugins": {
+      "disabled": [
+        "omarchy.emojis"
+      ]
+    }
+  },
+  "files": [
+    {
+      "adapter": "ghostty",
+      "name": "config",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+      "size": 120
+    },
+    {
+      "adapter": "alacritty",
+      "name": "alacritty.toml",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 300
+    }
+  ],
+  "assets": [
+    {
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 2048,
+      "kind": "background",
+      "name": "mountains.jpg"
+    }
+  ]
+}

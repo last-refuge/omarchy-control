@@ -53,7 +53,16 @@
    "Runs any theme hooks you have installed."
   ],
   "scope": "per-user",
-  "quick": true
+  "quick": true,
+  "profile": {
+   "portability": "portable",
+   "category": "appearance",
+   "activation": [
+    "hooks",
+    "restarts-apps"
+   ],
+   "stock": "Tokyo Night"
+  }
  },
  {
   "id": "appearance.background",
@@ -109,7 +118,12 @@
   "requiresCaps": [
    "shell"
   ],
-  "softRequires": true
+  "softRequires": true,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "A profile carries the background as a record of its own, with the file when it is one of yours, so it is not saved as a setting."
+  }
  },
  {
   "id": "appearance.icons",
@@ -162,7 +176,12 @@
   "scope": "per-user",
   "requiresCommands": [
    "gsettings"
-  ]
+  ],
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Icon packs are folders or packages, so they are restored with assets in a later version."
+  }
  },
  {
   "id": "appearance.icons.launcher",
@@ -205,7 +224,12 @@
   "effects": [
    "Keeps one icon per app, taken from your pack, in ~/.icons/omarchy-control, where Omarchy's launcher looks first.",
    "Turning this off removes that folder. Your pack and your apps are not changed."
-  ]
+  ],
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Follows the icon pack, and is restored with it."
+  }
  },
  {
   "id": "appearance.font",
@@ -259,7 +283,18 @@
    "Restarts the Omarchy shell.",
    "Runs any font hooks you have installed."
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "appearance",
+   "after": [
+    "appearance.theme"
+   ],
+   "activation": [
+    "hooks",
+    "restarts-shell"
+   ]
+  }
  },
  {
   "id": "appearance.fontcjk",
@@ -324,7 +359,18 @@
    }
   ],
   "recovery": "auto-undo",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "appearance",
+   "after": [
+    "appearance.font"
+   ],
+   "activation": [
+    "restarts-shell"
+   ],
+   "stock": "default"
+  }
  },
  {
   "id": "appearance.textsize",
@@ -389,7 +435,19 @@
   "quick": true,
   "crossPages": [
    "input"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "appearance",
+   "inherit": true,
+   "after": [
+    "appearance.font"
+   ],
+   "activation": [
+    "restarts-apps"
+   ],
+   "stock": "12"
+  }
  },
  {
   "id": "appearance.corners",
@@ -444,7 +502,18 @@
   "requiresCaps": [
    "hyprland"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "after": [
+    "appearance.theme"
+   ],
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "stock": "theme"
+  }
  },
  {
   "id": "appearance.transparency",
@@ -504,7 +573,18 @@
    "hyprland"
   ],
   "restart": "Reloads terminals and btop.",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "after": [
+    "appearance.theme"
+   ],
+   "activation": [
+    "restarts-apps"
+   ],
+   "stock": "transparent"
+  }
  },
  {
   "id": "appearance.gaps",
@@ -546,7 +626,18 @@
   "requiresCaps": [
    "hyprland"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "after": [
+    "appearance.theme"
+   ],
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "stock": "true"
+  }
  },
  {
   "id": "appearance.singlewindow",
@@ -588,7 +679,15 @@
   "requiresCaps": [
    "hyprland"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "stock": "false"
+  }
  },
  {
   "id": "appearance.animations",
@@ -634,7 +733,15 @@
   "scope": "per-user",
   "crossPages": [
    "input"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "stock": "true"
+  }
  },
  {
   "id": "appearance.gaps_in",
@@ -670,7 +777,24 @@
   "min": 0,
   "max": 40,
   "step": 1,
-  "unit": "px"
+  "unit": "px",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "inherit": true,
+   "after": [
+    "appearance.gaps"
+   ],
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "overlaps": [
+    {
+     "setting": "appearance.gaps",
+     "when": "false"
+    }
+   ]
+  }
  },
  {
   "id": "appearance.gaps_out",
@@ -706,7 +830,24 @@
   "min": 0,
   "max": 60,
   "step": 1,
-  "unit": "px"
+  "unit": "px",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "inherit": true,
+   "after": [
+    "appearance.gaps"
+   ],
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "overlaps": [
+    {
+     "setting": "appearance.gaps",
+     "when": "false"
+    }
+   ]
+  }
  },
  {
   "id": "appearance.border",
@@ -742,7 +883,24 @@
   "min": 0,
   "max": 10,
   "step": 1,
-  "unit": "px"
+  "unit": "px",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "inherit": true,
+   "after": [
+    "appearance.gaps"
+   ],
+   "activation": [
+    "reloads-hyprland"
+   ],
+   "overlaps": [
+    {
+     "setting": "appearance.gaps",
+     "when": "false"
+    }
+   ]
+  }
  },
  {
   "id": "appearance.dim",
@@ -775,7 +933,15 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "appearance.dim_strength",
@@ -808,7 +974,15 @@
   "owned": true,
   "min": 0,
   "max": 1,
-  "step": 0.05
+  "step": 0.05,
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "appearance.blur.status",
@@ -938,7 +1112,12 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.size",
@@ -976,7 +1155,12 @@
   "min": 1,
   "max": 20,
   "step": 1,
-  "unit": "px"
+  "unit": "px",
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.passes",
@@ -1013,7 +1197,12 @@
   "owned": true,
   "min": 1,
   "max": 4,
-  "step": 1
+  "step": 1,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.brightness",
@@ -1051,7 +1240,12 @@
   "owned": true,
   "min": 0,
   "max": 2,
-  "step": 0.05
+  "step": 0.05,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.contrast",
@@ -1087,7 +1281,12 @@
   "owned": true,
   "min": 0,
   "max": 2,
-  "step": 0.05
+  "step": 0.05,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.vibrancy",
@@ -1132,7 +1331,12 @@
   "owned": true,
   "min": 0,
   "max": 1,
-  "step": 0.05
+  "step": 0.05,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.noise",
@@ -1170,7 +1374,12 @@
   "owned": true,
   "min": 0,
   "max": 0.2,
-  "step": 0.01
+  "step": 0.01,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.popups",
@@ -1204,7 +1413,12 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.special",
@@ -1238,7 +1452,12 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.blur.xray",
@@ -1272,7 +1491,12 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "later",
+   "category": "appearance",
+   "reason": "Blur depends on window transparency and Omarchy's glass, so restoring it waits until that order is proven."
+  }
  },
  {
   "id": "appearance.plymouth",
@@ -1346,7 +1570,12 @@
   },
   "recovery": "auto-undo",
   "scope": "per-user",
-  "quick": false
+  "quick": false,
+  "profile": {
+   "portability": "portable",
+   "category": "desktop",
+   "stock": "true"
+  }
  },
  {
   "id": "desktop.bar.position",
@@ -1401,7 +1630,12 @@
   ],
   "recovery": "auto-undo",
   "note": "custombar",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "desktop",
+   "stock": "top"
+  }
  },
  {
   "id": "desktop.bar.background",
@@ -1452,7 +1686,12 @@
   ],
   "recovery": "auto-undo",
   "note": "custombar",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "desktop",
+   "stock": "opaque"
+  }
  },
  {
   "id": "desktop.clock.format",
@@ -1545,7 +1784,12 @@
   "scope": "per-user",
   "requiresCaps": [
    "shell"
-  ]
+  ],
+  "profile": {
+   "portability": "later",
+   "category": "desktop",
+   "reason": "Saved with the bar's layout, as one of the clock's options."
+  }
  },
  {
   "id": "desktop.clock.vertical",
@@ -1608,7 +1852,12 @@
   "scope": "per-user",
   "requiresCaps": [
    "shell"
-  ]
+  ],
+  "profile": {
+   "portability": "later",
+   "category": "desktop",
+   "reason": "Saved with the bar's layout, as one of the clock's options."
+  }
  },
  {
   "id": "desktop.dock.position",
@@ -1663,7 +1912,12 @@
   ],
   "recovery": "auto-undo",
   "note": "customdock",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "desktop",
+   "stock": "bottom"
+  }
  },
  {
   "id": "desktop.dock.autohide",
@@ -1708,7 +1962,12 @@
   },
   "recovery": "auto-undo",
   "note": "customdock",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "desktop",
+   "stock": "false"
+  }
  },
  {
   "id": "desktop.layout",
@@ -1768,7 +2027,15 @@
   "requiresCaps": [
    "hyprland"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "windows",
+   "activation": [
+    "rearranges-workspaces"
+   ],
+   "stock": "dwindle"
+  }
  },
  {
   "id": "desktop.dnd",
@@ -1827,7 +2094,12 @@
   "requiresCaps": [
    "shell"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "runtime",
+   "category": "desktop",
+   "reason": "Do not disturb is a passing state, not a preference."
+  }
  },
  {
   "id": "desktop.crashcapture",
@@ -1862,7 +2134,12 @@
    "toggleOnly": true
   },
   "recovery": "auto-undo",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "machine",
+   "category": "desktop",
+   "reason": "A diagnostics choice for this computer."
+  }
  },
  {
   "id": "desktop.themesync",
@@ -1898,7 +2175,12 @@
   "scope": "per-user",
   "requiresCommands": [
    "herdr"
-  ]
+  ],
+  "profile": {
+   "portability": "machine",
+   "category": "desktop",
+   "reason": "Links this computer with your herdr machines."
+  }
  },
  {
   "id": "displays.brightness",
@@ -1957,7 +2239,12 @@
    "{target}"
   ],
   "multiDescription": "Brightness of {target}.",
-  "icon": "sun"
+  "icon": "sun",
+  "profile": {
+   "portability": "machine",
+   "category": "displays",
+   "reason": "Belongs to this computer's displays."
+  }
  },
  {
   "id": "displays.scale",
@@ -2036,7 +2323,12 @@
   "pattern": "^[0-9]+(\\.[0-9]+)?$",
   "multiLabel": "Scale of the selected display",
   "multiDescription": "Applies to {target}.",
-  "icon": "scale"
+  "icon": "scale",
+  "profile": {
+   "portability": "machine",
+   "category": "displays",
+   "reason": "Belongs to this computer's displays."
+  }
  },
  {
   "id": "displays.nightlight",
@@ -2084,7 +2376,12 @@
   "scope": "runtime",
   "quick": true,
   "multiDescription": "A warmer screen color across all displays.",
-  "icon": "moon"
+  "icon": "moon",
+  "profile": {
+   "portability": "runtime",
+   "category": "displays",
+   "reason": "Night light is switched on and off as needed."
+  }
  },
  {
   "id": "input.repeat_rate",
@@ -2120,7 +2417,15 @@
   "min": 1,
   "max": 100,
   "step": 1,
-  "unit": "/s"
+  "unit": "/s",
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.repeat_delay",
@@ -2156,7 +2461,15 @@
   "min": 100,
   "max": 2000,
   "step": 50,
-  "unit": "ms"
+  "unit": "ms",
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.numlock",
@@ -2188,7 +2501,15 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.sensitivity",
@@ -2225,7 +2546,15 @@
   "owned": true,
   "min": -1,
   "max": 1,
-  "step": 0.05
+  "step": 0.05,
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.accel",
@@ -2271,7 +2600,15 @@
     "value": "flat",
     "label": "Off (flat)"
    }
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.natural_mouse",
@@ -2304,7 +2641,15 @@
   ],
   "scope": "per-user",
   "reloads": "Reloads Hyprland's configuration.",
-  "owned": true
+  "owned": true,
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.follow_mouse",
@@ -2355,7 +2700,15 @@
     "value": "3",
     "label": "Separate pointer and keyboard focus"
    }
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.tp_natural",
@@ -2393,7 +2746,15 @@
   "owned": true,
   "requiresHardware": [
    "touchpad"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.tp_scroll",
@@ -2430,7 +2791,15 @@
   "step": 0.1,
   "requiresHardware": [
    "touchpad"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.tp_tap",
@@ -2464,7 +2833,15 @@
   "owned": true,
   "requiresHardware": [
    "touchpad"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.tp_click",
@@ -2500,7 +2877,15 @@
   "owned": true,
   "requiresHardware": [
    "touchpad"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.tp_dwt",
@@ -2536,7 +2921,15 @@
   "owned": true,
   "requiresHardware": [
    "touchpad"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.tp_drag",
@@ -2586,7 +2979,15 @@
   ],
   "requiresHardware": [
    "touchpad"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "input",
+   "inherit": true,
+   "activation": [
+    "reloads-hyprland"
+   ]
+  }
  },
  {
   "id": "input.touchpad",
@@ -2632,7 +3033,12 @@
   "confirmWhen": {
    "false": "Make sure you have another way to control the pointer before turning this off."
   },
-  "scope": "device"
+  "scope": "device",
+  "profile": {
+   "portability": "machine",
+   "category": "input",
+   "reason": "Turns this computer's own touchpad on or off."
+  }
  },
  {
   "id": "input.touchscreen",
@@ -2675,7 +3081,12 @@
   "requiresCaps": [
    "hyprland"
   ],
-  "scope": "device"
+  "scope": "device",
+  "profile": {
+   "portability": "machine",
+   "category": "input",
+   "reason": "Turns this computer's own touchscreen on or off."
+  }
  },
  {
   "id": "input.dictation.mode",
@@ -2734,7 +3145,12 @@
   "effects": [
    "Cloud mode sends your speech over the internet."
   ],
-  "group": "Superwhisper"
+  "group": "Superwhisper",
+  "profile": {
+   "portability": "later",
+   "category": "input",
+   "reason": "Superwhisper's own settings, restored once apps are."
+  }
  },
  {
   "id": "input.dictation.language",
@@ -2834,7 +3250,12 @@
   ],
   "allowCustomValue": true,
   "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$|^auto$",
-  "group": "Superwhisper"
+  "group": "Superwhisper",
+  "profile": {
+   "portability": "later",
+   "category": "input",
+   "reason": "Superwhisper's own settings, restored once apps are."
+  }
  },
  {
   "id": "input.dictation.tone",
@@ -2894,7 +3315,12 @@
     "label": "Formal"
    }
   ],
-  "group": "Superwhisper"
+  "group": "Superwhisper",
+  "profile": {
+   "portability": "later",
+   "category": "input",
+   "reason": "Superwhisper's own settings, restored once apps are."
+  }
  },
  {
   "id": "input.dictation.paste",
@@ -2934,7 +3360,12 @@
    "superwhisper"
   ],
   "scope": "per-user",
-  "group": "Superwhisper"
+  "group": "Superwhisper",
+  "profile": {
+   "portability": "later",
+   "category": "input",
+   "reason": "Superwhisper's own settings, restored once apps are."
+  }
  },
  {
   "id": "input.dictation.login",
@@ -2972,7 +3403,12 @@
    "superwhisper"
   ],
   "scope": "per-user",
-  "group": "Superwhisper"
+  "group": "Superwhisper",
+  "profile": {
+   "portability": "later",
+   "category": "input",
+   "reason": "Superwhisper's own settings, restored once apps are."
+  }
  },
  {
   "id": "network.dns",
@@ -3032,7 +3468,12 @@
    "You may be asked to authenticate."
   ],
   "confirmAlways": "This changes DNS for the whole system and can briefly interrupt connections.",
-  "scope": "system-wide"
+  "scope": "system-wide",
+  "profile": {
+   "portability": "machine",
+   "category": "network",
+   "reason": "Network settings stay with this computer."
+  }
  },
  {
   "id": "network.band",
@@ -3094,7 +3535,12 @@
    "wifi"
   ],
   "scope": "device",
-  "confirmAlways": "Changing the band reconnects Wi-Fi, which briefly interrupts your connection."
+  "confirmAlways": "Changing the band reconnects Wi-Fi, which briefly interrupts your connection.",
+  "profile": {
+   "portability": "machine",
+   "category": "network",
+   "reason": "Network settings stay with this computer."
+  }
  },
  {
   "id": "power.profile",
@@ -3153,7 +3599,12 @@
    "powerprofilesctl"
   ],
   "scope": "per-user",
-  "quick": true
+  "quick": true,
+  "profile": {
+   "portability": "runtime",
+   "category": "power",
+   "reason": "The active power profile follows the power source."
+  }
  },
  {
   "id": "power.profile.ac",
@@ -3204,7 +3655,12 @@
   "requiresCommands": [
    "powerprofilesctl"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "machine",
+   "category": "power",
+   "reason": "Belongs to this computer's battery and power hardware."
+  }
  },
  {
   "id": "power.profile.battery",
@@ -3253,7 +3709,12 @@
   "requiresCommands": [
    "powerprofilesctl"
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "machine",
+   "category": "power",
+   "reason": "Belongs to this computer's battery and power hardware."
+  }
  },
  {
   "id": "power.idle.lock",
@@ -3350,7 +3811,13 @@
   "note": "",
   "files": [
    "~/.config/omarchy/shell.json"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "idle",
+   "inherit": true,
+   "stock": "300"
+  }
  },
  {
   "id": "power.idle.screensaver",
@@ -3439,7 +3906,13 @@
   "scope": "per-user",
   "files": [
    "~/.config/omarchy/shell.json"
-  ]
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "idle",
+   "inherit": true,
+   "stock": "150"
+  }
  },
  {
   "id": "power.stayawake",
@@ -3487,7 +3960,12 @@
   },
   "recovery": "auto-undo",
   "scope": "per-user",
-  "quick": true
+  "quick": true,
+  "profile": {
+   "portability": "runtime",
+   "category": "power",
+   "reason": "Staying awake is a passing state, not a preference."
+  }
  },
  {
   "id": "power.screensaver",
@@ -3518,7 +3996,12 @@
    "toggleOnly": true
   },
   "recovery": "auto-undo",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "idle",
+   "stock": "true"
+  }
  },
  {
   "id": "power.suspend",
@@ -3550,7 +4033,12 @@
    "toggleOnly": true
   },
   "recovery": "auto-undo",
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "machine",
+   "category": "power",
+   "reason": "Whether to offer sleep depends on how well this computer sleeps."
+  }
  },
  {
   "id": "power.hibernation",
@@ -3627,7 +4115,8 @@
     "icons": [
      "chromium",
      "web-browser"
-    ]
+    ],
+    "package": "chromium"
    },
    {
     "value": "chrome",
@@ -3637,7 +4126,9 @@
      "google-chrome",
      "chrome",
      "web-browser"
-    ]
+    ],
+    "package": "google-chrome",
+    "packageSource": "aur"
    },
    {
     "value": "brave",
@@ -3647,7 +4138,9 @@
      "brave-browser",
      "brave",
      "web-browser"
-    ]
+    ],
+    "package": "brave-bin",
+    "packageSource": "aur"
    },
    {
     "value": "brave-origin",
@@ -3657,7 +4150,9 @@
      "brave-origin",
      "brave-browser",
      "web-browser"
-    ]
+    ],
+    "package": "brave-origin-bin",
+    "packageSource": "aur"
    },
    {
     "value": "edge",
@@ -3667,7 +4162,9 @@
      "microsoft-edge",
      "microsoft-edge-stable",
      "web-browser"
-    ]
+    ],
+    "package": "microsoft-edge-stable-bin",
+    "packageSource": "aur"
    },
    {
     "value": "firefox",
@@ -3676,7 +4173,8 @@
     "icons": [
      "firefox",
      "web-browser"
-    ]
+    ],
+    "package": "firefox"
    },
    {
     "value": "zen",
@@ -3686,12 +4184,18 @@
      "zen-browser",
      "zen",
      "web-browser"
-    ]
+    ],
+    "package": "zen-browser-bin",
+    "packageSource": "aur"
    }
   ],
   "recovery": "auto-undo",
   "scope": "per-user",
-  "icon": "globe"
+  "icon": "globe",
+  "profile": {
+   "portability": "portable",
+   "category": "defaults"
+  }
  },
  {
   "id": "apps.default.terminal",
@@ -3736,7 +4240,8 @@
      "Alacritty",
      "alacritty",
      "utilities-terminal"
-    ]
+    ],
+    "package": "alacritty"
    },
    {
     "value": "foot",
@@ -3745,7 +4250,8 @@
     "icons": [
      "foot",
      "utilities-terminal"
-    ]
+    ],
+    "package": "foot"
    },
    {
     "value": "ghostty",
@@ -3755,7 +4261,8 @@
      "com.mitchellh.ghostty",
      "ghostty",
      "utilities-terminal"
-    ]
+    ],
+    "package": "ghostty"
    },
    {
     "value": "kitty",
@@ -3764,12 +4271,17 @@
     "icons": [
      "kitty",
      "utilities-terminal"
-    ]
+    ],
+    "package": "kitty"
    }
   ],
   "recovery": "auto-undo",
   "scope": "per-user",
-  "icon": "terminal"
+  "icon": "terminal",
+  "profile": {
+   "portability": "portable",
+   "category": "defaults"
+  }
  },
  {
   "id": "apps.default.editor",
@@ -3819,7 +4331,8 @@
      "nvim",
      "neovim",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "neovim"
    },
    {
     "value": "code",
@@ -3830,7 +4343,8 @@
      "visual-studio-code",
      "code",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "visual-studio-code-bin"
    },
    {
     "value": "cursor",
@@ -3839,7 +4353,8 @@
     "icons": [
      "cursor",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "cursor-bin"
    },
    {
     "value": "zed",
@@ -3849,7 +4364,8 @@
      "zed",
      "dev.zed.Zed",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "zed"
    },
    {
     "value": "sublime_text",
@@ -3859,7 +4375,8 @@
      "sublime-text",
      "sublime_text",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "sublime-text-4"
    },
    {
     "value": "helix",
@@ -3868,7 +4385,8 @@
     "icons": [
      "helix",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "helix"
    },
    {
     "value": "vim",
@@ -3878,7 +4396,8 @@
      "gvim",
      "vim",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "vim"
    },
    {
     "value": "emacs",
@@ -3887,12 +4406,19 @@
     "icons": [
      "emacs",
      "accessories-text-editor"
-    ]
+    ],
+    "package": "omarchy-emacs",
+    "packageSource": "aur"
    }
   ],
   "recovery": "auto-undo",
   "scope": "per-user",
-  "icon": "edit"
+  "icon": "edit",
+  "profile": {
+   "portability": "portable",
+   "category": "defaults",
+   "stock": "nvim"
+  }
  },
  {
   "id": "apps.default.agent",
@@ -4186,7 +4712,15 @@
    "You may be asked to authenticate to generate the locale.",
    "Chinese, Japanese, and Korean can add an input method and glyph preference."
   ],
-  "scope": "per-user"
+  "scope": "per-user",
+  "profile": {
+   "portability": "portable",
+   "category": "language",
+   "activation": [
+    "authentication",
+    "restarts-shell"
+   ]
+  }
  },
  {
   "id": "system.timezone",
@@ -4289,6 +4823,11 @@
   "files": [
    "~/.local/state/omarchy/settings/weather.json"
   ],
-  "placeholder": "Automatic"
+  "placeholder": "Automatic",
+  "profile": {
+   "portability": "machine",
+   "category": "system",
+   "reason": "Your location stays on this computer."
+  }
  }
 ]

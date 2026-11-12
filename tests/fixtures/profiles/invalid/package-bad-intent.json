@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "x",
+  "packages": [
+    {
+      "name": "firefox",
+      "source": "repository",
+      "intent": "latest"
+    }
+  ]
+}

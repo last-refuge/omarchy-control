@@ -313,6 +313,7 @@ ScrollView {
             Layout.rightMargin: 20
             Repeater {
                 model: [
+                    { icon: "layers", title: qsTr("My Omarchy"), detail: qsTr("Save and restore this setup"), page: "myomarchy", focus: "" },
                     { icon: "printer", title: qsTr("Printer settings"), detail: qsTr("Printers and print queues"), entry: "helper.printer" },
                     { icon: "disk", title: qsTr("Disks & snapshots"), detail: qsTr("Storage and recovery"), page: "system", focus: "block.storage" },
                     { icon: "download", title: qsTr("Updates"), detail: qsTr("Packages and firmware"), page: "system", focus: "update.omarchy" },
@@ -334,7 +335,7 @@ ScrollView {
                         border.width: tool.visualFocus ? 2 : 0
                         border.color: theme.accent
                         Rectangle {
-                            visible: index < 3
+                            visible: index < 4
                             anchors.bottom: parent.bottom
                             anchors.left: parent.left
                             anchors.right: parent.right

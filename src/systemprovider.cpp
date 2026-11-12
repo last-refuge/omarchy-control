@@ -167,6 +167,13 @@ static const QList<QPair<QString, const char *>> &commonMimes() {
     return mimes;
 }
 
+QStringList SystemProvider::commonMimeTypes() {
+    QStringList types;
+    for (const auto &[mime, label] : commonMimes())
+        types << mime;
+    return types;
+}
+
 void SystemProvider::refreshApps() {
     const Env &env = m_runner->env();
     m_apps = readApps(env);

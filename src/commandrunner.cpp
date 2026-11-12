@@ -1,5 +1,7 @@
 #include "commandrunner.h"
 
+#include <unistd.h>
+
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QFileInfo>
@@ -200,7 +202,7 @@ CommandResult CommandRunner::runBlocking(const QStringList &argv, const CommandO
     return result;
 }
 
-int CommandRunner::runAttached(const QStringList &argv, QString *error) {
+int CommandRunner::runAttached(const QStringList &argv, QString *error, bool outputToStderr) {
     const QString executable = argv.isEmpty() ? QString() : m_env.findExecutable(argv.first());
     if (executable.isEmpty()) {
         if (error)
@@ -214,6 +216,9 @@ int CommandRunner::runAttached(const QStringList &argv, QString *error) {
     process.setWorkingDirectory(m_env.home);
     process.setProcessChannelMode(QProcess::ForwardedChannels);
     process.setInputChannelMode(QProcess::ForwardedInputChannel);
+    // Runs in the child once its descriptors are set up, before the command starts.
+    if (outputToStderr)
+        process.setChildProcessModifier([] { ::dup2(STDERR_FILENO, STDOUT_FILENO); });
     process.start();
     if (!process.waitForStarted()) {
         if (error)

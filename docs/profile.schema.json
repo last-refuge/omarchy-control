@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/last-refuge/omarchy-control/blob/main/docs/profile.schema.json",
+  "title": "My Omarchy profile",
+  "description": "profile.json, version 1: the choices that make an Omarchy machine someone's own. It records what is wanted; the live machine stays the authority on what is in effect. Omarchy Control enforces these rules in src/profilemodel.cpp, and also refuses duplicate keys at any depth, which JSON Schema cannot express. Until the first public release, version 1 may still change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name"],
+  "properties": {
+    "schemaVersion": {
+      "description": "A newer version than the reader supports is refused before anything changes. Older ones are migrated in memory, with each change in meaning reported.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "\\S",
+      "$comment": "No control characters."
+    },
+    "source": {
+      "description": "Where the profile was saved. Diagnostic only: never an instruction to install or downgrade anything, and never a path.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "control": { "$ref": "#/$defs/shortText" },
+        "omarchy": { "$ref": "#/$defs/shortText" },
+        "hyprland": { "$ref": "#/$defs/shortText" },
+        "architecture": { "$ref": "#/$defs/shortText" }
+      }
+    },
+    "settings": {
+      "description": "Catalog setting id to the chosen state. A setting left out is unmanaged and left alone. An id this version does not know is kept and reported, never applied.",
+      "type": "object",
+      "maxProperties": 1000,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$", "maxLength": 64 },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "value"],
+            "properties": {
+              "mode": { "const": "set" },
+              "value": {
+                "description": "The catalog's normalized string for the value.",
+                "type": "string",
+                "maxLength": 4096
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode"],
+            "properties": {
+              "mode": {
+                "description": "Return to the destination's own default, only for settings that can do so reliably.",
+                "const": "inherit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "packages": {
+      "description": "Applications to install or remove. Restored from version P2 on. Leaving a package out never removes it; removal is only ever the explicit intent \"absent\".",
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "source", "intent"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9@_+][a-z0-9@._+-]{0,127}$" },
+          "source": {
+            "description": "\"manual\" is a package no reviewed source can install, such as a local build: listed for a person to handle.",
+            "enum": ["repository", "aur", "manual"]
+          },
+          "intent": { "enum": ["present", "absent"] },
+          "repository": {
+            "description": "The repository it came from, for the record.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          }
+        }
+      },
+      "$comment": "Each name appears once: the same package both present and absent is refused."
+    },
+    "desktop": {
+      "description": "Desktop choices made through Omarchy Control. Restored from version P3 on.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dockPins": {
+          "description": "The whole ordered list of pinned apps, as app ids the way Omarchy keeps them, without .desktop. A restore shows that it replaces the current list.",
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,239}$" }
+        },
+        "launchers": {
+          "description": "Launcher changes by app id: a new name, icon, or visibility.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/desktopId" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "name": { "type": "string", "maxLength": 200 },
+              "icon": {
+                "description": "An icon name, or one of the profile's assets by digest.",
+                "type": "string",
+                "pattern": "^([A-Za-z0-9._+-]{1,200}|sha256:[0-9a-f]{64})$"
+              },
+              "hidden": { "type": "boolean" }
+            }
+          }
+        },
+        "associations": {
+          "description": "File type or URL scheme to the app that opens it.",
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z0-9-]{1,40}/[A-Za-z0-9.+_-]{1,120}$" },
+          "additionalProperties": { "$ref": "#/$defs/desktopId" }
+        },
+        "shortcuts": {
+          "description": "Shortcuts Omarchy Control owns, merged by id. Each command is shown in the restore review before it can be bound.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "keys", "command"],
+            "properties": {
+              "id": { "$ref": "#/$defs/recordId" },
+              "keys": { "type": "string", "maxLength": 100 },
+              "description": { "type": "string", "maxLength": 200 },
+              "command": { "type": "string", "maxLength": 1024 }
+            }
+          },
+          "$comment": "Ids are unique."
+        },
+        "themes": {
+          "description": "Themes installed from Git, by folder name, with where each came from. A restore clones one only where no theme of that name is installed yet, never replacing one, and does not switch to it: the appearance.theme setting selects it.",
+          "type": "object",
+          "maxProperties": 50,
+          "propertyNames": { "$ref": "#/$defs/themeFolder" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["url"],
+            "properties": {
+              "url": {
+                "description": "An https address with no user name or password in it, and no query or fragment.",
+                "type": "string",
+                "maxLength": 300,
+                "pattern": "^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+-]+)+/?$"
+              }
+            }
+          }
+        },
+        "bar": {
+          "description": "The bar's layout: Omarchy's own widgets in each section, in order, with options that are only data. Options that run a command or load a file (exec, source, type, onClick, and the like) are refused, since the bar makes an entry with one a module of its own. Widgets from plugins installed separately are not carried and, at a restore, keep their sections after these. A section left out is not managed: a restore leaves it alone, except that a widget placed elsewhere moves out of it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["layout"],
+          "properties": {
+            "layout": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "left": { "$ref": "#/$defs/barSection" },
+                "centerBegin": { "$ref": "#/$defs/barSection" },
+                "center": { "$ref": "#/$defs/barSection" },
+                "centerEnd": { "$ref": "#/$defs/barSection" },
+                "right": { "$ref": "#/$defs/barSection" },
+                "tray": { "$ref": "#/$defs/barSection" }
+              }
+            }
+          }
+        },
+        "plugins": {
+          "description": "Omarchy's own plugins that are switched off, as a whole list: a restore switches these off and the others back on, through Omarchy's own plugin commands. Bar widgets are on or off by being on the bar.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["disabled"],
+          "properties": {
+            "disabled": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/omarchyPluginId" }
+            }
+          }
+        },
+        "background": {
+          "description": "The background, for the theme it belongs to: one of that theme's own by file name, or, with sha256, one of the user's, whose file the profile holds in assets.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["theme", "name"],
+          "properties": {
+            "theme": { "$ref": "#/$defs/themeFolder" },
+            "name": { "$ref": "#/$defs/plainName" },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "windowRules": {
+          "description": "Window rules Omarchy Control owns, merged by id. Rules in the user's own files are never touched.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "match", "action"],
+            "properties": {
+              "id": { "$ref": "#/$defs/recordId" },
+              "match": { "type": "string", "maxLength": 200 },
+              "action": { "enum": ["float", "tile", "workspace", "opacity", "noblur"] },
+              "value": { "type": "string", "maxLength": 100 }
+            }
+          },
+          "$comment": "Ids are unique."
+        }
+      }
+    },
+    "files": {
+      "description": "Configuration files, stored at files/<adapter>/<name>. Each goes only where its reviewed adapter puts it; an adapter this version lacks refuses the whole profile. Restored from version P3 on.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["adapter", "name", "sha256", "size"],
+        "properties": {
+          "adapter": { "enum": ["ghostty", "alacritty"] },
+          "name": { "$ref": "#/$defs/plainName" },
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "size": { "$ref": "#/$defs/size" }
+        }
+      },
+      "$comment": "Each adapter/name pair appears once."
+    },
+    "assets": {
+      "description": "Backgrounds, icons, and theme files, stored by content at assets/sha256/<digest>. Restored from version P3 on.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha256", "size", "kind", "name"],
+        "properties": {
+          "sha256": { "$ref": "#/$defs/sha256" },
+          "size": { "$ref": "#/$defs/size" },
+          "kind": { "enum": ["background", "icon", "theme"] },
+          "name": { "$ref": "#/$defs/plainName" }
+        }
+      },
+      "$comment": "Each digest appears once, and files and assets together hold at most 100 MiB."
+    }
+  },
+  "$defs": {
+    "shortText": { "type": "string", "maxLength": 64 },
+    "desktopId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,240}\\.desktop$" },
+    "recordId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+    "omarchyPluginId": { "type": "string", "pattern": "^omarchy\\.[a-z0-9][a-z0-9.-]{0,63}$" },
+    "barSection": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "$ref": "#/$defs/omarchyPluginId" },
+          "alwaysShow": { "$ref": "#/$defs/barOptionValue" },
+          "birthYear": { "$ref": "#/$defs/barOptionValue" },
+          "cities": { "$ref": "#/$defs/barOptionValue" },
+          "format": { "$ref": "#/$defs/barOptionValue" },
+          "formatAlt": { "$ref": "#/$defs/barOptionValue" },
+          "globeEnabled": { "$ref": "#/$defs/barOptionValue" },
+          "here": { "$ref": "#/$defs/barOptionValue" },
+          "homeCity": { "$ref": "#/$defs/barOptionValue" },
+          "lifeExpectancy": { "$ref": "#/$defs/barOptionValue" },
+          "maxWidth": { "$ref": "#/$defs/barOptionValue" },
+          "offsetMode": { "$ref": "#/$defs/barOptionValue" },
+          "refreshIntervalSec": { "$ref": "#/$defs/barOptionValue" },
+          "refreshMinutes": { "$ref": "#/$defs/barOptionValue" },
+          "showPercentage": { "$ref": "#/$defs/barOptionValue" },
+          "smoothMotion": { "$ref": "#/$defs/barOptionValue" },
+          "unit": { "$ref": "#/$defs/barOptionValue" },
+          "units": { "$ref": "#/$defs/barOptionValue" },
+          "verticalFormat": { "$ref": "#/$defs/barOptionValue" },
+          "verticalFormatAlt": { "$ref": "#/$defs/barOptionValue" },
+          "weekStartDay": { "$ref": "#/$defs/barOptionValue" },
+          "zones": { "$ref": "#/$defs/barOptionValue" }
+        }
+      }
+    },
+    "barOptionValue": {
+      "description": "Data only: text of at most 200 characters with no path in a home folder, numbers, switches, and lists and records of these, nested at most three deep.",
+      "type": ["string", "number", "boolean", "array", "object"],
+      "maxLength": 200,
+      "not": { "type": "string", "pattern": "/home/" },
+      "maxItems": 50,
+      "maxProperties": 20
+    },
+    "themeFolder": {
+      "description": "A theme's folder name, held to the characters omarchy-theme-install allows.",
+      "type": "string",
+      "pattern": "^[a-z0-9_][a-z0-9._+-]{0,63}$"
+    },
+    "plainName": {
+      "description": "A file name with no folders, never hidden.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_+-][A-Za-z0-9._+-]{0,127}$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "size": { "type": "integer", "minimum": 0, "maximum": 26214400 }
+  }
+}

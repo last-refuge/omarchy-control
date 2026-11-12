@@ -4,7 +4,7 @@ QT += core gui qml quick quickcontrols2 svg network
 CONFIG += c++17
 TARGET = screens
 TEMPLATE = app
-DEFINES += APP_VERSION=\\\"0.4.0\\\"
+DEFINES += APP_VERSION=\\\"0.5.0\\\"
 include(../../omarchy-control-sources.pri)
 SOURCES += main.cpp
 RESOURCES += ../../src/resources.qrc ../../src/qml.qrc
