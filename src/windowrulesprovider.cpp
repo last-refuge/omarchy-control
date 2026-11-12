@@ -21,7 +21,7 @@ QVariantList WindowRulesProvider::rules() const {
     return rows;
 }
 
-QString WindowRulesProvider::validate(const QString &match, const QString &action, const QString &value) const {
+QString WindowRulesProvider::check(const QString &match, const QString &action, const QString &value) {
     if (match.trimmed().isEmpty() || match.size() > 120)
         return tr("Enter the app's window class, which is up to 120 characters.");
     for (const QChar c : match)

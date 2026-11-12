@@ -38,6 +38,12 @@ const QRegularExpression &desktopIdPattern() {
     return pattern;
 }
 
+// A dock pin, as Omarchy keeps it: an app id, without or with its .desktop suffix.
+const QRegularExpression &appIdPattern() {
+    static const QRegularExpression pattern(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._-]{0,239}$"));
+    return pattern;
+}
+
 const QRegularExpression &digestPattern() {
     static const QRegularExpression pattern(QStringLiteral("^[0-9a-f]{64}$"));
     return pattern;
@@ -255,7 +261,101 @@ void validateDesktop(const QJsonValue &section, QStringList *errors) {
         return;
     }
     const QJsonObject desktop = section.toObject();
-    onlyKeys(desktop, {"dockPins", "launchers", "associations", "shortcuts", "windowRules"}, QStringLiteral("desktop"), errors);
+    onlyKeys(desktop, {"dockPins", "launchers", "associations", "shortcuts", "windowRules", "background", "themes", "bar", "plugins"}, QStringLiteral("desktop"),
+             errors);
+    if (desktop.contains("background")) {
+        // A theme's own background by name, or one of the user's with its file in the profile.
+        const QJsonObject background = desktop.value("background").toObject();
+        if (!desktop.value("background").isObject())
+            *errors << tr("desktop.background must be an object.");
+        onlyKeys(background, {"theme", "name", "sha256"}, QStringLiteral("desktop.background"), errors);
+        if (!ProfileModel::isThemeFolder(background.value("theme").toString()))
+            *errors << tr("desktop.background.theme is not a theme's folder name.");
+        if (!plainNamePattern().match(background.value("name").toString()).hasMatch())
+            *errors << tr("desktop.background.name must be a plain file name.");
+        if (background.contains("sha256") && !digestPattern().match(background.value("sha256").toString()).hasMatch())
+            *errors << tr("desktop.background.sha256 must be a SHA-256 digest.");
+    }
+    if (desktop.contains("themes")) {
+        // Themes installed from Git, by folder: where each came from, and nothing else. A
+        // restore installs one only where no theme of that name is installed yet.
+        const QJsonValue themes = desktop.value("themes");
+        if (!themes.isObject() || themes.toObject().size() > 50) {
+            *errors << tr("desktop.themes must be an object of at most 50 themes.");
+        } else {
+            const QJsonObject map = themes.toObject();
+            for (auto it = map.begin(); it != map.end(); ++it) {
+                if (!ProfileModel::isThemeFolder(it.key())) {
+                    *errors << tr("desktop.themes names %1, which is not a theme's folder name.").arg(it.key().left(64));
+                    continue;
+                }
+                const QString where = "desktop.themes." + it.key();
+                if (!it.value().isObject()) {
+                    *errors << tr("%1 must be an object.").arg(where);
+                    continue;
+                }
+                onlyKeys(it.value().toObject(), {"url"}, where, errors);
+                if (!ProfileModel::isThemeSource(it.value().toObject().value("url").toString()))
+                    *errors << tr("%1.url must be an https address with no name or password in it.").arg(where);
+            }
+        }
+    }
+    if (desktop.contains("bar")) {
+        // Omarchy's own widgets, in order, with options that are only data.
+        const QJsonValue bar = desktop.value("bar");
+        if (!bar.isObject() || !bar.toObject().value("layout").isObject()) {
+            *errors << tr("desktop.bar must be an object with a layout.");
+        } else {
+            onlyKeys(bar.toObject(), {"layout"}, QStringLiteral("desktop.bar"), errors);
+            const QJsonObject layout = bar.toObject().value("layout").toObject();
+            onlyKeys(layout, ProfileModel::barSections(), QStringLiteral("desktop.bar.layout"), errors);
+            for (const QString &section : ProfileModel::barSections()) {
+                if (!layout.contains(section))
+                    continue;
+                const QString where = "desktop.bar.layout." + section;
+                const QJsonValue widgets = layout.value(section);
+                if (!widgets.isArray() || widgets.toArray().size() > 50) {
+                    *errors << tr("%1 must be a list of at most 50 widgets.").arg(where);
+                    continue;
+                }
+                int index = 0;
+                for (const QJsonValue &value : widgets.toArray()) {
+                    const QString at = QStringLiteral("%1[%2]").arg(where).arg(index++);
+                    const QJsonObject widget = value.toObject();
+                    if (!value.isObject() || !ProfileModel::isOmarchyPluginId(widget.value("id").toString())) {
+                        *errors << tr("%1 is not one of Omarchy's own widgets.").arg(at);
+                        continue;
+                    }
+                    for (auto it = widget.begin(); it != widget.end(); ++it) {
+                        if (it.key() == QLatin1String("id"))
+                            continue;
+                        const QString problem = ProfileModel::barOptionProblem(it.key(), it.value());
+                        if (!problem.isEmpty())
+                            *errors << QStringLiteral("%1: %2").arg(at, problem);
+                    }
+                }
+            }
+        }
+    }
+    if (desktop.contains("plugins")) {
+        // Omarchy's own plugins someone switched off. Plugins installed separately are code,
+        // which a profile does not carry.
+        const QJsonValue plugins = desktop.value("plugins");
+        const QJsonValue disabled = plugins.toObject().value("disabled");
+        if (!plugins.isObject() || !disabled.isArray() || disabled.toArray().size() > 100) {
+            *errors << tr("desktop.plugins must be an object whose disabled list has at most 100 plugins.");
+        } else {
+            onlyKeys(plugins.toObject(), {"disabled"}, QStringLiteral("desktop.plugins"), errors);
+            QSet<QString> seen;
+            for (const QJsonValue &value : disabled.toArray()) {
+                if (!ProfileModel::isOmarchyPluginId(value.toString()))
+                    *errors << tr("desktop.plugins.disabled holds %1, which is not one of Omarchy's own plugins.").arg(value.toString().left(64));
+                else if (seen.contains(value.toString()))
+                    *errors << tr("%1 is switched off twice.").arg(value.toString());
+                seen.insert(value.toString());
+            }
+        }
+    }
     if (desktop.contains("dockPins")) {
         const QJsonValue pins = desktop.value("dockPins");
         QSet<QString> seen;
@@ -263,7 +363,7 @@ void validateDesktop(const QJsonValue &section, QStringList *errors) {
             *errors << tr("desktop.dockPins must be a list of at most 100 apps.");
         } else {
             for (const QJsonValue &pin : pins.toArray()) {
-                if (!desktopIdPattern().match(pin.toString()).hasMatch())
+                if (!appIdPattern().match(pin.toString()).hasMatch())
                     *errors << tr("desktop.dockPins holds something that is not an app id.");
                 else if (seen.contains(pin.toString()))
                     *errors << tr("%1 is pinned twice.").arg(pin.toString());
@@ -483,6 +583,42 @@ void Profile::removePackage(const QString &name) {
             packages.removeAt(i);
 }
 
+QJsonObject Profile::asset(const QString &sha256) const {
+    for (const QJsonValue &value : assets)
+        if (value.toObject().value("sha256").toString() == sha256)
+            return value.toObject();
+    return {};
+}
+
+void Profile::setAsset(const QJsonObject &record) {
+    const QString sha256 = record.value("sha256").toString();
+    for (int i = assets.size() - 1; i >= 0; --i)
+        if (assets[i].toObject().value("sha256").toString() == sha256)
+            assets.removeAt(i);
+    assets.append(record);
+}
+
+QSet<QString> Profile::referencedAssets() const {
+    QSet<QString> named;
+    const QJsonObject launchers = desktop.value("launchers").toObject();
+    for (auto it = launchers.begin(); it != launchers.end(); ++it) {
+        const QString icon = it.value().toObject().value("icon").toString();
+        if (icon.startsWith(QLatin1String("sha256:")))
+            named.insert(icon.mid(7));
+    }
+    const QString background = desktop.value("background").toObject().value("sha256").toString();
+    if (!background.isEmpty())
+        named.insert(background);
+    return named;
+}
+
+void Profile::dropUnreferencedAssets() {
+    const QSet<QString> named = referencedAssets();
+    for (int i = assets.size() - 1; i >= 0; --i)
+        if (!named.contains(assets[i].toObject().value("sha256").toString()))
+            assets.removeAt(i);
+}
+
 QJsonObject Profile::toJson() const {
     QJsonObject root;
     root["schemaVersion"] = schemaVersion;
@@ -547,7 +683,7 @@ ProfileTraits ProfileTraits::of(const CatalogEntry &entry) {
 }
 
 QStringList ProfileTraits::categories() {
-    return {"appearance", "windows", "input", "idle", "defaults", "language"};
+    return {"appearance", "windows", "desktop", "input", "idle", "defaults", "language"};
 }
 
 QString ProfileTraits::describeActivation(const QString &key) {
@@ -586,6 +722,84 @@ QStringList fileAdapters() {
 
 bool isSettingId(const QString &id) {
     return id.size() <= 64 && settingIdPattern().match(id).hasMatch();
+}
+
+bool isThemeFolder(const QString &name) {
+    // omarchy-theme-install's own rule, which keeps a name from leaving the themes folder or
+    // reading as an option, with a length limit.
+    static const QRegularExpression pattern(QStringLiteral("^[a-z0-9_][a-z0-9._+-]{0,63}$"));
+    return pattern.match(name).hasMatch();
+}
+
+QStringList barSections() {
+    return {"left", "centerBegin", "center", "centerEnd", "right", "tray"};
+}
+
+QStringList barOptionKeys() {
+    // Read from Omarchy's own widgets: the clock's formats, the world clock's cities and
+    // zones, the weather's units, and the like. Not exec, source, or type, which make an
+    // entry a module that runs a command or loads a file, nor the click handlers, which
+    // run commands, nor the agents' sync folder and device, which belong to one computer.
+    return {"alwaysShow", "birthYear", "cities",       "format",       "formatAlt",          "globeEnabled", "here",
+            "homeCity",   "lifeExpectancy", "maxWidth", "offsetMode", "refreshIntervalSec", "refreshMinutes", "showPercentage",
+            "smoothMotion", "unit",      "units",        "verticalFormat", "verticalFormatAlt", "weekStartDay", "zones"};
+}
+
+namespace {
+
+// Data only: short text with no path into a home folder, numbers, switches, and small
+// lists and records of the same.
+bool plainOptionValue(const QJsonValue &value, int depth) {
+    static const QRegularExpression keyPattern(QStringLiteral("^[A-Za-z][A-Za-z0-9_]{0,63}$"));
+    switch (value.type()) {
+    case QJsonValue::String: {
+        const QString text = value.toString();
+        return text.size() <= 200 && !text.contains(QLatin1String("/home/")) && !hasControl(text, true);
+    }
+    case QJsonValue::Double:
+    case QJsonValue::Bool:
+        return true;
+    case QJsonValue::Array:
+        if (depth >= 3 || value.toArray().size() > 50)
+            return false;
+        for (const QJsonValue &item : value.toArray())
+            if (!plainOptionValue(item, depth + 1))
+                return false;
+        return true;
+    case QJsonValue::Object: {
+        const QJsonObject object = value.toObject();
+        if (depth >= 3 || object.size() > 20)
+            return false;
+        for (auto it = object.begin(); it != object.end(); ++it)
+            if (!keyPattern.match(it.key()).hasMatch() || !plainOptionValue(it.value(), depth + 1))
+                return false;
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
+}  // namespace
+
+QString barOptionProblem(const QString &key, const QJsonValue &value) {
+    if (!barOptionKeys().contains(key))
+        return tr("Its %1 option is not one a profile carries.").arg(key.left(64));
+    if (!plainOptionValue(value, 0))
+        return tr("Its %1 option holds something a profile does not carry, such as a path in a home folder.").arg(key);
+    return {};
+}
+
+bool isOmarchyPluginId(const QString &id) {
+    static const QRegularExpression pattern(QStringLiteral("^omarchy\\.[a-z0-9][a-z0-9.-]{0,63}$"));
+    return pattern.match(id).hasMatch();
+}
+
+bool isThemeSource(const QString &url) {
+    // No user name or password can fit: the host allows no "@". A path is required, so a
+    // bare host is not a repository.
+    static const QRegularExpression pattern(QStringLiteral("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%+-]+)+/?$"));
+    return url.size() <= 300 && pattern.match(url).hasMatch();
 }
 
 bool isPackageName(const QString &name) {
@@ -658,6 +872,22 @@ Parsed parse(const QByteArray &json) {
         total += validateAssets(root.value("assets"), &result.errors);
     if (total > MaxProfileBytes)
         result.errors << tr("The profile's files add up to more than 100 MiB.");
+    // Every file a record names has to be one the profile holds.
+    if (result.errors.isEmpty()) {
+        QSet<QString> held;
+        for (const QJsonValue &asset : root.value("assets").toArray())
+            held.insert(asset.toObject().value("sha256").toString());
+        const QJsonObject desktop = root.value("desktop").toObject();
+        const QJsonObject launchers = desktop.value("launchers").toObject();
+        for (auto it = launchers.begin(); it != launchers.end(); ++it) {
+            const QString icon = it.value().toObject().value("icon").toString();
+            if (icon.startsWith(QLatin1String("sha256:")) && !held.contains(icon.mid(7)))
+                result.errors << tr("desktop.launchers.%1 names an icon file the profile does not hold.").arg(it.key());
+        }
+        const QString background = desktop.value("background").toObject().value("sha256").toString();
+        if (!background.isEmpty() && !held.contains(background))
+            result.errors << tr("desktop.background names a file the profile does not hold.");
+    }
     if (!result.errors.isEmpty())
         return result;
 

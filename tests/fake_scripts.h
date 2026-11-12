@@ -217,13 +217,28 @@ case "$*" in
   "shell shell ping") echo ok;;
   "shell -q "*) ;;
   "theme current") [ -f "$S/theme-unreadable" ] && exit 1; kv theme "Tokyo Night";;
-  "theme list") printf 'Catppuccin\nEverforest\nTokyo Night\n';;
+  "theme list") { printf 'catppuccin\neverforest\ntokyo-night\n'; ls "$HOME/.config/omarchy/themes" 2>/dev/null; } | sort -u | sed -E 's/(^|-)([a-z])/\1\u\2/g; s/-/ /g';;
   "theme set "*)
-    t="${*:3}"
-    case "$t" in
-      Catppuccin|Everforest|"Tokyo Night") setkv theme "$t"; echo "$t" >> "$S/theme-sets";;
-      *) echo "Theme '$t' does not exist"; exit 1;;
-    esac;;
+    t="${*:3}"; f=$(printf '%s' "$t" | tr 'A-Z ' 'a-z-'); u="$HOME/.config/omarchy/themes/$f"
+    case "$f" in
+      catppuccin|everforest|tokyo-night) ;;
+      *) [ -d "$u" ] || { echo "Theme '$t' does not exist"; exit 1; };;
+    esac
+    setkv theme "$t"; echo "$t" >> "$S/theme-sets"
+    # As omarchy-theme-set leaves it: the theme's name, and an installed theme's files in use.
+    c="$HOME/.local/state/omarchy/current"; mkdir -p "$c"; echo "$f" > "$c/theme.name"
+    if [ -d "$u" ]; then rm -rf "$c/theme"; ln -s "$u" "$c/theme"; fi;;
+  "theme bg set "*) ln -nsf "$4" "$HOME/.local/state/omarchy/current/background";;
+  "plugin list --json")
+    [ -f "$S/shell-down" ] && { echo "omarchy-shell is not running" >&2; exit 1; }
+    printf '['; sep=''
+    for p in omarchy.clipboard:overlay omarchy.emojis:overlay omarchy.reminders:overlay omarchy.clock:bar-widget acme.thing:panel; do
+      id=${p%%:*}; en=true; grep -qx "$id" "$S/disabled-plugins" 2>/dev/null && en=false
+      fp=true; case "$id" in omarchy.*) ;; *) fp=false;; esac
+      printf '%s{"id":"%s","name":"%s","kinds":["%s"],"enabled":%s,"firstParty":%s}' "$sep" "$id" "$id" "${p#*:}" "$en" "$fp"; sep=','
+    done; echo ']';;
+  "plugin disable "*) grep -qx "$3" "$S/disabled-plugins" 2>/dev/null || echo "$3" >> "$S/disabled-plugins";;
+  "plugin enable "*) if [ -f "$S/disabled-plugins" ]; then grep -vx "$3" "$S/disabled-plugins" > "$S/dp"; mv "$S/dp" "$S/disabled-plugins"; fi;;
   "hyprland corners") kv corners theme;;
   "hyprland corners "*) setkv corners "$3";;
   "hyprland toggle "*)
@@ -233,6 +248,8 @@ case "$*" in
   "font list") printf 'JetBrainsMono Nerd Font\n';;
   "font cjk") echo default;;
   "pkg defaults") cat "$HOME/.fake-pacman/baseline" 2>/dev/null;;
+  "dock pinned") if [ -f "$S/pins" ]; then cat "$S/pins"; else printf 'org.gnome.Nautilus\nchromium\n'; fi;;
+  "dock pinned "*) shift 2; for id in "$@"; do echo "${id%.desktop}"; done > "$S/pins";;
   "default browser") kv browser chromium;;
   "default browser "*) setkv browser "$3";;
   "default terminal") kv terminal alacritty;;
@@ -252,6 +269,31 @@ case "${args[0]}" in
   devices) echo '{"mice":[],"touch":[]}';;
   configerrors) echo '[""]';;
   reload) ;;
+  binds)
+    # Hyprland's view: binds the test says exist, minus any this app's module unbinds, plus
+    # the module's own.
+    mask_of() {
+      local mask=0 key="" part
+      IFS='+' read -ra parts <<< "$1"
+      for part in "${parts[@]}"; do
+        part="${part// /}"
+        case "$part" in SUPER) mask=$((mask+64));; CTRL) mask=$((mask+4));; ALT) mask=$((mask+8));; SHIFT) mask=$((mask+1));; *) key="$part";; esac
+      done
+      echo "$mask $key"
+    }
+    unbound=$(sed -n 's/^hl\.unbind("\([^"]*\)").*/\1/p' "$mod" 2>/dev/null | while IFS= read -r keys; do mask_of "$keys"; done)
+    out=""; sep=""
+    if [ -f "$HOME/.fake-binds" ]; then
+      while read -r mask key desc; do
+        printf '%s\n' "$unbound" | grep -qx "$mask $key" && continue
+        out="$out$sep{\"modmask\":$mask,\"key\":\"$key\",\"description\":\"$desc\"}"; sep=","
+      done < "$HOME/.fake-binds"
+    fi
+    while IFS= read -r keys; do
+      read -r mask key <<< "$(mask_of "$keys")"
+      out="$out$sep{\"modmask\":$mask,\"key\":\"$key\",\"description\":\"owned\"}"; sep=","
+    done < <(sed -n 's/^o\.bind("\([^"]*\)".*/\1/p' "$mod" 2>/dev/null)
+    echo "[$out]";;
   getoption)
     opt="${args[1]}"; key="${opt##*:}"
     case "$opt" in
@@ -384,4 +426,31 @@ for part in $(echo "$query" | tr '&' ' '); do
   fi
 done
 printf '{"resultcount":%d,"results":[%s],"type":"multiinfo","version":5}\n' "$count" "$out"
+)SH";
+
+// git clone as a theme install runs it: the address and the folder come last. A clone
+// that fails leaves part of a folder behind, as an interrupted one can.
+const char kFakeGit[] = R"SH(
+case " $* " in
+  *" clone "*)
+    url="${@: -2:1}"; dest="${@: -1}"
+    if [ -f "$(dirname "$HOME")/git-fails" ]; then
+      mkdir -p "$dest/.git"; echo "fatal: unable to access '$url': Could not resolve host" >&2; exit 128
+    fi
+    mkdir -p "$dest/.git" "$dest/backgrounds"
+    printf '[core]\n\tbare = false\n[remote "origin"]\n\turl = %s\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n' "$url" > "$dest/.git/config"
+    echo 'accent = "#7aa2f7"' > "$dest/colors.toml"
+    printf 'png' > "$dest/backgrounds/1.png";;
+  *) exit 1;;
+esac
+)SH";
+
+// xdg-mime keeping each type's app in the sandbox.
+const char kFakeXdgMime[] = R"SH(
+S="$HOME/.fake-omarchy"; mkdir -p "$S"
+case "$1 $2" in
+  "query default") f="$S/mime-$(echo "$3" | tr '/' '_')"; [ -f "$f" ] && cat "$f";;
+  "default "*) echo "$2" > "$S/mime-$(echo "$3" | tr '/' '_')";;
+esac
+exit 0
 )SH";

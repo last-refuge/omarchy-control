@@ -39,6 +39,8 @@ public:
     Q_INVOKABLE QString exportDiagnostics();
 
     static QVariantList parseDf(const QByteArray &text);
+    // The everyday file types whose app can be chosen here.
+    static QStringList commonMimeTypes();
     static QVariantList readApps(const Env &env);
     static QString buildDiagnostics(const QString &debugOutput, const QVariantMap &capabilities, const QVariantMap &versions, const QList<Transaction> &history);
 

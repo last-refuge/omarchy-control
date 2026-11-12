@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Plugins",
+  "desktop": {
+    "plugins": {
+      "disabled": [
+        "acme.thing"
+      ]
+    }
+  }
+}

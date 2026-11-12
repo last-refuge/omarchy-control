@@ -1016,13 +1016,22 @@ const char ProfileUsage[] =
     "  capture <dir> [--category <name>]... [--setting <id>]... [--suggested]\n"
     "                [--inherit <id>]... [--forget <id>]... [--app <package>]... [--suggested-apps]\n"
     "                [--exclude-app <package>]... [--forget-app <package>]... [--resolve-aur]\n"
+    "                [--dock] [--launchers] [--associations] [--shortcuts] [--window-rules] [--background]\n"
+    "                [--themes] [--bar] [--plugins] [--desktop] [--file ghostty|alacritty]...\n"
+    "                [--terminal-configs]\n"
     "                [--name <text>] [--dry-run] [--json]\n"
     "      Save this computer's choices to <dir>/profile.json. A first capture needs a selection;\n"
     "      a later one re-reads what the profile remembers. Categories: appearance, windows,\n"
-    "      input, idle, defaults, language. --app remembers an installed package, CLI tools\n"
+    "      desktop, input, idle, defaults, language. --app remembers an installed package, CLI tools\n"
     "      included; --suggested-apps takes what is installed beyond Omarchy's defaults;\n"
     "      --exclude-app remembers a package as unwanted, so a restore removes it. --resolve-aur\n"
     "      asks the AUR which saved apps from no configured repository it has: the only network use.\n"
+    "      --dock, --launchers, --associations, --shortcuts, --window-rules, and --background remember\n"
+    "      those desktop choices, with the files they need. --themes remembers where each theme\n"
+    "      installed from Git came from; the selected theme's comes along whenever it is one.\n"
+    "      --bar remembers the order and options of Omarchy's own bar widgets; --plugins, which of\n"
+    "      Omarchy's own plugins are switched off. --desktop takes all nine. --file carries a\n"
+    "      terminal's configuration file when nothing in it runs a program or loads another file.\n"
     "  inspect <dir> [--json]          Check a profile and show what it holds\n"
     "  plan <dir> [--use-saved <id|all>]... [--keep-local <id|all>]... [--json]\n"
     "      Compare a profile with this computer and save a restore plan. Changes nothing.\n"
@@ -1062,6 +1071,19 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
     selection.forgetApps = popOptions(args, "--forget-app");
     selection.suggestedApps = popFlag(args, "--suggested-apps");
     selection.resolveAur = popFlag(args, "--resolve-aur");
+    const bool desktop = popFlag(args, "--desktop");
+    selection.dock = popFlag(args, "--dock") || desktop;
+    selection.launchers = popFlag(args, "--launchers") || desktop;
+    selection.associations = popFlag(args, "--associations") || desktop;
+    selection.shortcuts = popFlag(args, "--shortcuts") || desktop;
+    selection.windowRules = popFlag(args, "--window-rules") || desktop;
+    selection.background = popFlag(args, "--background") || desktop;
+    selection.themes = popFlag(args, "--themes") || desktop;
+    selection.bar = popFlag(args, "--bar") || desktop;
+    selection.plugins = popFlag(args, "--plugins") || desktop;
+    selection.configFiles = popOptions(args, "--file");
+    if (popFlag(args, "--terminal-configs"))
+        selection.configFiles << "ghostty" << "alacritty";
     selection.suggested = popFlag(args, "--suggested");
     selection.name = popOption(args, "--name");
     const bool dryRun = popFlag(args, "--dry-run");
@@ -1129,6 +1151,24 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
                 out() << "  ? app " << item.label << ": " << item.reason << "\n";
             continue;
         }
+        if (item.kind == QLatin1String("desktop")) {
+            const QString note = item.reason.isEmpty() ? QString() : "  " + item.reason;
+            if (item.change == QLatin1String("added"))
+                out() << "  + " << item.label << ": " << item.after.value << "\n";
+            else if (item.change == QLatin1String("modified"))
+                out() << "  ~ " << item.label << ": " << item.before.value << " -> " << item.after.value << "\n";
+            else if (item.change == QLatin1String("removed"))
+                out() << "  - " << item.label << ":" << note << "\n";
+            else if (item.change == QLatin1String("kept") || item.change == QLatin1String("excluded"))
+                out() << (item.change == QLatin1String("kept") ? "  ! " : "  x ") << item.label << ": " << item.reason << "\n";
+            else if (item.change == QLatin1String("unchanged") && !item.reason.isEmpty())
+                out() << "  = " << item.label << "\n";
+            // What was left out of one that is saved, such as a widget from a plugin installed
+            // separately, is said under it.
+            if (!item.reason.isEmpty() && (item.change == QLatin1String("added") || item.change == QLatin1String("modified") || item.change == QLatin1String("unchanged")))
+                out() << "      " << item.reason << "\n";
+            continue;
+        }
         if (item.change == QLatin1String("added"))
             out() << "  + " << item.label << ": " << profileValue(core, item.id, item.after) << "\n";
         else if (item.change == QLatin1String("modified"))
@@ -1141,7 +1181,10 @@ int cmdProfileCapture(AppCore &core, QStringList args, bool json) {
             out() << "  x " << item.label << " (" << item.id << "): " << item.reason << "\n";
     }
     const QString file = ProfileModel::manifestPath(QFileInfo(directory).absoluteFilePath());
-    const QString held = QStringLiteral("%1 settings and %2 apps").arg(result.profile.settings.size()).arg(result.profile.packages.size());
+    const QString held = QStringLiteral("%1 settings, %2 apps, and %3 desktop choices")
+                             .arg(result.profile.settings.size())
+                             .arg(result.profile.packages.size())
+                             .arg(ProfileDesktop::targets(result.profile.desktop).size());
     if (!result.changed)
         out() << "No changes: " << file << " already matches this computer.\n";
     else if (dryRun)
@@ -1231,6 +1274,8 @@ void printPlanItems(AppCore &core, const ProfilePlan &plan) {
         }
     };
     const auto change = [&](const ProfilePlanItem &item) {
+        if (item.kind == QLatin1String("desktop"))
+            return item.label + ": " + ProfileDesktop::summary(item.target, item.current) + " -> " + ProfileDesktop::summary(item.target, item.desired);
         if (item.kind == QLatin1String("package")) {
             if (item.action == QLatin1String("install"))
                 return "Install " + item.target + (item.transaction.size() > 1 ? QStringLiteral(", with %1 more packages it needs").arg(item.transaction.size() - 1) : QString());
@@ -1262,6 +1307,11 @@ void printPlanItems(AppCore &core, const ProfilePlan &plan) {
         for (const QString &key : item.activation)
             if (!effects.contains(ProfileTraits::describeActivation(key)))
                 effects << ProfileTraits::describeActivation(key);
+        // What a restored shortcut runs is part of the review, before anything is bound.
+        if (item.kind == QLatin1String("desktop"))
+            for (const QString &effect : item.effects)
+                if (!effects.contains(effect))
+                    effects << effect;
         if (item.needsOwnership && !effects.contains(item.confirmText))
             effects << item.confirmText;
     }

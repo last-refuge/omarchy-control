@@ -179,13 +179,16 @@ void ProfileRunner::apply(const ProfilePlan &plan, Done done) {
         done(*run);
         return;
     }
+    m_desktopContext = ProfileDesktop::Context();
+    m_desktopContext.directory = plan.directory;
+    m_desktopContext.profile = parsed.profile;
     run->id = ProfileStore::newId(QStringLiteral("run"));
     run->directory = plan.directory;
     run->profileName = plan.profileName;
     run->profileDigest = plan.profileDigest;
     run->leftOut = plan.leftOut();
     for (const ProfilePlanItem &item : plan.items) {
-        if (!item.willRun() || (item.kind != QLatin1String("setting") && item.kind != QLatin1String("package")))
+        if (!item.willRun() || (item.kind != QLatin1String("setting") && item.kind != QLatin1String("package") && item.kind != QLatin1String("desktop")))
             continue;
         ProfileRunItem step;
         step.id = item.id;
@@ -197,7 +200,7 @@ void ProfileRunner::apply(const ProfilePlan &plan, Done done) {
         step.action = item.action;
         step.packages = item.transaction;
         step.needs = item.needs;
-        // A package's state is what the plan saw of it; a setting's, its value.
+        // A package's state is what the plan saw of it; a setting's or desktop record's, its value.
         step.planned = item.kind == QLatin1String("package") ? item.currentStatus : item.current;
         step.plannedOverride = item.currentOverride;
         run->items << step;
@@ -233,29 +236,47 @@ void ProfileRunner::resume(const QString &runId, Done done) {
         done(*run);
         return;
     }
+    m_desktopContext = ProfileDesktop::Context();
+    m_desktopContext.directory = loaded.directory;
+    m_desktopContext.profile = parsed.profile;
     start(run, true, done);
 }
 
 void ProfileRunner::readAll(std::shared_ptr<ProfileRun> run, std::function<void(const Observed &)> done) {
-    QStringList targets;
-    bool packages = false;
+    QStringList targets, mimes;
+    bool packages = false, desktop = false;
     for (const ProfileRunItem &item : run->items) {
-        if (item.kind == QLatin1String("package"))
+        if (item.kind == QLatin1String("package")) {
             packages = true;
-        else if (!targets.contains(item.target))
+        } else if (item.kind == QLatin1String("desktop")) {
+            desktop = true;
+            if (item.target.startsWith(QLatin1String("association:")))
+                mimes << item.target.mid(12);
+        } else if (!targets.contains(item.target)) {
             targets << item.target;
+        }
     }
     auto observed = std::make_shared<Observed>();
     auto next = std::make_shared<std::function<void(int)>>();
-    *next = [this, targets, packages, observed, done, next](int index) {
+    *next = [this, targets, packages, desktop, mimes, observed, done, next](int index) {
         if (index >= targets.size()) {
-            if (packages && m_packages) {
-                m_packages->readInventory([observed, done](const PackageProvider::Inventory &inventory) {
-                    observed->packages = inventory;
+            const auto readDesktop = [this, desktop, mimes, observed, done] {
+                if (desktop && m_desktop) {
+                    m_desktop->read(mimes, [observed, done](const ProfileDesktop::Snapshot &snapshot) {
+                        observed->desktop = snapshot;
+                        done(*observed);
+                    });
+                } else {
                     done(*observed);
+                }
+            };
+            if (packages && m_packages) {
+                m_packages->readInventory([observed, readDesktop](const PackageProvider::Inventory &inventory) {
+                    observed->packages = inventory;
+                    readDesktop();
                 });
             } else {
-                done(*observed);
+                readDesktop();
             }
             *next = nullptr;
             return;
@@ -301,6 +322,29 @@ void ProfileRunner::start(std::shared_ptr<ProfileRun> run, bool resuming, Done d
         const QHash<QString, ReadResult> &reads = observed.settings;
         QStringList stale;
         for (ProfileRunItem &item : run->items) {
+            if (item.kind == QLatin1String("desktop")) {
+                if (item.state == QLatin1String("failed") || item.state == QLatin1String("blocked") || item.state == QLatin1String("skipped"))
+                    continue;
+                const QString now = ProfileDesktop::current(observed.desktop, item.target);
+                const bool wasUnderway = item.state == QLatin1String("running") || item.state == QLatin1String("interrupted");
+                if (ProfileDesktop::matches(item.target, item.desired, now)) {
+                    if (item.state != QLatin1String("verified"))
+                        item.message = wasUnderway ? tr("Found already done when the restore resumed.") : tr("Already as saved.");
+                    item.state = QStringLiteral("verified");
+                } else if (item.state == QLatin1String("verified")) {
+                    item.message = tr("Changed again after this restore verified it, and was left as it is.");
+                } else if (now == item.planned) {
+                    item.state = QStringLiteral("pending");
+                    if (wasUnderway)
+                        item.message = tr("Not done when the restore stopped, so it runs again.");
+                } else if (!resuming) {
+                    stale << item.label;
+                } else {
+                    item.state = wasUnderway ? QStringLiteral("interrupted") : QStringLiteral("skipped");
+                    item.message = tr("Changed since the plan was made, so it was left as it is.");
+                }
+                continue;
+            }
             if (item.kind == QLatin1String("package")) {
                 if (item.state == QLatin1String("failed") || item.state == QLatin1String("blocked") || item.state == QLatin1String("skipped"))
                     continue;
@@ -422,6 +466,29 @@ void ProfileRunner::execute(std::shared_ptr<ProfileRun> run, int index, Done don
     }
     if (item.kind == QLatin1String("package")) {
         executePackages(run, index, done);
+        return;
+    }
+    if (item.kind == QLatin1String("desktop")) {
+        if (!m_desktop) {
+            item.state = QStringLiteral("blocked");
+            item.message = tr("Desktop choices cannot be restored here.");
+            persist(*run);
+            execute(run, index + 1, done);
+            return;
+        }
+        item.state = QStringLiteral("running");
+        item.message.clear();
+        persist(*run);
+        emit itemChanged(*run, index);
+        m_desktop->apply(item.target, item.desired, m_desktopContext, run->id, [this, run, index, done](const Transaction &tx) {
+            ProfileRunItem &step = run->items[index];
+            step.transaction = tx.id;
+            step.state = tx.phase == QLatin1String("committed") ? QStringLiteral("verified") : QStringLiteral("failed");
+            step.message = tx.phase == QLatin1String("committed") ? QString() : tx.message;
+            persist(*run);
+            emit itemChanged(*run, index);
+            execute(run, index + 1, done);
+        });
         return;
     }
     item.state = QStringLiteral("running");
@@ -608,6 +675,33 @@ void ProfileRunner::conclude(std::shared_ptr<ProfileRun> run, Done done) {
         else
             run->message = tr("Restored and verified %1 of %2 changes. The rest need attention.").arg(verified).arg(run->items.size());
     }
+    // What the desktop now has where this restore verified it, read once, is what later
+    // plans compare with, the way they compare settings.
+    QStringList mimes;
+    bool desktop = false;
+    for (const ProfileRunItem &item : run->items) {
+        if (item.kind != QLatin1String("desktop") || item.state != QLatin1String("verified"))
+            continue;
+        desktop = true;
+        if (item.target.startsWith(QLatin1String("association:")))
+            mimes << item.target.mid(12);
+    }
+    if (!desktop || !m_desktop) {
+        finishRun(run, done);
+        return;
+    }
+    m_desktop->read(mimes, [this, run, done](const ProfileDesktop::Snapshot &snapshot) {
+        QJsonObject agreed;
+        for (const ProfileRunItem &item : run->items)
+            if (item.kind == QLatin1String("desktop") && item.state == QLatin1String("verified"))
+                agreed["desktop:" + item.target] = QJsonObject{{"value", ProfileDesktop::current(snapshot, item.target)}, {"at", now()},
+                                                               {"by", QStringLiteral("restore")}, {"run", run->id}};
+        ProfileStore::recordBaseline(m_env, agreed);
+        finishRun(run, done);
+    });
+}
+
+void ProfileRunner::finishRun(std::shared_ptr<ProfileRun> run, Done done) {
     run->finishedAt = now();
     persist(*run);
     m_coordinator->releaseLease();

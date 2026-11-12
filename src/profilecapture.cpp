@@ -1,7 +1,12 @@
 #include "profilecapture.h"
+#include "fileops.h"
+#include "profilefiles.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
+#include <QJsonDocument>
 #include <QHash>
 #include <QJsonArray>
 #include <QSet>
@@ -25,7 +30,8 @@ QJsonObject settingJson(const ProfileSetting &setting) {
 
 bool ProfileCapture::Selection::isEmpty() const {
     return settings.isEmpty() && categories.isEmpty() && !suggested && inherit.isEmpty() && forget.isEmpty() && name.isEmpty() && apps.isEmpty()
-           && excludeApps.isEmpty() && forgetApps.isEmpty() && !suggestedApps && !resolveAur;
+           && excludeApps.isEmpty() && forgetApps.isEmpty() && !suggestedApps && !resolveAur && !dock && !launchers && !associations && !shortcuts
+           && !windowRules && !background && !themes && !bar && !plugins && configFiles.isEmpty();
 }
 
 QJsonObject ProfileCapture::Result::toJson() const {
@@ -224,21 +230,24 @@ void ProfileCapture::capture(const Profile *existing, const Selection &selection
     auto next = std::make_shared<std::function<void(int)>>();
     *next = [this, wants, result, saved, hadProfile = existing != nullptr, source, selection, done, next](int index) {
         if (index >= wants.size()) {
-            capturePackages(result, selection, [this, result, saved, hadProfile, source, done] {
-                // Shown in the catalog's order, whatever order they were chosen in, apps last.
-                QHash<QString, int> order;
-                for (int i = 0; i < m_catalog->entries().size(); ++i)
-                    order.insert(m_catalog->entries()[i].id, i);
-                std::stable_sort(result->items.begin(), result->items.end(), [&order](const Item &a, const Item &b) {
-                    return order.value(a.id, INT_MAX) < order.value(b.id, INT_MAX);
+            capturePackages(result, selection, [this, result, saved, hadProfile, source, selection, done] {
+                captureDesktop(result, selection, [this, result, saved, hadProfile, source, done] {
+                    // Shown in the catalog's order, whatever order they were chosen in, apps last.
+                    QHash<QString, int> order;
+                    for (int i = 0; i < m_catalog->entries().size(); ++i)
+                        order.insert(m_catalog->entries()[i].id, i);
+                    std::stable_sort(result->items.begin(), result->items.end(), [&order](const Item &a, const Item &b) {
+                        return order.value(a.id, INT_MAX) < order.value(b.id, INT_MAX);
+                    });
+                    result->changed = !hadProfile || !result->profile.sameChoices(*saved);
+                    result->profile.source = result->changed ? source : saved->source;
+                    if (!hadProfile && result->profile.settings.isEmpty() && result->profile.packages.isEmpty() && result->profile.desktop.isEmpty()
+                        && result->profile.files.isEmpty())
+                        result->error = tr("Nothing could be remembered, so no profile was written.");
+                    else
+                        result->ok = true;
+                    done(*result);
                 });
-                result->changed = !hadProfile || !result->profile.sameChoices(*saved);
-                result->profile.source = result->changed ? source : saved->source;
-                if (!hadProfile && result->profile.settings.isEmpty() && result->profile.packages.isEmpty())
-                    result->error = tr("Nothing could be remembered, so no profile was written.");
-                else
-                    result->ok = true;
-                done(*result);
             });
             *next = nullptr;
             return;
@@ -548,14 +557,454 @@ void ProfileCapture::capturePackages(std::shared_ptr<Result> result, const Selec
     });
 }
 
+void ProfileCapture::captureDesktop(std::shared_ptr<Result> result, const Selection &selection, std::function<void()> finished) {
+    const QJsonObject saved = result->profile.desktop;
+    const bool wanted = !saved.isEmpty() || selection.dock || selection.launchers || selection.associations || selection.shortcuts || selection.windowRules
+                        || selection.background || selection.bar || selection.plugins;
+    if (!wanted || !m_desktop) {
+        captureThemes(result, selection);
+        captureFiles(result, selection);
+        finished();
+        return;
+    }
+    m_desktop->read(saved.value("associations").toObject().keys(), [this, result, selection, finished](const ProfileDesktop::Snapshot &snapshot) {
+        QJsonObject desktop = result->profile.desktop;
+        const auto show = [&](const QString &target, const QString &before, const QString &after, const QString &change, const QString &reason,
+                              bool attention = false) {
+            Item item;
+            item.kind = QStringLiteral("desktop");
+            item.id = "desktop:" + target;
+            item.label = ProfileDesktop::label(target, after.isEmpty() ? before : after);
+            item.category = QStringLiteral("desktop");
+            item.change = change;
+            item.before = ProfileSetting{before.isEmpty() ? QString() : QStringLiteral("set"), ProfileDesktop::summary(target, before)};
+            item.after = ProfileSetting{after.isEmpty() ? QString() : QStringLiteral("set"), ProfileDesktop::summary(target, after)};
+            item.reason = reason;
+            item.attention = attention;
+            result->items << item;
+        };
+        const auto changeOf = [](const QString &before, const QString &after) {
+            return before.isEmpty() ? QStringLiteral("added") : before == after ? QStringLiteral("unchanged") : QStringLiteral("modified");
+        };
+        const auto agree = [&](const QString &target) {
+            result->agreed["desktop:" + target] = QJsonObject{{"value", ProfileDesktop::current(snapshot, target)}};
+        };
+        // A file the profile is to carry, recorded by its digest and copied in when saved.
+        const auto carry = [&](const QString &path, const QString &sha256, const QString &kind) {
+            QString digest;
+            qint64 size = 0;
+            if (!ProfileFiles::describe(path, &digest, &size) || digest != sha256)
+                return false;
+            result->profile.setAsset(QJsonObject{{"sha256", sha256}, {"size", double(size)}, {"kind", kind}, {"name", QFileInfo(path).fileName()}});
+            result->assetSources.insert(sha256, path);
+            return true;
+        };
+        // A launcher's icon that is a file travels as one of the profile's files.
+        const auto portableEdit = [&](const QString &id, QJsonObject edit) -> QJsonObject {
+            if (!QDir::isAbsolutePath(edit.value("icon").toString()))
+                return edit;
+            const QString sha256 = snapshot.launcherIconDigests.value(id);
+            if (sha256.isEmpty() || !carry(snapshot.launcherIconFiles.value(id), sha256, QStringLiteral("icon")))
+                return {};
+            edit["icon"] = "sha256:" + sha256;
+            return edit;
+        };
+
+        // The background, for the theme it belongs to.
+        if (selection.background || desktop.contains("background")) {
+            const QString before = desktop.contains("background") ? ProfileDesktop::desired(desktop, "background") : QString();
+            QJsonObject record = snapshot.background;
+            if (record.contains("sha256") && !carry(snapshot.backgroundPath, record.value("sha256").toString(), QStringLiteral("background")))
+                record = QJsonObject();
+            if (record.isEmpty()) {
+                show("background", before, before, before.isEmpty() ? QStringLiteral("excluded") : QStringLiteral("kept"),
+                     tr("This background is neither one of its theme's nor in your own backgrounds folder for it, so a profile does not carry it."),
+                     !before.isEmpty());
+            } else {
+                desktop["background"] = record;
+                const QString after = ProfileDesktop::desired(desktop, "background");
+                show("background", before, after, changeOf(before, after), QString());
+                agree("background");
+            }
+        }
+
+        // The bar: Omarchy's own widgets, in order, with the options a profile carries. What
+        // does not travel is listed: widgets from plugins installed separately, and options
+        // that run something or name a path on this computer.
+        if (selection.bar || desktop.contains("bar")) {
+            const QString before = desktop.contains("bar") ? ProfileDesktop::desired(desktop, "bar") : QString();
+            if (!snapshot.barOk) {
+                show("bar", before, before, before.isEmpty() ? QStringLiteral("excluded") : QStringLiteral("kept"),
+                     tr("The bar's layout could not be read, so nothing changed: %1").arg(snapshot.barError), !before.isEmpty());
+            } else {
+                QStringList separate, notes;
+                QJsonObject layout;
+                for (const QString &section : ProfileModel::barSections()) {
+                    QJsonArray widgets;
+                    for (const QJsonValue &value : snapshot.barLayout.value(section).toArray()) {
+                        const QString id = value.isString() ? value.toString() : value.toObject().value("id").toString();
+                        if (!ProfileModel::isOmarchyPluginId(id) || !snapshot.barWidgets.contains(id)) {
+                            if (!id.isEmpty() && !separate.contains(id))
+                                separate << id;
+                            continue;
+                        }
+                        QJsonObject entry{{"id", id}};
+                        const QJsonObject options = value.toObject();
+                        for (auto it = options.begin(); it != options.end(); ++it) {
+                            if (it.key() == QLatin1String("id"))
+                                continue;
+                            const QString problem = ProfileModel::barOptionProblem(it.key(), it.value());
+                            if (problem.isEmpty())
+                                entry.insert(it.key(), it.value());
+                            else
+                                notes << tr("%1: %2").arg(id.mid(8), problem);
+                        }
+                        widgets.append(entry);
+                    }
+                    layout.insert(section, widgets);
+                }
+                if (!separate.isEmpty())
+                    notes.prepend(tr("Left out, since a profile does not install plugins: %1.").arg(separate.join(", ")));
+                desktop["bar"] = QJsonObject{{"layout", layout}};
+                const QString after = ProfileDesktop::desired(desktop, "bar");
+                show("bar", before, after, changeOf(before, after), notes.join(" "));
+                agree("bar");
+            }
+        }
+
+        // Omarchy's own plugins someone switched off, as the running shell reports them.
+        if (selection.plugins || desktop.contains("plugins")) {
+            const QString before = desktop.contains("plugins") ? ProfileDesktop::desired(desktop, "plugins") : QString();
+            if (!snapshot.pluginsOk) {
+                show("plugins", before, before, before.isEmpty() ? QStringLiteral("excluded") : QStringLiteral("kept"),
+                     tr("Omarchy's plugins could not be read, so nothing changed: %1").arg(snapshot.pluginsError), !before.isEmpty());
+            } else {
+                desktop["plugins"] = QJsonObject{{"disabled", QJsonArray::fromStringList(snapshot.disabledPlugins)}};
+                const QString after = ProfileDesktop::desired(desktop, "plugins");
+                show("plugins", before, after, changeOf(before, after), QString());
+                agree("plugins");
+            }
+        }
+
+        // The dock, as one ordered list.
+        if (selection.dock || desktop.contains("dockPins")) {
+            const QString before = desktop.contains("dockPins") ? ProfileDesktop::desired(desktop, "dock") : QString();
+            if (!snapshot.dockOk) {
+                show("dock", before, before, before.isEmpty() ? QStringLiteral("excluded") : QStringLiteral("kept"),
+                     tr("The dock's pins could not be read, so nothing changed: %1").arg(snapshot.dockError), !before.isEmpty());
+            } else {
+                QJsonArray pins;
+                for (const QString &pin : snapshot.dockPins)
+                    pins.append(pin);
+                desktop["dockPins"] = pins;
+                const QString after = ProfileDesktop::desired(desktop, "dock");
+                show("dock", before, after, changeOf(before, after), QString());
+                agree("dock");
+            }
+        }
+
+        // Launchers: what is remembered is read again, and the ones changed here are added
+        // when chosen. A change undone here leaves the profile too; an app missing here
+        // keeps its saved change.
+        QJsonObject launchers = desktop.value("launchers").toObject();
+        const QStringList remembered = launchers.keys();
+        for (const QString &id : remembered) {
+            const QString target = "launcher:" + id;
+            const QString before = ProfileDesktop::desired(desktop, target);
+            if (!snapshot.launchers.contains(id)) {
+                show(target, before, before, QStringLiteral("kept"), tr("Its app is not installed here, so the saved change stays."), true);
+            } else if (snapshot.launcherEdits.contains(id) && portableEdit(id, snapshot.launcherEdits.value(id)).isEmpty()) {
+                show(target, before, before, QStringLiteral("kept"), tr("Its icon file could not be read, so the saved change stays."), true);
+            } else if (snapshot.launcherEdits.contains(id)) {
+                launchers[id] = portableEdit(id, snapshot.launcherEdits.value(id));
+                QJsonObject probe;
+                probe["launchers"] = launchers;
+                show(target, before, ProfileDesktop::desired(probe, target), changeOf(before, ProfileDesktop::desired(probe, target)), QString());
+                agree(target);
+            } else {
+                launchers.remove(id);
+                show(target, before, QString(), QStringLiteral("removed"), tr("No longer changed on this computer."));
+            }
+        }
+        if (selection.launchers) {
+            for (auto it = snapshot.launcherEdits.constBegin(); it != snapshot.launcherEdits.constEnd(); ++it) {
+                if (remembered.contains(it.key()))
+                    continue;
+                const QString target = "launcher:" + it.key();
+                const QJsonObject edit = portableEdit(it.key(), it.value());
+                if (edit.isEmpty()) {
+                    show(target, QString(), QString(), QStringLiteral("excluded"), tr("Its icon file could not be read."));
+                    continue;
+                }
+                launchers[it.key()] = edit;
+                show(target, QString(), QString::fromUtf8(QJsonDocument(edit).toJson(QJsonDocument::Compact)), QStringLiteral("added"), QString());
+                agree(target);
+            }
+        }
+        if (launchers.isEmpty())
+            desktop.remove("launchers");
+        else
+            desktop["launchers"] = launchers;
+
+        // File associations: the everyday types, by the app that opens each now.
+        QJsonObject associations = desktop.value("associations").toObject();
+        for (const QString &mime : associations.keys()) {
+            const QString target = "association:" + mime;
+            const QString before = associations.value(mime).toString();
+            const QString now = snapshot.associations.value(mime);
+            if (now.isEmpty()) {
+                show(target, before, before, QStringLiteral("kept"), tr("Which app opens this could not be read, so the saved choice stays."), true);
+                continue;
+            }
+            associations[mime] = now;
+            show(target, before, now, changeOf(before, now), QString());
+            agree(target);
+        }
+        if (selection.associations) {
+            for (const QString &mime : ProfileDesktop::commonMimes()) {
+                const QString now = snapshot.associations.value(mime);
+                if (associations.contains(mime) || now.isEmpty() || !now.endsWith(QLatin1String(".desktop")))
+                    continue;
+                associations[mime] = now;
+                show("association:" + mime, QString(), now, QStringLiteral("added"), QString());
+                agree("association:" + mime);
+            }
+        }
+        if (associations.isEmpty())
+            desktop.remove("associations");
+        else
+            desktop["associations"] = associations;
+
+        // Shortcuts and window rules this app owns, merged by their record ids.
+        const auto ownedRecords = [&](const QString &section, const QString &kind, const QHash<QString, QJsonObject> &here, bool chosen) {
+            QJsonArray kept;
+            QSet<QString> seen;
+            for (const QJsonValue &value : desktop.value(section).toArray()) {
+                const QJsonObject record = value.toObject();
+                const QString id = record.value("id").toString();
+                const QString target = kind + ":" + id;
+                QJsonObject probe;
+                probe[section] = QJsonArray{record};
+                const QString before = ProfileDesktop::desired(probe, target);
+                seen.insert(id);
+                if (snapshot.moduleEditedByHand) {
+                    kept.append(record);
+                    show(target, before, before, QStringLiteral("kept"), tr("omarchy-control.lua was edited by hand, so the saved one stays."), true);
+                } else if (here.contains(id)) {
+                    QJsonObject now = here.value(id);
+                    now["id"] = id;
+                    kept.append(now);
+                    probe[section] = QJsonArray{now};
+                    show(target, before, ProfileDesktop::desired(probe, target), changeOf(before, ProfileDesktop::desired(probe, target)), QString());
+                    agree(target);
+                } else {
+                    show(target, before, QString(), QStringLiteral("removed"), tr("No longer on this computer."));
+                }
+            }
+            if (chosen && snapshot.moduleEditedByHand) {
+                show(kind, QString(), QString(), QStringLiteral("excluded"), tr("omarchy-control.lua was edited by hand, so nothing in it was read."));
+            } else if (chosen) {
+                for (auto it = here.constBegin(); it != here.constEnd(); ++it) {
+                    if (seen.contains(it.key()) || it.key().isEmpty())
+                        continue;
+                    QJsonObject record = it.value();
+                    record["id"] = it.key();
+                    kept.append(record);
+                    QJsonObject probe;
+                    probe[section] = QJsonArray{record};
+                    show(kind + ":" + it.key(), QString(), ProfileDesktop::desired(probe, kind + ":" + it.key()), QStringLiteral("added"), QString());
+                    agree(kind + ":" + it.key());
+                }
+            }
+            if (kept.isEmpty())
+                desktop.remove(section);
+            else
+                desktop[section] = kept;
+        };
+        ownedRecords(QStringLiteral("shortcuts"), QStringLiteral("shortcut"), snapshot.shortcuts, selection.shortcuts);
+        ownedRecords(QStringLiteral("windowRules"), QStringLiteral("rule"), snapshot.rules, selection.windowRules);
+        result->profile.desktop = desktop;
+        result->profile.dropUnreferencedAssets();
+        captureThemes(result, selection);
+        captureFiles(result, selection);
+        finished();
+    });
+}
+
+void ProfileCapture::captureThemes(std::shared_ptr<Result> result, const Selection &selection) {
+    Profile &profile = result->profile;
+    const QJsonObject saved = profile.desktop.value("themes").toObject();
+    const ProfileSetting chosen = profile.settings.value(QStringLiteral("appearance.theme"));
+    const QString selected = chosen.mode == QLatin1String("set") ? ProfileDesktop::themeFolder(chosen.value) : QString();
+    if (saved.isEmpty() && !selection.themes && selected.isEmpty())
+        return;
+    const QHash<QString, ProfileDesktop::ThemeState> here = ProfileDesktop::readThemes(m_env);
+    const auto show = [&](const QString &folder, const QString &before, const QString &after, const QString &change, const QString &reason,
+                          bool attention = false) {
+        const QString target = "theme:" + folder;
+        const auto value = [](const QString &url) { return url.isEmpty() ? QString() : QString::fromUtf8(QJsonDocument(QJsonObject{{"url", url}}).toJson(QJsonDocument::Compact)); };
+        Item item;
+        item.kind = QStringLiteral("desktop");
+        item.id = "desktop:" + target;
+        item.label = ProfileDesktop::label(target, QString());
+        item.category = QStringLiteral("desktop");
+        item.change = change;
+        item.before = ProfileSetting{before.isEmpty() ? QString() : QStringLiteral("set"), before.isEmpty() ? QString() : ProfileDesktop::summary(target, value(before))};
+        item.after = ProfileSetting{after.isEmpty() ? QString() : QStringLiteral("set"), after.isEmpty() ? QString() : ProfileDesktop::summary(target, value(after))};
+        item.reason = reason;
+        item.attention = attention;
+        result->items << item;
+    };
+    QJsonObject themes;
+    // What the profile remembers is read again. A theme removed here leaves the profile too,
+    // as a shortcut removed here does; one that is no longer a Git copy keeps its address.
+    for (auto it = saved.begin(); it != saved.end(); ++it) {
+        const QString before = it.value().toObject().value("url").toString();
+        const ProfileDesktop::ThemeState state = here.value(it.key());
+        if (!state.installed) {
+            show(it.key(), before, QString(), QStringLiteral("removed"), tr("No longer installed on this computer."));
+        } else if (state.url.isEmpty()) {
+            themes[it.key()] = it.value();
+            show(it.key(), before, before, QStringLiteral("kept"), tr("%1 The saved address stays.").arg(state.problem), true);
+        } else {
+            const QString after = ProfileDesktop::sameSource(before, state.url) ? before : state.url;
+            themes[it.key()] = QJsonObject{{"url", after}};
+            show(it.key(), before, after, before == after ? QStringLiteral("unchanged") : QStringLiteral("modified"), QString());
+        }
+    }
+    QStringList wanted;
+    if (selection.themes) {
+        for (auto it = here.begin(); it != here.end(); ++it)
+            if (it.value().installed)
+                wanted << it.key();
+        wanted.sort();
+    }
+    if (!selected.isEmpty() && here.value(selected).installed && !wanted.contains(selected))
+        wanted << selected;
+    for (const QString &folder : wanted) {
+        if (saved.contains(folder))
+            continue;
+        const ProfileDesktop::ThemeState state = here.value(folder);
+        if (state.url.isEmpty()) {
+            show(folder, QString(), QString(), QStringLiteral("excluded"), state.problem);
+            continue;
+        }
+        themes[folder] = QJsonObject{{"url", state.url}};
+        show(folder, QString(), state.url, QStringLiteral("added"),
+             folder == selected && !selection.themes ? tr("The theme this profile selects, so a restore can install it.") : QString());
+    }
+    if (themes.isEmpty())
+        profile.desktop.remove("themes");
+    else
+        profile.desktop["themes"] = themes;
+}
+
+void ProfileCapture::captureFiles(std::shared_ptr<Result> result, const Selection &selection) {
+    Profile &profile = result->profile;
+    if (profile.files.isEmpty() && selection.configFiles.isEmpty())
+        return;
+    const auto show = [&](const QString &adapter, const QString &name, const QString &before, const QString &after, const QString &change,
+                          const QString &reason, bool attention = false) {
+        Item item;
+        item.kind = QStringLiteral("desktop");
+        item.id = "desktop:file:" + adapter + "/" + name;
+        item.label = ProfileDesktop::label("file:" + adapter + "/" + name, QString());
+        item.category = QStringLiteral("files");
+        item.change = change;
+        item.before = ProfileSetting{before.isEmpty() ? QString() : QStringLiteral("set"), before.left(12)};
+        item.after = ProfileSetting{after.isEmpty() ? QString() : QStringLiteral("set"), after.left(12)};
+        item.reason = reason;
+        item.attention = attention;
+        result->items << item;
+    };
+    QJsonArray files;
+    QStringList wanted = selection.configFiles;
+    for (const QJsonValue &value : profile.files) {
+        const QString adapter = value.toObject().value("adapter").toString();
+        if (!wanted.contains(adapter))
+            wanted << adapter;
+    }
+    for (const QString &id : wanted) {
+        ProfileFiles::ConfigAdapter adapter;
+        QJsonObject saved;
+        for (const QJsonValue &value : profile.files)
+            if (value.toObject().value("adapter").toString() == id)
+                saved = value.toObject();
+        if (!ProfileFiles::configAdapter(m_env, id, &adapter)) {
+            if (!saved.isEmpty())
+                files.append(saved);
+            show(id, id, saved.value("sha256").toString(), saved.value("sha256").toString(), saved.isEmpty() ? QStringLiteral("excluded") : QStringLiteral("kept"),
+                 tr("Omarchy Control has no adapter for this file."), !saved.isEmpty());
+            continue;
+        }
+        const QString before = saved.value("sha256").toString();
+        // Kept as saved when it cannot be carried as it is here, never dropped quietly.
+        const auto keep = [&](const QString &reason) {
+            if (!saved.isEmpty())
+                files.append(saved);
+            show(id, adapter.name, before, before, saved.isEmpty() ? QStringLiteral("excluded") : QStringLiteral("kept"), reason, !saved.isEmpty());
+        };
+        QString sha256;
+        qint64 size = 0;
+        QByteArray contents;
+        if (!ProfileFiles::describe(adapter.destination, &sha256, &size) || !FileOps::readFile(adapter.destination, &contents)) {
+            keep(tr("There is no %1 here.").arg(adapter.destination.section('/', -2)));
+            continue;
+        }
+        const QString problem = ProfileFiles::reviewConfig(id, contents);
+        if (!problem.isEmpty()) {
+            keep(problem);
+            continue;
+        }
+        QString defaults;
+        qint64 defaultSize = 0;
+        if (saved.isEmpty() && ProfileFiles::describe(adapter.omarchyDefault, &defaults, &defaultSize) && defaults == sha256) {
+            keep(tr("It is Omarchy's own version, so there is nothing of yours in it to carry."));
+            continue;
+        }
+        files.append(QJsonObject{{"adapter", id}, {"name", adapter.name}, {"sha256", sha256}, {"size", double(size)}});
+        result->configContents.insert(id + "/" + adapter.name, contents);
+        result->agreed["desktop:file:" + id + "/" + adapter.name] = QJsonObject{{"value", sha256}};
+        show(id, adapter.name, before, sha256, before.isEmpty() ? QStringLiteral("added") : before == sha256 ? QStringLiteral("unchanged") : QStringLiteral("modified"),
+             QString());
+    }
+    profile.files = files;
+}
+
 bool ProfileCapture::save(const QString &directory, const Result &result, QString *error) {
     if (!result.ok) {
         if (error)
             *error = result.error;
         return false;
     }
-    if (result.changed && !ProfileModel::save(directory, result.profile, error))
-        return false;
+    if (result.changed) {
+        // The files first, so profile.json never names one that is not there yet.
+        for (const QString &sha256 : result.profile.referencedAssets()) {
+            if (result.assetSources.contains(sha256)) {
+                if (!ProfileFiles::store(directory, result.assetSources.value(sha256), sha256, error))
+                    return false;
+            } else if (!QFileInfo::exists(ProfileFiles::assetPath(directory, sha256))) {
+                if (error)
+                    *error = tr("The profile's copy of a file it names is missing, so nothing was written.");
+                return false;
+            }
+        }
+        for (const QJsonValue &value : result.profile.files) {
+            const QString adapter = value.toObject().value("adapter").toString(), name = value.toObject().value("name").toString();
+            if (result.configContents.contains(adapter + "/" + name)) {
+                if (!ProfileFiles::storeConfig(directory, adapter, name, result.configContents.value(adapter + "/" + name), error))
+                    return false;
+            } else if (!QFileInfo::exists(ProfileFiles::configPath(directory, adapter, name))) {
+                if (error)
+                    *error = tr("The profile's copy of a file it names is missing, so nothing was written.");
+                return false;
+            }
+        }
+        if (!ProfileModel::save(directory, result.profile, error))
+            return false;
+        ProfileFiles::prune(directory, result.profile);
+        ProfileFiles::pruneConfigs(directory, result.profile);
+    }
     QJsonObject entries;
     const QString now = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
     for (auto it = result.agreed.begin(); it != result.agreed.end(); ++it) {

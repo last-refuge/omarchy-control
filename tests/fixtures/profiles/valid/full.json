@@ -37,6 +37,11 @@
     }
   ],
   "desktop": {
+    "themes": {
+      "obsidian-circuit": {
+        "url": "https://github.com/example/omarchy-obsidian-circuit-theme.git"
+      }
+    },
     "dockPins": [
       "firefox.desktop",
       "com.mitchellh.ghostty.desktop"
@@ -75,7 +80,51 @@
         "action": "opacity",
         "value": "0.9"
       }
-    ]
+    ],
+    "bar": {
+      "layout": {
+        "left": [
+          {
+            "id": "omarchy.menu"
+          },
+          {
+            "id": "omarchy.workspaces"
+          }
+        ],
+        "center": [
+          {
+            "id": "omarchy.clock",
+            "format": "HH:mm",
+            "verticalFormat": "HH\n—\nmm"
+          }
+        ],
+        "centerEnd": [
+          {
+            "id": "omarchy.elsewhen",
+            "cities": [
+              {
+                "name": "Tokyo",
+                "zone": "Asia/Tokyo"
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "omarchy.tray"
+          },
+          {
+            "id": "omarchy.power",
+            "showPercentage": true
+          }
+        ]
+      }
+    },
+    "plugins": {
+      "disabled": [
+        "omarchy.emojis"
+      ]
+    }
   },
   "files": [
     {

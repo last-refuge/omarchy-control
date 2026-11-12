@@ -3,6 +3,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -53,6 +54,13 @@ struct Profile {
     bool hasPackage(const QString &name) const { return !package(name).name.isEmpty(); }
     void setPackage(const ProfilePackage &package);
     void removePackage(const QString &name);
+
+    // The files the profile holds, by digest, and which of them its records name.
+    QJsonObject asset(const QString &sha256) const;
+    void setAsset(const QJsonObject &record);
+    QSet<QString> referencedAssets() const;
+    // Drops records of files nothing names any more.
+    void dropUnreferencedAssets();
 
     QJsonObject toJson() const;
     // Canonical bytes: sorted keys, stable record order, one trailing newline. The same
@@ -117,6 +125,21 @@ QString manifestPath(const QString &directory);
 QStringList fileAdapters();
 bool isSettingId(const QString &id);
 bool isPackageName(const QString &name);
+// A theme's folder name, held to the characters Omarchy's own installer allows.
+bool isThemeFolder(const QString &name);
+// The bar's sections, in the order Omarchy draws them.
+QStringList barSections();
+// The options of Omarchy's own bar widgets a profile carries: data that changes what a
+// widget shows. Any option that runs a command or loads a file is left out, since the bar
+// turns an entry with one into a module of its own.
+QStringList barOptionKeys();
+// Why one widget option cannot travel, or empty when it can.
+QString barOptionProblem(const QString &key, const QJsonValue &value);
+// One of Omarchy's own plugins or widgets, as opposed to one installed separately.
+bool isOmarchyPluginId(const QString &id);
+// An address a theme can be installed from: https, with no name or password in it, and no
+// query or fragment.
+bool isThemeSource(const QString &url);
 
 }  // namespace ProfileModel
 

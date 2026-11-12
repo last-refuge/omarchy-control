@@ -10,6 +10,7 @@
 #include "launchereditor.h"
 #include "packageprovider.h"
 #include "profilecapture.h"
+#include "profiledesktop.h"
 #include "profileplanner.h"
 #include "profilerunner.h"
 #include "settingsengine.h"
@@ -28,6 +29,7 @@ struct AppCore {
     SettingsEngine engine;
     // My Omarchy: saving this computer's choices to a profile and restoring them.
     PackageProvider packages;
+    ProfileDesktop profileDesktop;
     ProfileCapture profileCapture;
     ProfilePlanner profilePlanner;
     ProfileRunner profileRunner;
@@ -43,10 +45,14 @@ struct AppCore {
           launchers(env, &coordinator, &icons),
           engine(&catalog, &runner, &capabilities, &coordinator, &compat),
           packages(&runner),
+          profileDesktop(&catalog, &runner, &capabilities, &coordinator, &compat, &launchers),
           profileCapture(&catalog, &engine, &capabilities, &packages, env),
           profilePlanner(&catalog, &engine, &capabilities, &packages, env),
           profileRunner(&catalog, &engine, &coordinator, &packages, env) {
         engine.setIconThemes(&icons);
         engine.setLaunchers(&launchers);
+        profileCapture.setDesktop(&profileDesktop);
+        profilePlanner.setDesktop(&profileDesktop);
+        profileRunner.setDesktop(&profileDesktop);
     }
 };

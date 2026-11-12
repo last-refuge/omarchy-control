@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "x",
+  "desktop": {
+    "background": {
+      "theme": "tokyo-night",
+      "name": "mine.png",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }
+}

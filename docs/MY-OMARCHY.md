@@ -1,6 +1,6 @@
 # My Omarchy: contract, audit, and progress
 
-Status, November 11, 2026: P0 (contract and portability audit) is recorded here, and P1 (local settings round trip) is implemented and tested against fixtures. P2 (apps) is implemented: repository installs, reviewed AUR builds, explicit removals, and default apps that wait for their app, fixture-tested and checked against real pacman in a disposable root. Nothing has been restored on a real desktop yet. The milestones P0 to P5 are those of the My Omarchy implementation plan.
+Status, November 12, 2026: P0 (contract and portability audit) is recorded here, and P1 (local settings round trip) is implemented and tested against fixtures. P2 (apps) is implemented: repository installs, reviewed AUR builds, explicit removals, and default apps that wait for their app, fixture-tested and checked against real pacman in a disposable root. P3 (desktop choices and files) is implemented and fixture-tested: themes installed from Git, the background with its file, the bar's layout and Omarchy's plugin switches, the dock, launcher changes with their icon files, file associations, the shortcuts and window rules this app owns, and Ghostty and Alacritty configuration files. A dry-run capture of the theme and bar ran on this machine; nothing has been restored on a real desktop yet. The milestones P0 to P5 are those of the My Omarchy implementation plan.
 
 Evidence base: a read-only audit of this machine. `pacman -Q` reports `omarchy` and `omarchy-settings` 4.5.0-3 and `hyprland` 0.56.2-4, on x86_64. `/usr/share/omarchy/version` reads `4.0.0.alpha` on this release, so it is never used; the version comes from `omarchy version`, as Control already does.
 
@@ -10,17 +10,17 @@ A profile is a directory:
 
 ```text
 profile.json                 # Version, choices, package intent, adapter records
-assets/sha256/<digest>       # From P3: backgrounds, icons, theme files
-files/<adapter>/<name>       # From P3: reviewed configuration files
+assets/sha256/<digest>       # Backgrounds and launcher icons, by content
+files/<adapter>/<name>       # Reviewed configuration files: ghostty/config, alacritty/alacritty.toml
 ```
 
-[profile.schema.json](profile.schema.json) defines version 1. The validator in `src/profilemodel.cpp` enforces the same rules, plus some that JSON Schema cannot express: duplicate keys at any depth, duplicate package names or record ids, and a 100 MiB total for files and assets. 40 invalid fixtures and 3 valid ones in `tests/fixtures/profiles/` pin the rules. Until the first public release, version 1 may still change; after it, a change in meaning needs version 2 and a migration.
+[profile.schema.json](profile.schema.json) defines version 1. The validator in `src/profilemodel.cpp` enforces the same rules, plus some that JSON Schema cannot express: duplicate keys at any depth, duplicate package names or record ids, and a 100 MiB total for files and assets. 48 invalid fixtures and 3 valid ones in `tests/fixtures/profiles/` pin the rules. Until the first public release, version 1 may still change; after it, a change in meaning needs version 2 and a migration.
 
 - **Settings** map a catalog id to `{"mode": "set", "value": …}` or `{"mode": "inherit"}`. A setting the profile leaves out is unmanaged and left alone. Values are the catalog's normalized strings.
 - **Refused before anything happens:** invalid JSON (comments and trailing commas included), duplicate keys, unknown sections or fields, a newer `schemaVersion`, ids that are not ids, control characters, package names pacman would read as options, unknown file adapters, path-like file names, malformed digests, files over 25 MiB, and profiles over 100 MiB. A profile is refused as a whole; nothing restores from a refused profile.
 - **Kept and reported, never applied:** setting ids this version does not know, and settings the catalog does not consider portable. They stay in the profile on the next save.
 - **Canonical bytes:** sorted keys, packages sorted by name, records sorted by id, the dock's order kept, one trailing newline. The same choices always produce the same file. `source` (Control, Omarchy, and Hyprland versions, and architecture) is diagnostic and never counts as a change, so an unchanged capture writes nothing.
-- **No home paths travel.** `source` has a closed set of fields, and settings whose values are paths (backgrounds) are not portable until P3 stores them as assets.
+- **No home paths travel.** `source` has a closed set of fields. A background or launcher icon that is a file travels as an asset named by its digest, and goes back only to the one place its adapter puts it. Configuration files and bar options that name a path in a home folder are not carried.
 
 Machine-local state lives under `~/.local/state/omarchy-control/profiles` (directories 0700, files 0600): restore plans, run records, and the baseline, which is the last value this computer agreed on for each setting. The restore lease is `~/.local/state/omarchy-control/restore.lock`. None of this is ever part of a profile.
 
@@ -30,14 +30,14 @@ Every editable catalog setting now carries a reviewed `profile` block in `src/da
 
 | Portability | Count | Meaning |
 | --- | ---: | --- |
-| `portable` | 35 | Captured, planned, restored, and verified by P1 |
-| `later` | 25 | Portable in principle, waiting for a later milestone |
+| `portable` | 40 | Captured, planned, restored, and verified as settings |
+| `later` | 20 | Not a setting a profile carries yet, or carried by a desktop record instead |
 | `machine` | 12 | Belongs to this computer's hardware, network, or relationships |
 | `runtime` | 4 | A passing state, not a preference |
 
 Fields: `category`; `reason` for anything not portable; `inherit` where "use the default" is reliable (a JSON key removal, an owned Lua override removal, or a reset command); `after` for restore order; `activation` for effects to disclose; `stock` for the value a fresh installation has, where that is known; `overlaps` for another setting that masks this one.
 
-### Portable in P1
+### Portable settings
 
 | Category | Settings | Adapter | Inherit |
 | --- | --- | --- | --- |
@@ -47,12 +47,13 @@ Fields: `category`; `reason` for anything not portable; `inherit` where "use the
 | input | repeat rate and delay, Num Lock, sensitivity, acceleration, natural scroll, focus follows mouse, six touchpad options | owned `omarchy-control.lua` | yes |
 | idle | lock after, screensaver after | scoped `shell.json` edit | yes |
 | idle | screensaver available | Omarchy toggle | no |
+| desktop | bar position, background, and visibility; dock position and autohide | Omarchy commands | no |
 | defaults | browser, terminal, editor | Omarchy commands | no |
 | language | language | Omarchy command | no |
 
 ### Not portable yet, with the recorded reason
 
-- **later:** background and icon packs (files, so assets in P3); the launcher icon layer (follows the icon pack); the 10 blur settings (they read through window transparency and Omarchy's glass, and a strength writes two values, so their order needs evidence); bar and clock settings (restored with the bar layout, P3); dock position and autohide (with the dock, P3); the 5 Superwhisper dictation settings (an app's own settings).
+- **later:** icon packs (folders or packages) and the launcher icon layer that follows them; the 10 blur settings (they read through window transparency and Omarchy's glass, and a strength writes two values, so their order needs evidence); the 5 Superwhisper dictation settings (an app's own settings). Three more are carried by desktop records instead, so each has one writer: the background (the background record), and the clock's two formats (options of the clock in the bar's layout).
 - **machine:** display brightness and scale, touchpad and touchscreen on/off, DNS and Wi-Fi band, power profiles on AC and battery, whether to offer suspend, crash capture, herdr theme sync, and the weather location (personal location data).
 - **runtime:** do not disturb, night light, the active power profile, and stay awake.
 
@@ -62,10 +63,10 @@ Read from source on this machine. All 14 scripts match the hashes already pinned
 
 | Command | What it does beyond its value | Consequence for restore |
 | --- | --- | --- |
-| `omarchy theme set` | Rebuilds the current theme, chooses that theme's background (remembered per theme), restarts terminals, btop, opencode, and helix, reloads Hyprland, and retints GTK, the browser policy, VS Code, Obsidian, the keyboard, and fcitx5 in the background. Runs `omarchy-hook theme-set`, and starts `omarchy-theme-set-herdr-machines`, which mirrors to herdr machines when theme sync is on. Refuses a theme that is not installed. | Restored first. Discloses hooks and restarts. A theme installed in the home folder is blocked on a computer that lacks it, until P3 brings theme assets. A wallpaper restore (P3) must come after it. Control's own icon pack hook runs from here and takes the change lock, so each restore step first waits for the lock. |
-| `omarchy font set` | Requires the family in `fc-list`. Rewrites the family in Alacritty, Kitty, Ghostty, and Foot configs, replaces `~/.config/fontconfig/fonts.conf`, restarts the shell, and runs `omarchy-hook font-set`. | Blocked unless the font is installed (P2 installs fonts). Overlaps P3's terminal file adapters. |
+| `omarchy theme set` | Rebuilds the current theme, chooses that theme's background (remembered per theme), restarts terminals, btop, opencode, and helix, reloads Hyprland, and retints GTK, the browser policy, VS Code, Obsidian, the keyboard, and fcitx5 in the background. Runs `omarchy-hook theme-set`, and starts `omarchy-theme-set-herdr-machines`, which mirrors to herdr machines when theme sync is on. Refuses a theme that is not installed. | Restored first among settings. Discloses hooks and restarts. A theme installed from Git is installed first and the setting waits for it; one installed by hand is blocked on a computer that lacks it. The background comes after it. Control's own icon pack hook runs from here and takes the change lock, so each restore step first waits for the lock. |
+| `omarchy font set` | Requires the family in `fc-list`. Rewrites the family in Alacritty, Kitty, Ghostty, and Foot configs, replaces `~/.config/fontconfig/fonts.conf`, restarts the shell, and runs `omarchy-hook font-set`. | Blocked unless the font is installed (P2 installs fonts). Runs after the terminal files, so it edits the restored file rather than being overwritten by it. |
 | `omarchy font cjk` | Runs Omarchy's input-method `configure.py` and restarts the shell. | Discloses the restart. |
-| `omarchy display text size` | Writes `[font] base-size` in `~/.config/omarchy/shell.toml`, the GTK text scaling factor, and terminal sizes with `sed`. `reset` removes the override. | Inherit supported. Overlaps P3's terminal file adapters. |
+| `omarchy display text size` | Writes `[font] base-size` in `~/.config/omarchy/shell.toml`, the GTK text scaling factor, and terminal sizes with `sed`. `reset` removes the override. | Inherit supported. Runs after the terminal files, as the font does. |
 | `omarchy hyprland corners`, `window transparency`, `hyprland toggle`, `toggle animations` | Copy or remove toggle files in `~/.local/state/omarchy/toggles/hypr`, then reload Hyprland. Transparency rewrites the theme's glass under the theme lock and restarts terminals. Theme changes keep these choices. | After the theme. |
 | `window-no-gaps.lua` (the gaps toggle) | Sets inner and outer gaps, border size, and rounding to 0, and loads after `omarchy-control.lua`. | A profile that turns gaps off blocks its own gap and border sizes, with the reason, rather than fail verification. |
 | `no-animations.lua` | Also turns off blur and shadows. | One reason blur waits. |
@@ -152,7 +153,34 @@ Protected: the base system, kernels and firmware, the bootloader and snapshots, 
 
 **Checked against real pacman.** `tools/profile-package-check.sh` builds a few small packages into a local repository, then has the real `omarchy-control` plan and restore a profile into a disposable pacman root under fakeroot, with this machine's database untouched. It confirmed the dry runs, dependency listing, install reasons, the refused removal, partial results, and that a second restore runs no transaction. It also found two things the fakes had hidden: pacman prints the dependencies a removal would break on stdout, not stderr, and its output went into `--json` results; both are fixed. And it settled what happens when nobody can answer: pacman takes end of input, or "n", as no, and nothing changes, so a restore run from a script never confirms on its own.
 
-## 8. Command line
+## 8. Desktop choices and files (P3)
+
+| Record | Saved as | Restored with | Verified by |
+| --- | --- | --- | --- |
+| Themes from Git | Each theme's folder and the https address it was cloned from | `git clone` into Omarchy's themes folder, as `omarchy-theme-install` does, without switching to it, and only where no theme of that name is installed | The folder's own record of where it came from |
+| Background | The theme it belongs to and its file name; one of the user's own also has its file, as an asset | One of the user's goes into their backgrounds for that theme, then `omarchy theme bg set` | The current background link |
+| Bar layout | Omarchy's own widgets in each section, in order, with the options that are only data | The layout written into `shell.json`, as Omarchy's own bar commands commit it, then the shell asked to reload it | `shell.json` read back |
+| Plugins switched off | Which of Omarchy's own plugins, other than bar widgets, are off | `omarchy plugin disable` and `enable` | The shell's plugin list |
+| Dock | The whole ordered list of pinned app ids, as Omarchy keeps them | `omarchy dock pinned <ids...>`, which sets the list in one step and keeps every other key | `omarchy dock pinned` reading the same list |
+| Launchers | Only the fields changed here: name, icon, hidden. An icon that is a file is an asset | The launcher editor, as the window does: a marked copy, never the package's own file; an icon file goes through the editor's own import | Reading the launcher back |
+| File associations | The app for each of the window's everyday file types | `xdg-mime default` | `xdg-mime query default` |
+| Shortcuts this app owns | Keys, description, and command, under an id made from the keys | Rewriting `omarchy-control.lua`, then reloading Hyprland | Hyprland's own list of binds, and no new config error |
+| Window rules this app owns | Match, action, and value, under an id made from the action and match | The same | No new config error after the reload, as Hyprland has no query for a rule |
+| Ghostty and Alacritty configuration | The whole file, at `files/<adapter>/<name>` | Written atomically to the one place the adapter knows | Its digest |
+
+**Capture.** `--themes`, `--background`, `--bar`, `--plugins`, `--dock`, `--launchers`, `--associations`, `--shortcuts`, `--window-rules`, or `--desktop` for all nine; `--file ghostty|alacritty` or `--terminal-configs` for the files. A later capture reads each remembered record again: a launcher change undone here, a theme removed here, or an owned shortcut gone leaves the profile, while an app missing here, an association or bar that cannot be read, or a hand-edited `omarchy-control.lua` keeps the saved record and flags it. Remembering the theme setting brings the theme's Git address along, unasked, since restoring the setting needs it.
+
+**What does not travel, and says so.** A theme installed by hand, or from an address that is not https: SSH addresses on GitHub, GitLab, Codeberg, Bitbucket, and SourceHut are carried in their https form, since a fresh computer has no keys yet, and a user name or password in an address never leaves the computer. A background that is neither its theme's nor in the user's backgrounds folder. Bar widgets from plugins installed separately, which are code. Any bar option that is not on the list of data options read from Omarchy's own widgets: an entry with `exec`, `source`, or `type` becomes a module that runs a command or loads a file, and the click handlers run commands. A configuration file that includes anything but Omarchy's own theme file, runs a program, loads a shader or image, or names a path in a home folder; and one identical to Omarchy's own, which carries nothing of the user's.
+
+**Plan.** Each record is treated as a setting is: unchanged when this computer already has it, a conflict when it may be someone's choice here, and ready otherwise. A dock, bar, or file that differs from Omarchy's own, a launcher changed here, plugins switched off here, one of the user's own backgrounds, and an existing shortcut or rule of the same id are possible choices. A shortcut whose keys already do something is always a decision, and restoring it with `--use-saved` releases the old binding rather than leave two. Every shortcut's command and every theme's address is shown before anything happens. Installing a theme overwrites nothing, so it is ready or blocked, never a conflict: a theme of that name already here, from anywhere else, is left alone with the reason, and one Omarchy ships counts as there. The theme setting waits for a theme the same restore installs, and a background waits for its theme to be the one in use. A launcher or association for an app the restore installs waits for that install. A bar widget or plugin this Omarchy does not have, a hand-edited `omarchy-control.lua`, and a profile's file or asset that is missing or does not match its digest are blocked, never forced. Each adapter is paused, like a setting, when the Omarchy command it follows changed since review: the dock and background commands, `omarchy-theme-install`, `omarchy-bar` and `omarchy-shell-config`, and the plugin commands.
+
+**Order.** Apps to install, then themes, then configuration files, then settings with the theme first, then the other desktop records, then app removals. Files come before settings so that a font or text size restored with them is set on top of the file rather than overwritten by it.
+
+**Writing the bar.** The saved widgets go in each section the profile names, in their saved order. One that is already on the bar keeps whatever options of its own a profile does not carry, and moves rather than appear twice. Widgets from plugins installed separately keep their section, after the saved ones. A section the profile does not name is left alone, as a setting it leaves out is; a capture always names all six. Everything else in `shell.json` is left byte for byte. A shell that is not running reads the file when it starts.
+
+After the run, what each restored record reads as is kept as this computer's agreed value, for later plans to compare with.
+
+## 9. Command line
 
 ```sh
 omarchy-control profile capture ~/my-omarchy --category appearance --category idle
@@ -164,9 +192,9 @@ omarchy-control profile resume <run-id>
 omarchy-control profile status
 ```
 
-Apps take `--app`, `--exclude-app`, `--forget-app`, `--suggested-apps`, and `--resolve-aur`, as above. Settings: `--category` takes appearance, windows, input, idle, defaults, or language; `--setting <id>` names one setting; `--suggested` takes the portable settings that differ from a fresh installation by the rules above; `--inherit <id>` saves "use the default"; `--forget <id>` stops remembering one; `--dry-run` shows the changes without writing. A first capture needs a selection; nothing is captured in bulk by default. What a category holds but a profile cannot carry is listed with its reason. A saved setting whose current value cannot be read stays as saved and is flagged. Each command takes `--json`, and exits 0 when the request was fulfilled and 1 otherwise.
+Apps take `--app`, `--exclude-app`, `--forget-app`, `--suggested-apps`, and `--resolve-aur`, and desktop records and files the options in section 8. Settings: `--category` takes appearance, windows, desktop, input, idle, defaults, or language; `--setting <id>` names one setting; `--suggested` takes the portable settings that differ from a fresh installation by the rules above; `--inherit <id>` saves "use the default"; `--forget <id>` stops remembering one; `--dry-run` shows the changes without writing. A first capture needs a selection; nothing is captured in bulk by default. What a category holds but a profile cannot carry is listed with its reason. A saved setting whose current value cannot be read stays as saved and is flagged. Each command takes `--json`, and exits 0 when the request was fulfilled and 1 otherwise.
 
-## 9. Fixture matrix for the P1 and P2 gates
+## 10. Fixture matrix
 
 | Gate requirement | Test |
 | --- | --- |
@@ -190,10 +218,21 @@ Apps take `--app`, `--exclude-app`, `--forget-app`, `--suggested-apps`, and `--r
 | P2: AUR builds, and a failed build blocking only what needs it | `profileBuildsAppsFromTheAur`, `profileFailedAurBuildBlocksOnlyWhatNeedsIt` |
 | P2: AUR lookup only when asked | `profileResolvesAurAppsOnlyWhenAsked` |
 | P2: real pacman, declining and confirming | `tools/profile-package-check.sh` |
+| P3: capture the dock, a launcher change, an association, and an owned shortcut and rule; an undone change leaves the profile; an unreadable one stays | `profileCapturesDesktopChoices` |
+| P3: restore them on another computer, each verified, and find nothing to do the second time | `profileRestoresDesktopChoices` |
+| P3: a dock of one's own, keys already in use, a missing app, an icon file, and a hand-edited module | `profileDesktopConflictsAndBlocks` |
+| P3: a background of one's own and a launcher icon file travel as assets, and a damaged copy is refused | `profileCarriesBackgroundsAndIconFiles` |
+| P3: a theme's own background waits for its theme | `profileRestoresAThemesOwnBackgroundForItsThemeOnly` |
+| P3: Ghostty and Alacritty files restore before settings; a local file is a conflict; a damaged or edited copy is refused | `profileCarriesTerminalConfigs`, `profileLeavesOutConfigsItCannotCarry` |
+| P3: theme addresses are https only, with no password | `profileThemeSourcesAreHttpsOnly`, `profileCarriesThemeSources` |
+| P3: a theme is installed before the setting that selects it and the background that belongs to it | `profileInstallsAThemeBeforeSelectingIt` |
+| P3: a theme already here is never replaced; a failed clone is taken back and blocks what needs it; a changed installer pauses | `profileNeverReplacesAThemeAlreadyHere`, `profileThemeInstallFailuresAreContained` |
+| P3: the bar's layout and plugin switches, keeping widgets installed separately and options of one's own | `profileCarriesTheBarLayout` |
+| P3: a widget or plugin this Omarchy lacks, and a shell that is not running | `profileBarAndPluginsRefuseWhatIsNotHere` |
 
-The tests use fake commands, including a stateful fake pacman, and `tools/profile-package-check.sh` repeats the package side with real pacman in a disposable root. The P1 gate also asks for real settings behavior: extending `tools/nested-check.py` to restore a profile into the nested session is the next verification step there. On this machine, a dry-run capture of apps and a plan of a package-only profile also ran against the system's own pacman without root, changing nothing.
+The tests use fake commands, including a stateful fake pacman, and `tools/profile-package-check.sh` repeats the package side with real pacman in a disposable root. Every test machine is a separate sandbox with its own home folder, so each restore lands under a different home path than its capture, as the P3 gate asks. The P1 gate also asks for real settings behavior: extending `tools/nested-check.py` to restore a profile into the nested session is the next verification step there. On this machine, a dry-run capture of apps and a plan of a package-only profile also ran against the system's own pacman without root, changing nothing.
 
-## 10. Coverage by adapter
+## 11. Coverage by adapter
 
 | Adapter | Capture | Plan | Apply | Verify | Recovery | State |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -202,9 +241,15 @@ The tests use fake commands, including a stateful fake pacman, and `tools/profil
 | Settings: Omarchy commands | yes | yes | yes | read-back | per catalog: undo or best effort | P1, fixture-tested |
 | Applications from configured repositories | yes | pacman's dry run | pacman, in a terminal | reads pacman afterwards | reported, not undone | P2, fixture-tested and checked with real pacman |
 | Applications from the AUR | with `--resolve-aur`, or from the catalog | needs `yay` | yay, in a terminal, with review | reads pacman afterwards | reported, not undone | P2, fixture-tested |
-| Dock, launchers, associations, shortcuts, window rules | none | listed as manual | none | none | none | P3 |
-| Ghostty and Alacritty files | none | listed as manual | none | none | none | P3 |
-| Backgrounds, icons, theme files | none | listed as manual | none | none | none | P3 |
+| Dock | yes | yes | Omarchy's dock command | read back | no automatic undo; the file is backed up | P3, fixture-tested |
+| Launchers | changed fields, icon files as assets | yes | the launcher editor | read back | the editor's own undo | P3, fixture-tested |
+| File associations | everyday types | yes | `xdg-mime` | read back | no automatic undo; the file is backed up | P3, fixture-tested |
+| Owned shortcuts and window rules | yes | yes, with collisions | `omarchy-control.lua` | binds list, config errors | no automatic undo; files backed up | P3, fixture-tested |
+| Themes from Git | the https address | never replaces one | `git clone`, without switching | the folder's origin | a failed clone is removed; no undo after | P3, fixture-tested |
+| Background | with its file when it is the user's | waits for its theme | `omarchy theme bg set` | the background link | no automatic undo | P3, fixture-tested |
+| Bar layout | Omarchy's own widgets, data options | yes | `shell.json`, then reload | read back | the file is backed up | P3, fixture-tested |
+| Plugins switched off | from the shell | yes | Omarchy's plugin commands | the shell's list | the file is backed up | P3, fixture-tested |
+| Ghostty and Alacritty files | reviewed contents | yes | atomic write | digest | the file is backed up | P3, fixture-tested |
 | Git and GitHub | none | none | none | none | none | P4 |
 | Window | none | none | none | none | none | P5 |
 
@@ -214,19 +259,24 @@ The tests use fake commands, including a stateful fake pacman, and `tools/profil
 | --- | --- | --- |
 | Launchers, associations, dock | LauncherEditor, SystemProvider associations, Omarchy's dock commands | Fixtures, then the nested session |
 | Shortcuts and window rules | Owned Lua module, merged by record id | Fixtures, then nested Hyprland |
-| Bar layout and plugins | PluginsProvider | Fixtures with a fake shell |
-| Backgrounds, theme and icon assets | profilefiles | Fixtures for digests, containment, links, and oversized files |
-| Ghostty and Alacritty configs | profilefiles adapters | Fixtures for includes, executable directives, and overlap with font and text size |
+| Themes, bar layout, and plugins | ProfileDesktop over Omarchy's own commands and `shell.json` | Fixtures with a fake shell and fake git, then the nested session |
+| Backgrounds and icon assets | profilefiles | Fixtures for digests, containment, links, and oversized files |
+| Ghostty and Alacritty configs | profilefiles adapters | Fixtures for includes, executable directives, and the order against font and text size |
 | GitHub | ProfileRepository over `git` and `gh` | Local bare repositories and a fake `gh`; one private test repository for the release gate |
 | Whole restore | All of the above | A disposable Omarchy VM |
 
-## 11. Known limits so far
+## 12. Known limits so far
 
 - There is no window yet (P5). The window's own controls already respect a restore running elsewhere, because every change goes through the coordinator.
 - Font, default apps, and language have no evidenced stock value, so without a baseline they need `--use-saved` on a fresh installation.
 - Hyprland provenance recognizes numeric and true/false assignments in the user's own Lua. A string value there, such as an acceleration profile, reads as Omarchy's default.
-- Font and text size edit terminal configs that P3's file adapters will own. P3 must order them, or refuse the overlap.
+- Font and text size edit the terminal files a profile can also carry. They are ordered after the files, so the setting lands on top; a profile whose file and font disagree ends with the font.
 - After the first write, a failure to update the run record does not stop the run. The coordinator's journal still records every change with its run id.
-- Apps install with pacman alone. Omarchy's own installers for some apps also write their configs, desktop entries, or browser policies; a restore does not run them, so that setup stays manual until P3's file adapters carry it.
+- Apps install with pacman alone. Omarchy's own installers for some apps also write their configs, desktop entries, or browser policies; a restore does not run them, and no file adapter carries that setup yet.
 - An AUR build is checked with a fake yay only. A real one needs the network and a real AUR package, which belongs in the disposable-VM check of P5.
+- Launchers that are the user's own files, such as web apps, are not carried yet; a launcher's icon file is.
+- A theme comes from its address as it is now, not as it was when saved: no commit is recorded. Omarchy's own staging of a Git theme leaves out anything that runs code.
+- Icon packs, third-party plugins and their widgets, and a bar chosen from a plugin are not carried. The bar's options are an allowlist, so an option a newer Omarchy adds is left out, with a note, until it is reviewed.
+- On a widget already on the bar, options a profile does not carry stay as they are here, while the ones it carries are set to the saved ones, which removes one the saved widget did not have.
+- Capture records file associations for the window's seven everyday types only.
 - The window cannot restore apps itself. Launching the command-line restore in a terminal, which then holds the lease and survives the window closing, is the P5 route.

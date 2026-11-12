@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QSet>
 #include <climits>
 #include <memory>
@@ -236,6 +237,7 @@ void ProfilePlanner::plan(const QString &directory, const Options &options, Done
     plan.valid = true;
     plan.profileName = parsed.profile.name;
     plan.profileDigest = parsed.profile.digest();
+    m_directory = plan.directory;
     planSettings(parsed.profile, options, plan, done);
 }
 
@@ -470,6 +472,7 @@ void ProfilePlanner::planSettings(const Profile &profile, const Options &options
     // them are in: what overrides one setting can be another one's value.
     auto finish = [this, profile, options, items, readResults, choiceResults, plan, done]() mutable {
         planPackages(profile, options, [this, profile, options, items, readResults, choiceResults, plan, done](const QList<ProfilePlanItem> &packageItems) mutable {
+            const QList<ProfilePlanItem> themeItems = planThemes(profile);
             const QJsonObject baseline = ProfileStore::baseline(m_env);
             const auto wanted = [](const QStringList &list, const QString &id) {
                 return list.contains(id) || list.contains(QStringLiteral("all"));
@@ -478,6 +481,12 @@ void ProfilePlanner::planSettings(const Profile &profile, const Options &options
                 for (const ProfilePlanItem &package : packageItems)
                     if (package.target == name && (package.action == QLatin1String("install") || package.action == QLatin1String("build")) && package.willRun())
                         return &package;
+                return nullptr;
+            };
+            const auto installingTheme = [&themeItems](const QString &folder) -> const ProfilePlanItem * {
+                for (const ProfilePlanItem &theme : themeItems)
+                    if (theme.target == "theme:" + folder && theme.willRun())
+                        return &theme;
                 return nullptr;
             };
             for (ProfilePlanItem &item : *items) {
@@ -525,9 +534,13 @@ void ProfilePlanner::planSettings(const Profile &profile, const Options &options
                         item.reason = overridden;
                         continue;
                     }
-                    // A default app whose app this restore installs first: it is checked again,
-                    // with the app in place, when its turn comes.
-                    if (const ProfilePlanItem *provider = installing(ProfileTraits::packageFor(*entry, item.desired))) {
+                    // A default app whose app this restore installs first, or a theme it
+                    // installs first: it is checked again, with that in place, when its turn
+                    // comes.
+                    const ProfilePlanItem *provider = installing(ProfileTraits::packageFor(*entry, item.desired));
+                    if (!provider && item.target == QLatin1String("appearance.theme"))
+                        provider = installingTheme(ProfileDesktop::themeFolder(item.desired));
+                    if (provider) {
                         item.needs << provider->id;
                         item.after << provider->id;
                     } else {
@@ -568,37 +581,52 @@ void ProfilePlanner::planSettings(const Profile &profile, const Options &options
                     else if (wanted(options.keepLocal, item.target))
                         item.resolution = QStringLiteral("keep-local");
                 }
-                if (!item.needs.isEmpty() && item.status == QLatin1String("ready"))
-                    item.reason = tr("Once %1 is installed.").arg(item.needs.first().mid(8));
+                if (!item.needs.isEmpty() && item.status == QLatin1String("ready")) {
+                    const QString need = item.needs.first();
+                    item.reason = need.startsWith(QLatin1String("desktop:theme:"))
+                                      ? tr("Once the %1 theme is installed.").arg(ProfileDesktop::themeName(need.mid(14)))
+                                      : tr("Once %1 is installed.").arg(need.mid(8));
+                }
             }
-            // Apps arrive before the settings that use them, and go only after the settings
-            // that replaced them have been verified.
-            QList<ProfilePlanItem> ordered;
+            bool appsPending = false;
             for (const ProfilePlanItem &package : packageItems)
-                if (package.mode == QLatin1String("present"))
-                    ordered << package;
-            ordered += *items;
-            for (const ProfilePlanItem &package : packageItems)
-                if (package.mode == QLatin1String("absent"))
-                    ordered << package;
-            plan.items = ordered;
-            // Sections a later version restores stay in view, never quietly dropped.
-            const auto section = [&plan](const QString &target, const QString &label, int count, const QString &reason) {
-                if (count == 0)
-                    return;
-                ProfilePlanItem item;
-                item.id = target;
-                item.kind = QStringLiteral("section");
-                item.target = target;
-                item.label = label;
-                item.status = QStringLiteral("manual");
-                item.reason = reason.arg(count);
-                plan.items << item;
-            };
-            section(QStringLiteral("desktop"), tr("Desktop"), profile.desktop.size(), tr("%1 saved desktop choices, such as the dock. This version does not restore them yet."));
-            section(QStringLiteral("files"), tr("Configuration files"), profile.files.size(), tr("%1 saved configuration files. This version does not restore them yet."));
-            section(QStringLiteral("assets"), tr("Backgrounds and icons"), profile.assets.size(), tr("%1 saved files such as backgrounds. This version does not restore them yet."));
-            done(plan);
+                appsPending = appsPending || ((package.action == QLatin1String("install") || package.action == QLatin1String("build")) && package.willRun());
+            const QList<ProfilePlanItem> settingItems = *items;
+            ProfileDesktop::Context context;
+            context.appsPending = appsPending;
+            context.directory = m_directory;
+            context.profile = profile;
+            for (const ProfilePlanItem &theme : themeItems)
+                if (theme.willRun())
+                    context.themesPending << theme.target.mid(6);
+            // The theme in effect once settings are restored: the profile's, if it will be,
+            // or this computer's as it stays.
+            for (const ProfilePlanItem &setting : settingItems)
+                if (setting.target == QLatin1String("appearance.theme"))
+                    context.theme = ProfileDesktop::themeFolder(setting.willRun() || setting.status == QLatin1String("unchanged") ? setting.desired : setting.current);
+            planDesktop(profile, options, context, [packageItems, themeItems, settingItems, profile, plan, done](const QList<ProfilePlanItem> &desktopItems) mutable {
+                // Apps and themes arrive before the settings and desktop choices that use them,
+                // and apps go only after whatever replaced them has been verified.
+                // Configuration files go before settings, so a font or text size restored with
+                // them is set on top of the file rather than overwritten by it.
+                QList<ProfilePlanItem> ordered;
+                for (const ProfilePlanItem &package : packageItems)
+                    if (package.mode == QLatin1String("present"))
+                        ordered << package;
+                ordered += themeItems;
+                for (const ProfilePlanItem &item : desktopItems)
+                    if (item.target.startsWith(QLatin1String("file:")))
+                        ordered << item;
+                ordered += settingItems;
+                for (const ProfilePlanItem &item : desktopItems)
+                    if (!item.target.startsWith(QLatin1String("file:")))
+                        ordered << item;
+                for (const ProfilePlanItem &package : packageItems)
+                    if (package.mode == QLatin1String("absent"))
+                        ordered << package;
+                plan.items = ordered;
+                done(plan);
+            });
         });
     };
 
@@ -625,6 +653,131 @@ void ProfilePlanner::planSettings(const Profile &profile, const Options &options
         }
     };
     (*next)(0);
+}
+
+QList<ProfilePlanItem> ProfilePlanner::planThemes(const Profile &profile) const {
+    QList<ProfilePlanItem> items;
+    if (!m_desktop)
+        return items;
+    ProfileDesktop::Snapshot snapshot;
+    snapshot.themes = ProfileDesktop::readThemes(m_env);
+    ProfileDesktop::Context context;
+    context.directory = m_directory;
+    context.profile = profile;
+    for (const QString &target : ProfileDesktop::targets(profile.desktop)) {
+        if (!target.startsWith(QLatin1String("theme:")))
+            continue;
+        ProfilePlanItem item;
+        item.id = "desktop:" + target;
+        item.kind = QStringLiteral("desktop");
+        item.target = target;
+        item.category = QStringLiteral("desktop");
+        item.mode = QStringLiteral("set");
+        item.desired = ProfileDesktop::desiredIn(profile, target);
+        item.label = ProfileDesktop::label(target, item.desired);
+        item.current = ProfileDesktop::current(snapshot, target);
+        item.currentStatus = QStringLiteral("ok");
+        item.effects = ProfileDesktop::effects(target, item.desired);
+        if (ProfileDesktop::matches(target, item.desired, item.current)) {
+            item.status = QStringLiteral("unchanged");
+            if (item.current == QLatin1String("builtin"))
+                item.reason = tr("Omarchy ships a theme by this name here, which is used instead.");
+        } else {
+            // Installing a theme overwrites nothing, so nothing here can be someone's choice
+            // that it would replace: it is ready, or it cannot be done.
+            item.reason = m_desktop->blockedReason(snapshot, target, item.desired, context);
+            item.status = item.reason.isEmpty() ? QStringLiteral("ready") : QStringLiteral("blocked");
+        }
+        items << item;
+    }
+    return items;
+}
+
+void ProfilePlanner::planDesktop(const Profile &profile, const Options &options, const ProfileDesktop::Context &given,
+                                 std::function<void(const QList<ProfilePlanItem> &)> done) {
+    QStringList targets = ProfileDesktop::fileTargets(profile);
+    for (const QString &target : ProfileDesktop::targets(profile.desktop))
+        if (!target.startsWith(QLatin1String("theme:")))  // Planned with the apps, first.
+            targets << target;
+    if (targets.isEmpty() || !m_desktop) {
+        done({});
+        return;
+    }
+    m_desktop->read(profile.desktop.value("associations").toObject().keys(), [this, profile, options, given, targets, done](const ProfileDesktop::Snapshot &snapshot) {
+        ProfileDesktop::Context context = given;
+        if (context.theme.isEmpty())
+            context.theme = snapshot.theme;
+        const bool appsPending = context.appsPending;
+        const QJsonObject baseline = ProfileStore::baseline(m_env);
+        const auto chosen = [](const QStringList &list, const QString &target) {
+            return list.contains(target) || list.contains("desktop:" + target) || list.contains(QStringLiteral("all"));
+        };
+        QList<ProfilePlanItem> items;
+        for (const QString &target : targets) {
+            ProfilePlanItem item;
+            item.id = "desktop:" + target;
+            item.kind = QStringLiteral("desktop");
+            item.target = target;
+            item.category = target.startsWith(QLatin1String("file:")) ? QStringLiteral("files") : QStringLiteral("desktop");
+            item.mode = QStringLiteral("set");
+            item.desired = ProfileDesktop::desiredIn(profile, target);
+            item.label = ProfileDesktop::label(target, item.desired);
+            item.current = ProfileDesktop::current(snapshot, target);
+            item.currentStatus = QStringLiteral("ok");
+            item.effects = ProfileDesktop::effects(target, item.desired);
+            if (ProfileDesktop::matches(target, item.desired, item.current)) {
+                item.status = QStringLiteral("unchanged");
+                items << item;
+                continue;
+            }
+            const QString blocked = m_desktop->blockedReason(snapshot, target, item.desired, context);
+            if (!blocked.isEmpty()) {
+                item.status = QStringLiteral("blocked");
+                item.reason = blocked;
+                items << item;
+                continue;
+            }
+            item.confirmText = ProfileDesktop::ownershipText(snapshot, target);
+            item.needsOwnership = !item.confirmText.isEmpty();
+            // A background of a theme this restore installs waits for that theme.
+            const QString backgroundTheme = target == QLatin1String("background") ? QJsonDocument::fromJson(item.desired.toUtf8()).object().value("theme").toString() : QString();
+            if (!backgroundTheme.isEmpty() && context.themesPending.contains(backgroundTheme)) {
+                item.needs << "desktop:theme:" + backgroundTheme;
+                item.after << "desktop:theme:" + backgroundTheme;
+            }
+            // Keys that do something else here are only taken over by a decision. Otherwise,
+            // as with settings: a record of what this computer agreed on tells a change made
+            // here since from a profile that moved, and without one, anything that may be a
+            // choice made here is not overwritten unasked.
+            const QString collision = ProfileDesktop::collision(snapshot, target, item.desired);
+            const QString key = "desktop:" + target;
+            if (!collision.isEmpty()) {
+                item.status = QStringLiteral("conflict");
+                item.reason = collision;
+            } else if (baseline.contains(key)) {
+                const bool unchangedHere = baseline.value(key).toObject().value("value").toString() == item.current;
+                item.status = unchangedHere ? QStringLiteral("ready") : QStringLiteral("conflict");
+                if (!unchangedHere)
+                    item.reason = tr("Changed on this computer since it was last saved or restored.");
+            } else {
+                const QString local = ProfileDesktop::localChoice(snapshot, target, item.current);
+                item.status = local.isEmpty() ? QStringLiteral("ready") : QStringLiteral("conflict");
+                item.reason = local;
+            }
+            if (item.status == QLatin1String("ready") && item.current.isEmpty()
+                && (target.startsWith(QLatin1String("launcher:")) || target.startsWith(QLatin1String("association:"))) && appsPending
+                && !snapshot.launchers.contains(target.startsWith(QLatin1String("launcher:")) ? target.mid(9) : item.desired))
+                item.reason = tr("Once its app is installed: it is checked again when its turn comes.");
+            if (item.status == QLatin1String("conflict")) {
+                if (chosen(options.useSaved, target))
+                    item.resolution = QStringLiteral("use-saved");
+                else if (chosen(options.keepLocal, target))
+                    item.resolution = QStringLiteral("keep-local");
+            }
+            items << item;
+        }
+        done(items);
+    });
 }
 
 bool ProfilePlanner::save(const ProfilePlan &plan, QString *error) const {

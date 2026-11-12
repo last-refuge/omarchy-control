@@ -39,6 +39,8 @@ HEADERS += \
     $$PWD/src/packageprovider.h \
     $$PWD/src/profilemodel.h \
     $$PWD/src/profilecapture.h \
+    $$PWD/src/profiledesktop.h \
+    $$PWD/src/profilefiles.h \
     $$PWD/src/profileplanner.h \
     $$PWD/src/profilerunner.h \
     $$PWD/src/appcore.h \
@@ -82,6 +84,8 @@ SOURCES += \
     $$PWD/src/packageprovider.cpp \
     $$PWD/src/profilemodel.cpp \
     $$PWD/src/profilecapture.cpp \
+    $$PWD/src/profiledesktop.cpp \
+    $$PWD/src/profilefiles.cpp \
     $$PWD/src/profileplanner.cpp \
     $$PWD/src/profilerunner.cpp \
     $$PWD/src/backend.cpp \

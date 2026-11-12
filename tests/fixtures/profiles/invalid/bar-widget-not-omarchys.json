@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "name": "Third party",
+  "desktop": {
+    "bar": {
+      "layout": {
+        "right": [
+          {
+            "id": "nixfred.blip"
+          }
+        ]
+      }
+    }
+  }
+}

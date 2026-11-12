@@ -18,7 +18,8 @@ public:
     QVariantList rules() const;
 
     // Empty if acceptable; otherwise why not.
-    Q_INVOKABLE QString validate(const QString &match, const QString &action, const QString &value) const;
+    Q_INVOKABLE QString validate(const QString &match, const QString &action, const QString &value) const { return check(match, action, value); }
+    static QString check(const QString &match, const QString &action, const QString &value);
     Q_INVOKABLE void addRule(const QString &match, const QString &action, const QString &value);
     Q_INVOKABLE void removeRule(int index);
 

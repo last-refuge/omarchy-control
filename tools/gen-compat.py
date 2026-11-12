@@ -32,6 +32,18 @@ for setting, binaries in {"appearance.icons": ["omarchy-hook", "omarchy-theme-se
     for binary in binaries:
         with open("/usr/bin/" + binary, "rb") as f:
             out["commands"][binary] = hashlib.sha256(f.read()).hexdigest()
+# Profile restores that are not settings: themes installed from Git the way
+# omarchy-theme-install does, into the same folder under the same name; the bar's layout
+# written the way omarchy-bar commits shell.json; and plugins switched with Omarchy's own
+# commands (docs/MY-OMARCHY.md).
+out["adapters"] = {}
+for adapter, binaries in {"profile.themes": ["omarchy-theme-install"],
+                          "profile.bar": ["omarchy-bar", "omarchy-shell-config"],
+                          "profile.plugins": ["omarchy-plugin-disable", "omarchy-plugin-enable", "omarchy-plugin-list"]}.items():
+    out["adapters"][adapter] = binaries
+    for binary in binaries:
+        with open("/usr/bin/" + binary, "rb") as f:
+            out["commands"][binary] = hashlib.sha256(f.read()).hexdigest()
 json.dump(out, open(ROOT + "/src/data/compat.json", "w"), indent=1, sort_keys=True)
 open(ROOT + "/src/data/compat.json", "a").write("\n")
 print(f"{len(out['settings'])} settings pinned to {len(out['commands'])} commands, on Omarchy {out['omarchy']}")

@@ -8,6 +8,7 @@
 #include "capabilities.h"
 #include "catalog.h"
 #include "packageprovider.h"
+#include "profiledesktop.h"
 #include "profilemodel.h"
 #include "settingsengine.h"
 
@@ -99,9 +100,18 @@ public:
     static QString packageState(const PackageProvider::Inventory &inventory, const QString &name);
     static bool packageSatisfied(const ProfilePlanItem &item, const QString &state);
 
+    // The dock, launchers, file associations, and owned shortcuts and rules.
+    void setDesktop(ProfileDesktop *desktop) { m_desktop = desktop; }
+
 private:
     void planSettings(const Profile &profile, const Options &options, ProfilePlan plan, Done done);
+    QString m_directory;  // The profile being planned, which holds its files.
     void planPackages(const Profile &profile, const Options &options, std::function<void(const QList<ProfilePlanItem> &)> done);
+    void planDesktop(const Profile &profile, const Options &options, const ProfileDesktop::Context &context,
+                     std::function<void(const QList<ProfilePlanItem> &)> done);
+    // Themes installed from Git, read from their files alone, so the settings that select
+    // them can wait for them as default apps wait for their apps.
+    QList<ProfilePlanItem> planThemes(const Profile &profile) const;
     QString provenance(const CatalogEntry &entry, const ReadResult &read) const;
 
     const Catalog *m_catalog;
@@ -109,4 +119,5 @@ private:
     Capabilities *m_capabilities;
     PackageProvider *m_packages;
     Env m_env;
+    ProfileDesktop *m_desktop = nullptr;
 };

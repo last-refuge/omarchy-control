@@ -122,7 +122,7 @@
   "profile": {
    "portability": "later",
    "category": "appearance",
-   "reason": "A background is a file, so it is restored with assets in a later version."
+   "reason": "A profile carries the background as a record of its own, with the file when it is one of yours, so it is not saved as a setting."
   }
  },
  {
@@ -1572,9 +1572,9 @@
   "scope": "per-user",
   "quick": false,
   "profile": {
-   "portability": "later",
+   "portability": "portable",
    "category": "desktop",
-   "reason": "Restored with the bar's layout in a later version."
+   "stock": "true"
   }
  },
  {
@@ -1632,9 +1632,9 @@
   "note": "custombar",
   "scope": "per-user",
   "profile": {
-   "portability": "later",
+   "portability": "portable",
    "category": "desktop",
-   "reason": "Restored with the bar's layout in a later version."
+   "stock": "top"
   }
  },
  {
@@ -1688,9 +1688,9 @@
   "note": "custombar",
   "scope": "per-user",
   "profile": {
-   "portability": "later",
+   "portability": "portable",
    "category": "desktop",
-   "reason": "Restored with the bar's layout in a later version."
+   "stock": "opaque"
   }
  },
  {
@@ -1788,7 +1788,7 @@
   "profile": {
    "portability": "later",
    "category": "desktop",
-   "reason": "Restored with the bar's layout in a later version."
+   "reason": "Saved with the bar's layout, as one of the clock's options."
   }
  },
  {
@@ -1856,7 +1856,7 @@
   "profile": {
    "portability": "later",
    "category": "desktop",
-   "reason": "Restored with the bar's layout in a later version."
+   "reason": "Saved with the bar's layout, as one of the clock's options."
   }
  },
  {
@@ -1914,9 +1914,9 @@
   "note": "customdock",
   "scope": "per-user",
   "profile": {
-   "portability": "later",
+   "portability": "portable",
    "category": "desktop",
-   "reason": "Restored with the dock in a later version."
+   "stock": "bottom"
   }
  },
  {
@@ -1964,9 +1964,9 @@
   "note": "customdock",
   "scope": "per-user",
   "profile": {
-   "portability": "later",
+   "portability": "portable",
    "category": "desktop",
-   "reason": "Restored with the dock in a later version."
+   "stock": "false"
   }
  },
  {

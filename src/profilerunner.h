@@ -8,6 +8,7 @@
 #include "catalog.h"
 #include "changecoordinator.h"
 #include "packageprovider.h"
+#include "profiledesktop.h"
 #include "profileplanner.h"
 #include "settingsengine.h"
 
@@ -64,6 +65,8 @@ public:
     void setPackageTerminal(bool attached) { m_packageTerminal = attached; }
     // How long to wait for another package operation before pausing the run.
     void setPacmanWait(int milliseconds) { m_pacmanWaitMs = milliseconds; }
+    // The dock, launchers, file associations, and owned shortcuts and rules.
+    void setDesktop(ProfileDesktop *desktop) { m_desktop = desktop; }
 
     // Refuses before any change when the plan is stale, the profile changed since it was
     // planned, or another restore holds the lease. `run.state` is empty then, and
@@ -86,10 +89,12 @@ private:
     void executePackages(std::shared_ptr<ProfileRun> run, int index, Done done);
     void transact(std::shared_ptr<ProfileRun> run, QList<int> batch, int index, Done done);
     void conclude(std::shared_ptr<ProfileRun> run, Done done);
+    void finishRun(std::shared_ptr<ProfileRun> run, Done done);
     bool persist(const ProfileRun &run, QString *error = nullptr) const;
     struct Observed {
         QHash<QString, ReadResult> settings;
         PackageProvider::Inventory packages;
+        ProfileDesktop::Snapshot desktop;
     };
     void readAll(std::shared_ptr<ProfileRun> run, std::function<void(const Observed &)> done);
     ProfilePlanItem asPlanItem(const ProfileRunItem &item) const;
@@ -102,5 +107,7 @@ private:
     bool m_cancelled = false;
     bool m_running = false;
     bool m_packageTerminal = false;
+    ProfileDesktop::Context m_desktopContext;  // The profile being restored, and its folder.
     int m_pacmanWaitMs = 60000;
+    ProfileDesktop *m_desktop = nullptr;
 };
