@@ -1,7 +1,7 @@
 {
     "claimedCommands": 301,
     "claimedMenu": 356,
-    "entries": 513,
+    "entries": 514,
     "excludedCommands": 132,
     "excludedMenu": 0,
     "exclusions": {
@@ -1222,7 +1222,8 @@
         },
         {
             "applicable_capability": [
-                "shell"
+                "shell",
+                "barclock"
             ],
             "apply_restart_semantics": "",
             "domain": "C15",
@@ -1252,7 +1253,8 @@
         },
         {
             "applicable_capability": [
-                "shell"
+                "shell",
+                "barclock"
             ],
             "apply_restart_semantics": "",
             "domain": "C15",
@@ -10532,6 +10534,36 @@
         },
         {
             "applicable_capability": [
+            ],
+            "apply_restart_semantics": "",
+            "domain": "C22",
+            "id": "myomarchy.open",
+            "implementation_status": "implemented",
+            "integration_mode": "native",
+            "known_limitation": "",
+            "read_method": "none",
+            "recovery_class": "no-undo",
+            "searchable_labels": [
+                "Save and restore this setup",
+                "my omarchy",
+                "profile",
+                "backup",
+                "restore",
+                "migrate",
+                "new computer",
+                "dotfiles",
+                "github",
+                "sync settings",
+                "save settings"
+            ],
+            "source_references": [
+            ],
+            "supported_versions": "omarchy 4.5.x",
+            "validation_evidence": "route-reviewed",
+            "write_or_launch_method": "page"
+        },
+        {
+            "applicable_capability": [
                 "gnome-disks"
             ],
             "apply_restart_semantics": "",
@@ -12319,7 +12351,7 @@
     "modes": {
         "advanced-config": 22,
         "external-helper": 22,
-        "native": 113,
+        "native": 114,
         "omarchy-panel": 22,
         "omarchy-wizard": 334
     },

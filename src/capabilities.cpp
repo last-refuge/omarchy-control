@@ -110,6 +110,18 @@ void Capabilities::scanFiles() {
     };
     set("custombar", !barId.isEmpty() && barId != QLatin1String("omarchy.bar"));
     set("custombar.id", barId);
+    // `omarchy bar get` and `set` only reach a widget that is on the bar, so a bar without
+    // Omarchy's clock (a custom one often swaps it for its own) leaves the clock formats
+    // nothing to read or change. A shell.json that says nothing about the layout is the
+    // stock bar, which has the clock.
+    const QJsonObject barLayout = shellConfig.value("bar").toObject().value("layout").toObject();
+    bool barClock = barLayout.isEmpty();
+    for (auto section = barLayout.begin(); section != barLayout.end() && !barClock; ++section)
+        for (const auto &widget : section.value().toArray())
+            // Omarchy accepts a bare id as well as an object with options.
+            if ((widget.isString() ? widget.toString() : widget.toObject().value("id").toString()) == QLatin1String("omarchy.clock"))
+                barClock = true;
+    set("barclock", barClock);
     set("customdock", isDisabled("omarchy.dock"));
     set("custompower", isDisabled("omarchy.power"));
 
@@ -214,6 +226,8 @@ Capabilities::Availability Capabilities::availability(const CatalogEntry &entry)
             result.reason = tr("The Omarchy shell is not responding, so this is unavailable right now.");
         else if (cap == QLatin1String("hyprland"))
             result.reason = tr("Hyprland is not reachable from this window.");
+        else if (cap == QLatin1String("barclock"))
+            result.reason = tr("Your bar has no Omarchy clock, so there is nothing to set here.");
         else
             result.reason = tr("A required service is not running.");
         return result;

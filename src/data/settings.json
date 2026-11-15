@@ -1783,7 +1783,8 @@
   "note": "custombar",
   "scope": "per-user",
   "requiresCaps": [
-   "shell"
+   "shell",
+   "barclock"
   ],
   "profile": {
    "portability": "later",
@@ -1851,7 +1852,8 @@
   "note": "custombar",
   "scope": "per-user",
   "requiresCaps": [
-   "shell"
+   "shell",
+   "barclock"
   ],
   "profile": {
    "portability": "later",

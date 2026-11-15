@@ -3850,6 +3850,51 @@ esac
         core.capabilities.scanFiles();
         QVERIFY(!core.capabilities.has("reboot.needed"));
     }
+    void theClockFormatsNeedTheClockOnTheBar() {
+        Sandbox s;
+        // Omarchy's `bar get` answers for a widget that is on the bar and fails for one that is not.
+        s.omarchy("case \"$*\" in\n"
+                  "  'bar get omarchy.clock format') echo 'dddd HH:mm';;\n"
+                  "  'bar get omarchy.clock verticalFormat') echo HH;;\n"
+                  "  *) exit 1;;\n"
+                  "esac");
+        const QString shellJson = s.env.configHome + "/omarchy/shell.json";
+        writeFile(shellJson, R"({"bar":{"layout":{"left":["omarchy.menu"],"center":[{"id":"omarchy.clock","format":"dddd HH:mm"}]}}})");
+        AppCore core(s.env);
+        const QStringList rows{"desktop.clock.format", "desktop.clock.vertical"};
+        QVERIFY(core.capabilities.has("barclock"));
+        for (const QString &id : rows)
+            QCOMPARE(readSetting(core.engine, id).status, QString("ok"));
+
+        // A bare id is the clock too, and a longer id that starts the same is not.
+        writeFile(shellJson, R"({"bar":{"layout":{"right":["omarchy.clock"]}}})");
+        core.capabilities.scanFiles();
+        QVERIFY(core.capabilities.has("barclock"));
+        writeFile(shellJson, R"({"bar":{"layout":{"right":["omarchy.clockwork"]}}})");
+        core.capabilities.scanFiles();
+        QVERIFY(!core.capabilities.has("barclock"));
+
+        // A custom bar that swapped the clock for its own leaves these with nothing to read or change.
+        writeFile(shellJson, R"({"bar":{"id":"local.neon-bar","layout":{"left":["omarchy.menu"],"center":[{"id":"nixfred.chronos"}],"tray":[]}}})");
+        core.capabilities.scanFiles();
+        QVERIFY(!core.capabilities.has("barclock"));
+        for (const QString &id : rows) {
+            const auto availability = core.capabilities.availability(*core.catalog.find(id));
+            QVERIFY(!availability.available);
+            QVERIFY(availability.reason.contains("no Omarchy clock"));
+            const auto result = readSetting(core.engine, id);
+            QCOMPARE(result.status, QString("unavailable"));
+            QVERIFY(result.reason.contains("no Omarchy clock"));
+        }
+
+        // A shell.json that says nothing about the layout is the stock bar, so the rows stay as they were.
+        for (const QByteArray &contents : {QByteArray("{}"), QByteArray(R"({"bar":{"id":"local.neon-bar"}})"), QByteArray("not json")}) {
+            writeFile(shellJson, contents);
+            core.capabilities.scanFiles();
+            QVERIFY(core.capabilities.has("barclock"));
+            QVERIFY(core.capabilities.availability(*core.catalog.find("desktop.clock.format")).available);
+        }
+    }
     void aRestoreKeepsWhatItReplaced() {
         Sandbox s;
         const QString file = s.env.configHome + "/c.json";
