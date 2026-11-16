@@ -55,11 +55,20 @@ public:
         QJsonObject extra;  // Kept on the transaction, for undoing it later.
         // For an action with no earlier value, where a failure has nothing to report but itself.
         bool nothingToRestore = false;
+        // External writers may not expose which bytes they wrote. Keep captured
+        // backups for review, but do not overwrite an un-attributable later edit.
+        bool restoreFilesOnFailure = true;
         // The restore run making this change. While a run holds the lease, nothing else runs.
         QString runId;
+        // Read-only, bounded checks under the change lock, before backups or
+        // intent. File fingerprints are checked again after this completes.
+        Step preflight;
         Step apply;
         Step verify;
         Step rollback;  // Beyond restoring `files`; optional.
+        // When a writer knows its exact bytes, use their fingerprints for
+        // recovery rather than attributing an edit during reload to this change.
+        std::function<QHash<QString, QString>()> writtenFingerprints;
         std::function<QString()> settled;  // The real result, when it can differ from `after`.
     };
     using Finished = std::function<void(const Transaction &)>;
@@ -106,10 +115,11 @@ private:
     };
     void pump();
     void run(Queued item);
+    void captureAndRun(Queued item, Transaction tx);
     void fail(Queued item, Transaction tx, const QString &error);
     bool append(const Transaction &tx);
     bool captureFiles(Transaction &tx, const QStringList &files, QString *error);
-    void recordAfter(Transaction &tx);
+    void recordAfter(Transaction &tx, const QHash<QString, QString> *written = nullptr);
     bool restoreFiles(const Transaction &tx, QString *error);
     void saveReplaced(const Transaction &tx, const QString &path);
     void finish(Queued &item, Transaction tx);

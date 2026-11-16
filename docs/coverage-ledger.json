@@ -1,7 +1,7 @@
 {
     "claimedCommands": 301,
     "claimedMenu": 356,
-    "entries": 514,
+    "entries": 515,
     "excludedCommands": 132,
     "excludedMenu": 0,
     "exclusions": {
@@ -469,6 +469,32 @@
             ],
             "supported_versions": "omarchy 4.5.x",
             "validation_evidence": "apply, read back, and undo with real Omarchy scripts and real Hyprland in an isolated nested session, 2026-11-06 (tools/nested-check.py)",
+            "write_or_launch_method": "cmd"
+        },
+        {
+            "applicable_capability": [
+                "omarchy-theme-bg-intro"
+            ],
+            "apply_restart_semantics": "",
+            "domain": "C01",
+            "id": "appearance.background.intros",
+            "implementation_status": "implemented",
+            "integration_mode": "native",
+            "known_limitation": "",
+            "read_method": "exists",
+            "recovery_class": "best-effort",
+            "searchable_labels": [
+                "Background introductions",
+                "background intro",
+                "wallpaper intro",
+                "video intro"
+            ],
+            "source_references": [
+                "omarchy theme bg intro",
+                "appearance.background.intro"
+            ],
+            "supported_versions": "omarchy 4.5.x",
+            "validation_evidence": "fixture-tests",
             "write_or_launch_method": "cmd"
         },
         {
@@ -9606,7 +9632,12 @@
             "read_method": "none",
             "recovery_class": "no-undo",
             "searchable_labels": [
-                "Silenced crash notifications"
+                "Silenced crash notifications",
+                "mute crashes",
+                "mute crash notifications",
+                "silence crashes",
+                "program crash",
+                "unmute crash notifications"
             ],
             "source_references": [
                 "omarchy crash mute"
@@ -12351,7 +12382,7 @@
     "modes": {
         "advanced-config": 22,
         "external-helper": 22,
-        "native": 114,
+        "native": 115,
         "omarchy-panel": 22,
         "omarchy-wizard": 334
     },

@@ -1,4 +1,5 @@
 #include "backend.h"
+#include "preferences.h"
 
 #include <QThread>
 
@@ -426,7 +427,15 @@ void Backend::windowActivated() {
 }
 
 QVariantMap Backend::planChange(const QString &id, const QString &value) {
-    return m_core->engine.plan(id, value, m_choices.value(id)).toVariant();
+    auto choices = m_choices.value(id);
+    // A newly imported pack can be selected before the asynchronous effective
+    // state refresh completes. Plan against current installed descriptors too.
+    if (id == QLatin1String("appearance.icons")) {
+        const QString normalized = IconThemeProvider::normalizeChoice(value);
+        for (const auto &pack : IconThemes::discover(m_core->env))
+            if (normalized == "pack:" + pack.id) choices << QVariantMap{{"value", normalized}, {"label", pack.name}};
+    }
+    return m_core->engine.plan(id, value, choices).toVariant();
 }
 
 void Backend::handleResult(const QString &id, const CatalogEntry *entry, const Transaction &tx) {
@@ -619,26 +628,14 @@ bool Backend::compatible() const {
 }
 
 void Backend::loadPreferences() {
-    QByteArray contents;
-    FileOps::readFile(m_core->env.appConfigDir + "/preferences.json", &contents);
-    const auto object = QJsonDocument::fromJson(contents).object();
-    m_pins.clear();
-    for (const auto &value : object.value("pins").toArray())
-        m_pins << value.toString();
-}
-
-void Backend::savePreferences() {
-    QJsonObject object;
-    object["pins"] = QJsonArray::fromStringList(m_pins);
-    FileOps::atomicWrite(m_core->env.appConfigDir + "/preferences.json", QJsonDocument(object).toJson(), nullptr, 0600);
+    const auto result = Preferences::pins(m_core->env, m_core->catalog);
+    if (result.value("ok").toBool()) m_pins = result.value("pins").toVariant().toStringList();
 }
 
 void Backend::togglePin(const QString &id) {
-    if (m_pins.contains(id))
-        m_pins.removeAll(id);
-    else if (m_core->catalog.find(id))
-        m_pins << id;
-    savePreferences();
+    const auto result = Preferences::pins(m_core->env, m_core->catalog, "toggle", id);
+    if (!result.value("ok").toBool()) { emit toast(result.value("error").toString(), "error"); return; }
+    m_pins = result.value("pins").toVariant().toStringList();
     emit pinsChanged();
 }
 

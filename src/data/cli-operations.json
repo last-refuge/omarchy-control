@@ -1,0 +1,3085 @@
+[
+  {
+    "id": "audio.inspect",
+    "guiMethods": [
+      "AudioProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "status"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [],
+    "mutation": false,
+    "options": []
+  },
+  {
+    "id": "audio.subscription",
+    "guiMethods": [
+      "AudioProvider.setActive"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "Starts page-scoped observation; not a persistent setting or user operation.",
+    "apiVersions": []
+  },
+  {
+    "id": "audio.setDefaultOutput",
+    "guiMethods": [
+      "AudioProvider.setDefaultOutput"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "output",
+        "default",
+        "<name>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "source": "audio status: outputs[].name"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "compatibilityKeys": [
+      "audio.output.default"
+    ]
+  },
+  {
+    "id": "audio.setDefaultInput",
+    "guiMethods": [
+      "AudioProvider.setDefaultInput"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "input",
+        "default",
+        "<name>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "source": "audio status: inputs[].name"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "compatibilityKeys": [
+      "audio.input.default"
+    ]
+  },
+  {
+    "id": "audio.setVolume",
+    "guiMethods": [
+      "AudioProvider.setVolume"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "output",
+        "volume",
+        "<name>",
+        "<value>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "source": "audio status: outputs[].name"
+      },
+      {
+        "name": "value",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 150,
+        "unit": "percent"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "compatibilityKeys": [
+      "audio.output.routing"
+    ]
+  },
+  {
+    "id": "audio.setInputVolume",
+    "guiMethods": [
+      "AudioProvider.setInputVolume"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "input",
+        "volume",
+        "<name>",
+        "<value>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "source": "audio status: inputs[].name"
+      },
+      {
+        "name": "value",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 150,
+        "unit": "percent"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ]
+  },
+  {
+    "id": "audio.setMute",
+    "guiMethods": [
+      "AudioProvider.setMute"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "output",
+        "mute",
+        "<name>",
+        "<value>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "source": "audio status: outputs[].name"
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "enum": [
+          "true",
+          "false"
+        ]
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "compatibilityKeys": [
+      "audio.output.routing"
+    ]
+  },
+  {
+    "id": "audio.setInputMute",
+    "guiMethods": [
+      "AudioProvider.setInputMute"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "input",
+        "mute",
+        "<name>",
+        "<value>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "name",
+        "type": "string",
+        "source": "audio status: inputs[].name"
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "enum": [
+          "true",
+          "false"
+        ]
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ]
+  },
+  {
+    "id": "audio.moveStream",
+    "guiMethods": [
+      "AudioProvider.moveStream"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "audio",
+        "stream",
+        "move",
+        "<index@identity>",
+        "<output>"
+      ]
+    ],
+    "reason": "Shared audio provider; changes are journaled and read back. Default changes verify the default device, not every application stream.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "audio",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "parameters": [
+      {
+        "name": "index@identity",
+        "type": "string",
+        "pattern": "^[0-9]+@[0-9]+$",
+        "source": "audio status: streams[].selector; identities are valid only within the current audio session"
+      },
+      {
+        "name": "output",
+        "type": "string",
+        "source": "audio status: outputs[].name"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ]
+  },
+  {
+    "id": "bluetooth.inspect",
+    "guiMethods": [
+      "BluetoothProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "bluetooth",
+        "status"
+      ]
+    ],
+    "reason": "Shared Bluetooth provider; all controllers and known-device reads must succeed. Pairing is handed to the Omarchy panel. Forget and power off require consequence acknowledgement.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [],
+    "mutation": false,
+    "discovery": [
+      "bluetooth",
+      "status"
+    ],
+    "options": [],
+    "recovery": "no-undo"
+  },
+  {
+    "id": "bluetooth.setPowered",
+    "guiMethods": [
+      "BluetoothProvider.setPowered"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "bluetooth",
+        "power",
+        "<value>"
+      ]
+    ],
+    "reason": "Shared Bluetooth provider; all controllers and known-device reads must succeed. Pairing is handed to the Omarchy panel. Forget and power off require consequence acknowledgement.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "value",
+        "type": "string",
+        "enum": [
+          "true",
+          "false"
+        ]
+      }
+    ],
+    "mutation": true,
+    "discovery": [
+      "bluetooth",
+      "status"
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "recovery": "no-undo",
+    "compatibilityKeys": [
+      "bluetooth.power"
+    ]
+  },
+  {
+    "id": "bluetooth.connectDevice",
+    "guiMethods": [
+      "BluetoothProvider.connectDevice"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "bluetooth",
+        "connect",
+        "<address>"
+      ]
+    ],
+    "reason": "Shared Bluetooth provider; all controllers and known-device reads must succeed. Pairing is handed to the Omarchy panel. Forget and power off require consequence acknowledgement.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "address",
+        "type": "string",
+        "pattern": "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$",
+        "source": "bluetooth status: devices[].address"
+      }
+    ],
+    "mutation": true,
+    "discovery": [
+      "bluetooth",
+      "status"
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "recovery": "no-undo",
+    "compatibilityKeys": [
+      "bluetooth.device"
+    ]
+  },
+  {
+    "id": "bluetooth.disconnectDevice",
+    "guiMethods": [
+      "BluetoothProvider.disconnectDevice"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "bluetooth",
+        "disconnect",
+        "<address>"
+      ]
+    ],
+    "reason": "Shared Bluetooth provider; all controllers and known-device reads must succeed. Pairing is handed to the Omarchy panel. Forget and power off require consequence acknowledgement.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "address",
+        "type": "string",
+        "pattern": "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$",
+        "source": "bluetooth status: devices[].address"
+      }
+    ],
+    "mutation": true,
+    "discovery": [
+      "bluetooth",
+      "status"
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "recovery": "no-undo",
+    "compatibilityKeys": [
+      "bluetooth.device"
+    ]
+  },
+  {
+    "id": "bluetooth.forgetDevice",
+    "guiMethods": [
+      "BluetoothProvider.forgetDevice"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "bluetooth",
+        "forget",
+        "<address>"
+      ]
+    ],
+    "reason": "Shared Bluetooth provider; all controllers and known-device reads must succeed. Pairing is handed to the Omarchy panel. Forget and power off require consequence acknowledgement.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "address",
+        "type": "string",
+        "pattern": "^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$",
+        "source": "bluetooth status: devices[].address"
+      }
+    ],
+    "mutation": true,
+    "discovery": [
+      "bluetooth",
+      "status"
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "recovery": "no-undo",
+    "compatibilityKeys": [
+      "bluetooth.device"
+    ]
+  },
+  {
+    "id": "network.refresh",
+    "guiMethods": [
+      "NetworkProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "status"
+      ],
+      [
+        "network",
+        "general"
+      ],
+      [
+        "network",
+        "devices"
+      ],
+      [
+        "network",
+        "saved"
+      ],
+      [
+        "network",
+        "wifi"
+      ]
+    ],
+    "reason": "Shared awaited reads expose per-source failure/null states, all reported device/profile types and cached AP identities. They perform no rescan, connectivity check, secrets read or connection change; snapshots are not atomic and AP age is unknown.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "section",
+        "type": "enum",
+        "choices": [
+          "status",
+          "general",
+          "devices",
+          "saved",
+          "wifi"
+        ],
+        "description": "status reads all sections; the others read only that section."
+      }
+    ],
+    "mutation": false,
+    "options": [],
+    "recovery": "no-undo",
+    "verificationScope": "networkmanager-reported-state"
+  },
+  {
+    "id": "network.rescan",
+    "guiMethods": [
+      "NetworkProvider.rescan"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "rescan",
+        "[interface]"
+      ]
+    ],
+    "reason": "Shared planned scan requests use fresh radio/device reads, the change lock/restore lease and noninteractive RequestScan D-Bus calls. scan_requested confirms acceptance only; per-interface unknown/partial results do not verify completion or fresh AP data.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "interface",
+        "type": "string",
+        "optional": true,
+        "source": "devices[].device for type wifi",
+        "discovery": [
+          "network",
+          "devices"
+        ],
+        "description": "One current Wi-Fi interface, or every eligible managed/available Wi-Fi interface when omitted. At most 16 per request."
+      }
+    ],
+    "discovery": [
+      "network",
+      "devices"
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "scan-request-acceptance-only"
+  },
+  {
+    "id": "network.setWifiEnabled",
+    "guiMethods": [
+      "NetworkProvider.setWifiEnabled"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "radio",
+        "<true|false>"
+      ]
+    ],
+    "reason": "Shared plans and guarded writes control NetworkManager Wi-Fi WirelessEnabled. Authoritative switch/hardware readback verifies the switch only; disabling requires consequence acknowledgement, and no connection usability or internet claim is made.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "enabled",
+        "type": "boolean",
+        "values": [
+          "true",
+          "false"
+        ],
+        "description": "NetworkManager global Wi-Fi switch; off requires --yes. Hardware-blocked enabling is refused."
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "NetworkManager-radio-switch-only"
+  },
+  {
+    "id": "network.previewStatus",
+    "guiMethods": [],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "preview",
+        "status",
+        "[token]"
+      ]
+    ],
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "token",
+        "type": "string",
+        "optional": true,
+        "description": "Current owned token if omitted, or an earlier receipt token."
+      }
+    ],
+    "options": [],
+    "mutation": true,
+    "reason": "Inspects a persisted preview across processes. Only owned receipt metadata can be reconciled on status; it never creates, keeps, rolls back or destroys a NetworkManager checkpoint. Absence/daemon replacement remains an unknown outcome.",
+    "verificationScope": "NetworkManager-reported-device-state",
+    "desktopMutation": false,
+    "localReceiptReconciliation": true
+  },
+  {
+    "id": "network.activate",
+    "guiMethods": [
+      "NetworkProvider.activate"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "activate",
+        "<uuid>",
+        "<interface>"
+      ]
+    ],
+    "reason": "A durable, private CLI token binds a mandatory 60-second NetworkManager checkpoint to the bus, daemon, device identity and baseline. Target readback is a pending preview, never an implicit keep. Secured/802.1X, generated/volatile, composite/VPN and unmanaged targets are explicit limits. The GUI compatibility route retains its older behavior and is fenced against CLI-owned previews.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "uuid",
+        "type": "string",
+        "discovery": [
+          "network",
+          "saved"
+        ],
+        "description": "Ordinary saved Ethernet or open Wi-Fi UUID; secured/802.1X activation is a panel handoff."
+      },
+      {
+        "name": "interface",
+        "type": "string",
+        "discovery": [
+          "network",
+          "devices"
+        ],
+        "description": "Explicit current managed Ethernet/Wi-Fi interface."
+      }
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "mutation": true,
+    "recovery": "NetworkManager-checkpoint"
+  },
+  {
+    "id": "network.deactivate",
+    "guiMethods": [
+      "NetworkProvider.deactivate"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "disconnect",
+        "<interface>"
+      ]
+    ],
+    "reason": "CLI disconnection previews the single active connection under a mandatory durable checkpoint. It does not write profile/autoconnect preferences. Later keep/revert operates on the owned token; the GUI compatibility route remains distinct and guarded.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "interface",
+        "type": "string",
+        "discovery": [
+          "network",
+          "devices"
+        ],
+        "description": "One activated managed Ethernet/Wi-Fi interface with a single active connection."
+      }
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "mutation": true,
+    "recovery": "NetworkManager-checkpoint"
+  },
+  {
+    "id": "network.keepConnection",
+    "guiMethods": [
+      "NetworkProvider.keepConnection"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "preview",
+        "keep",
+        "<token>"
+      ]
+    ],
+    "reason": "Keeps only an owned live checkpoint with unchanged daemon, checkpoint/device identities and verified target state, before expiry. User usability acknowledgement is mandatory; internet access is never inferred.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "token",
+        "type": "string",
+        "description": "32 lowercase hex characters from data.receipt.token. User must confirm usability before --yes."
+      }
+    ],
+    "options": [
+      "--yes"
+    ],
+    "mutation": true,
+    "recovery": "NetworkManager-checkpoint"
+  },
+  {
+    "id": "network.revertConnection",
+    "guiMethods": [
+      "NetworkProvider.revertConnection"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "network",
+        "preview",
+        "revert",
+        "<token>"
+      ]
+    ],
+    "reason": "Reverts an owned live checkpoint, verifies every per-device rollback result and observes the captured baseline. Stale identities and unrelated later connection state are refused; missing checkpoints remain unknown.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "token",
+        "type": "string",
+        "description": "The owned preview token."
+      }
+    ],
+    "options": [],
+    "mutation": true,
+    "recovery": "NetworkManager-checkpoint"
+  },
+  {
+    "id": "display.inspect",
+    "guiMethods": [
+      "DisplayProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "display",
+        "status"
+      ]
+    ],
+    "reason": "Awaited, bounded monitor and compositor discovery preserves unknown states and exposes the recovery gate without changing the desktop.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": false,
+    "parameters": [],
+    "verificationScope": "Hyprland-reported-output-state",
+    "recovery": "no-undo"
+  },
+  {
+    "id": "display.layout",
+    "guiMethods": [
+      "DisplayProvider.validateLayout",
+      "DisplayProvider.preview",
+      "DisplayProvider.keep",
+      "DisplayProvider.revert",
+      "DisplayProvider.previewStaged"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "display",
+        "layout",
+        "<json-file>"
+      ],
+      [
+        "display",
+        "preview",
+        "status",
+        "[token]"
+      ],
+      [
+        "display",
+        "preview",
+        "keep",
+        "<token>"
+      ],
+      [
+        "display",
+        "preview",
+        "revert",
+        "<token>"
+      ]
+    ],
+    "reason": "Full typed layouts run under a detached session-bound watchdog. Private receipts survive the caller; another CLI or the GUI can adopt a token. Keep persists within the watchdog and requires the person to confirm usability.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "parameters": [
+      {
+        "name": "json-file",
+        "type": "path",
+        "source": "JSON array; one row per display status output. Omitted mutable fields inherit fresh reported values.",
+        "discovery": [
+          "display",
+          "status"
+        ],
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "output"
+            ],
+            "properties": {
+              "output": {
+                "type": "string"
+              },
+              "mode": {
+                "type": "string",
+                "source": "monitors[].modes or current mode"
+              },
+              "x": {
+                "type": "integer",
+                "minimum": -131072,
+                "maximum": 131072
+              },
+              "y": {
+                "type": "integer",
+                "minimum": -131072,
+                "maximum": 131072
+              },
+              "scale": {
+                "type": "number",
+                "minimum": 0.25,
+                "maximum": 8,
+                "normalization": "nearest valid Hyprland mode scale"
+              },
+              "transform": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 7
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "mirrorOf": {
+                "type": "string"
+              },
+              "vrr": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "token",
+        "type": "string",
+        "source": "data.receipt.token returned by display layout or display preview status"
+      }
+    ],
+    "discovery": [
+      "display",
+      "status"
+    ],
+    "recovery": "detached-watchdog-and-explicit-token-revert",
+    "verificationScope": "reported-output-geometry-and-owned-configuration",
+    "confirmation": "Layout preview requires --yes for output changes; Keep requires --yes only after the person confirms the preview is usable.",
+    "limitations": [
+      "No physical display usability claim.",
+      "Recovery check must pass for the running Hyprland version.",
+      "Keep refuses session, reported hardware or owned-file changes.",
+      "Failed restoration retains its plan and receipt for retry/review."
+    ]
+  },
+  {
+    "id": "display.recovery-check",
+    "guiMethods": [
+      "DisplayProvider.runRecoveryCheck"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "display",
+        "check"
+      ]
+    ],
+    "reason": "A versioned dry-run or acknowledged detached nudge/restore check unlocks editing only after observing movement and recovery. Legacy selftest remains available.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "parameters": [],
+    "recovery": "detached-watchdog",
+    "verificationScope": "reported-nudge-and-returned-layout",
+    "legacyInvocations": [
+      [
+        "selftest",
+        "display"
+      ]
+    ]
+  },
+  {
+    "id": "display.staging",
+    "guiMethods": [
+      "DisplayProvider.select",
+      "DisplayProvider.stageEdit",
+      "DisplayProvider.stagePosition",
+      "DisplayProvider.discardStaged",
+      "DisplayProvider.dismissOutcome"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "These methods select, edit, or dismiss the window draft. Complete-layout CLI input is tracked separately.",
+    "apiVersions": []
+  },
+  {
+    "id": "plugins.inspect",
+    "guiMethods": [
+      "PluginsProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "plugin",
+        "list"
+      ],
+      [
+        "plugin",
+        "status"
+      ],
+      [
+        "bar",
+        "status"
+      ],
+      [
+        "dock",
+        "status"
+      ]
+    ],
+    "reason": "Shared completed reads distinguish the live registry/configuration, persisted sources and offline manifest hints; raw widget instance options, selectors and ordered dock preferences are exposed.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": false,
+    "parameters": [],
+    "options": [],
+    "recovery": "read-only",
+    "results": {
+      "widgetSelectors": "bar.widgets[].selector; section:index@live-bar-sha256",
+      "scope": "Registry and configuration only; visible UI and plugin behavior are not verified.",
+      "dockScope": "Persisted preference only; no running shell is required."
+    }
+  },
+  {
+    "id": "plugins.enabled",
+    "guiMethods": [
+      "PluginsProvider.setEnabled"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "plugin",
+        "enable",
+        "<id>",
+        "--api-version",
+        "1"
+      ],
+      [
+        "plugin",
+        "disable",
+        "<id>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans use current source/live state, locked preflight, target/file guards and bounded readback. An unverified helper write reports partial state without overwriting possibly concurrent edits.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured file backups are retained for review. External helper writes are not automatically restored on failure.",
+    "compatibilityKeys": [
+      "plugins.enabled"
+    ],
+    "discovery": [
+      "plugin",
+      "list"
+    ],
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "source": "plugin list: plugins.items[].id",
+        "pattern": "[A-Za-z0-9][A-Za-z0-9._-]{0,254}",
+        "note": "Consecutive dots and control characters are refused; other reported IDs remain discoverable but are not writable here."
+      }
+    ],
+    "verificationScope": "registry-state-and-persisted-configuration",
+    "effects": [
+      "Widget enablement controls placement, not component loadability.",
+      "Selecting a bar replaces the active implementation; clone/source selection can also change.",
+      "Plugin code may load or unload within the shell."
+    ]
+  },
+  {
+    "id": "plugins.clone",
+    "guiMethods": [
+      "PluginsProvider.clonePlugin"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "plugin",
+        "clone",
+        "<id>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plan captures the affected directory, Git metadata or symlink and shell configuration before using the reviewed noninteractive helper; verifies files, registry and persisted/live state. Explicit guarded recovery preserves later edits and displaced content.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "discovery": [
+          "plugin",
+          "list"
+        ],
+        "source": "plugins.items[].id; built-in sources only"
+      }
+    ],
+    "recovery": "explicit-plugin-recover",
+    "verificationScope": "plugin-files-registry-and-persisted-live-configuration",
+    "compatibilityKeys": [
+      "plugins.clone"
+    ],
+    "limits": {
+      "treeBytes": 67108864,
+      "entries": 4096,
+      "depth": 32,
+      "hardlinks": "manual review",
+      "specialFiles": "refused",
+      "cloneSourceSymlinks": "manual review"
+    },
+    "effects": [
+      "Clone enables local code and replaces its built-in implementation.",
+      "Private snapshots are retained; automatic history undo is unavailable.",
+      "Interrupted writers without a captured post-write state require manual review."
+    ]
+  },
+  {
+    "id": "plugins.remove",
+    "guiMethods": [
+      "PluginsProvider.removePlugin"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "plugin",
+        "remove",
+        "<id>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plan captures the affected directory, Git metadata or symlink and shell configuration before using the reviewed noninteractive helper; verifies files, registry and persisted/live state. Explicit guarded recovery preserves later edits and displaced content.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string",
+        "discovery": [
+          "plugin",
+          "list"
+        ],
+        "source": "installed user plugin ID"
+      }
+    ],
+    "recovery": "explicit-plugin-recover",
+    "verificationScope": "plugin-files-registry-and-persisted-live-configuration",
+    "compatibilityKeys": [
+      "plugins.remove"
+    ],
+    "limits": {
+      "treeBytes": 67108864,
+      "entries": 4096,
+      "depth": 32,
+      "hardlinks": "manual review",
+      "specialFiles": "refused",
+      "cloneSourceSymlinks": "manual review"
+    },
+    "effects": [
+      "Removal can unload code, unlink a symlink, delete a Git checkout or preserve a plain directory in an Omarchy hidden backup.",
+      "Private snapshots are retained; automatic history undo is unavailable.",
+      "Interrupted writers without a captured post-write state require manual review."
+    ]
+  },
+  {
+    "id": "widgets.move",
+    "guiMethods": [
+      "PluginsProvider.moveWidget"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "widget",
+        "move",
+        "<selector>",
+        "<section>",
+        "<index>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans use current source/live state, locked preflight, target/file guards and bounded readback. An unverified helper write reports partial state without overwriting possibly concurrent edits.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured file backups are retained for review. External helper writes are not automatically restored on failure.",
+    "compatibilityKeys": [
+      "widgets.move"
+    ],
+    "discovery": [
+      "bar",
+      "status"
+    ],
+    "parameters": [
+      {
+        "name": "selector",
+        "type": "string",
+        "source": "bar status: bar.widgets[].selector",
+        "format": "section:index@live-bar-sha256"
+      },
+      {
+        "name": "section",
+        "type": "string",
+        "choices": [
+          "left",
+          "centerBegin",
+          "center",
+          "centerEnd",
+          "right",
+          "tray"
+        ]
+      },
+      {
+        "name": "index",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": "Destination length after removing the source instance."
+      }
+    ],
+    "verificationScope": "live-and-persisted-layout-with-instance-options"
+  },
+  {
+    "id": "dock.pin",
+    "guiMethods": [
+      "PluginsProvider.pin",
+      "PluginsProvider.unpin"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "dock",
+        "pin",
+        "<desktop-id>"
+      ],
+      [
+        "dock",
+        "unpin",
+        "<desktop-id>"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans use current source/live state, locked preflight, target/file guards and bounded readback. An unverified helper write reports partial state without overwriting possibly concurrent edits.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured file backups are retained for review. External helper writes are not automatically restored on failure.",
+    "compatibilityKeys": [
+      "dock.pin"
+    ],
+    "discovery": [
+      "dock",
+      "status"
+    ],
+    "parameters": [
+      {
+        "name": "desktop-id",
+        "type": "string",
+        "source": "apps list: apps[].id for pin; dock status: dock.pins[] for unpin",
+        "normalization": "Optional .desktop suffix is removed."
+      }
+    ],
+    "verificationScope": "persisted-preference-only",
+    "requirements": [
+      "A readable version 1 shell configuration with a declared bar layout. Pinning requires an available installed app; missing apps may be unpinned."
+    ]
+  },
+  {
+    "id": "shortcuts.inspect",
+    "guiMethods": [
+      "ShortcutsProvider.refresh",
+      "ShortcutsProvider.checkKeys"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "shortcut",
+        "list"
+      ],
+      [
+        "shortcut",
+        "check",
+        "<keys>"
+      ]
+    ],
+    "reason": "Shared provider reads reported bindings and the owned module separately; collision checks retain submaps and flags, and distinguish unresolved keycodes from named matches.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "shortcut",
+      "list"
+    ],
+    "mutation": false,
+    "options": [],
+    "recovery": "read-only",
+    "parameters": [
+      {
+        "name": "keys",
+        "type": "string",
+        "requiredFor": "check",
+        "modifiers": [
+          "SUPER",
+          "CTRL",
+          "ALT",
+          "SHIFT"
+        ],
+        "keyPattern": "[A-Z0-9_]{1,24}",
+        "normalization": "Case-insensitive, plus-separated; unique modifiers, no empty tokens; key last.",
+        "example": "SUPER + SHIFT + F"
+      }
+    ],
+    "results": {
+      "sources": [
+        "effective",
+        "owned"
+      ],
+      "collisionState": [
+        "conflict",
+        "unknown",
+        "no_named_match",
+        "unavailable",
+        "invalid"
+      ],
+      "scope": "Reported modifier masks and named keys across all submaps; keycode/multi-key aliases and keyboard layout equivalence are not resolved.",
+      "selection": "Use owned.binds[].selector for versioned removal; any owned-module change makes it stale."
+    }
+  },
+  {
+    "id": "shortcuts.add",
+    "guiMethods": [
+      "ShortcutsProvider.addBinding"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "shortcut",
+        "add",
+        "<keys>",
+        "<description>",
+        "<command>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans and transactions with locked preflight, file fingerprints, bounded runtime reads, scoped verification and failure rollback. Automatic history undo is unavailable.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured-file rollback plus checked recovery reload; concurrent later edits are retained.",
+    "files": [
+      "~/.config/hypr/omarchy-control.lua",
+      "~/.config/hypr/hyprland.lua"
+    ],
+    "discovery": [
+      "shortcut",
+      "list"
+    ],
+    "options": [
+      "--dry-run",
+      "--replace",
+      "--yes"
+    ],
+    "parameters": [
+      {
+        "name": "keys",
+        "type": "string",
+        "source": "shortcuts.inspect: keys grammar; named-key chords only"
+      },
+      {
+        "name": "description",
+        "type": "string",
+        "maximumLength": 256,
+        "controlCharacters": false,
+        "normalization": "Trim surrounding whitespace."
+      },
+      {
+        "name": "command",
+        "type": "string",
+        "minimumLength": 1,
+        "maximumLength": 8192,
+        "controlCharacters": false,
+        "note": "Saved as a command to run on keypress; not executed while saving.",
+        "normalization": "Trim surrounding whitespace."
+      }
+    ],
+    "confirmation": "A collision needs --replace; applying a replacement also needs --yes. --yes alone does not select replacement in API v1.",
+    "verificationScope": "owned-command-file-reload-and-live-lua-binding",
+    "liveCommandKnown": false,
+    "limitations": [
+      "Unresolved keycodes, matching submaps and catch-all bindings are refused.",
+      "Live Lua dispatcher references do not reveal the command string."
+    ]
+  },
+  {
+    "id": "shortcuts.remove",
+    "guiMethods": [
+      "ShortcutsProvider.removeBinding"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "shortcut",
+        "remove",
+        "<selector>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans and transactions with locked preflight, file fingerprints, bounded runtime reads, scoped verification and failure rollback. Automatic history undo is unavailable.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured-file rollback plus checked recovery reload; concurrent later edits are retained.",
+    "files": [
+      "~/.config/hypr/omarchy-control.lua",
+      "~/.config/hypr/hyprland.lua"
+    ],
+    "discovery": [
+      "shortcut",
+      "list"
+    ],
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "parameters": [
+      {
+        "name": "selector",
+        "type": "string",
+        "source": "shortcut list: owned.binds[].selector",
+        "format": "index@owned-module-sha256"
+      }
+    ],
+    "confirmation": "Removing a critical launcher/terminal chord needs --yes.",
+    "verificationScope": "owned-file-and-reload",
+    "limitations": [
+      "Inherited bindings can reappear; this does not globally unbind the chord."
+    ]
+  },
+  {
+    "id": "rules.inspect",
+    "guiMethods": [],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "rule",
+        "list",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Read-only owned-rule inventory with explicit source state, indices and fingerprinted selectors. Unversioned rule list retains its legacy JSON array.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "rule",
+      "list",
+      "--api-version",
+      "1"
+    ],
+    "mutation": false,
+    "parameters": [],
+    "options": [],
+    "recovery": "read-only",
+    "scope": "Owned module only; rules in other files and effective window behavior are not inspected."
+  },
+  {
+    "id": "rules.validate",
+    "guiMethods": [
+      "WindowRulesProvider.validate"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "rule",
+        "types"
+      ],
+      [
+        "rule",
+        "validate",
+        "<match>",
+        "<action>",
+        "[value]"
+      ]
+    ],
+    "reason": "Shared provider validates input without reading files or contacting Hyprland. This does not establish compositor acceptance or window behavior.",
+    "apiVersions": [
+      1
+    ],
+    "discovery": [
+      "rule",
+      "types"
+    ],
+    "mutation": false,
+    "options": [],
+    "recovery": "read-only",
+    "parameters": [
+      {
+        "name": "match",
+        "type": "string",
+        "maximumLength": 120,
+        "normalization": "Trim surrounding whitespace; reject control characters.",
+        "validation": "Qt regular-expression syntax only."
+      },
+      {
+        "name": "action",
+        "type": "string",
+        "choices": [
+          "float",
+          "tile",
+          "noblur",
+          "workspace",
+          "opacity"
+        ]
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "source": "rule types: actions[].valuePattern and valueRequired",
+        "default": ""
+      }
+    ],
+    "verificationScope": "input-validation-only"
+  },
+  {
+    "id": "rules.add",
+    "guiMethods": [
+      "WindowRulesProvider.addRule"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "rule",
+        "add",
+        "<match>",
+        "<action>",
+        "[value]",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans and transactions with locked preflight, file fingerprints, bounded runtime reads, scoped verification and failure rollback. Automatic history undo is unavailable.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured-file rollback plus checked recovery reload; concurrent later edits are retained.",
+    "files": [
+      "~/.config/hypr/omarchy-control.lua",
+      "~/.config/hypr/hyprland.lua"
+    ],
+    "discovery": [
+      "rule",
+      "types"
+    ],
+    "options": [
+      "--dry-run"
+    ],
+    "parameters": [
+      {
+        "name": "match",
+        "type": "string",
+        "maximumLength": 120
+      },
+      {
+        "name": "action",
+        "type": "string",
+        "choices": [
+          "float",
+          "tile",
+          "noblur",
+          "workspace",
+          "opacity"
+        ]
+      },
+      {
+        "name": "value",
+        "type": "string",
+        "source": "rule types: actions[].valuePattern",
+        "default": ""
+      }
+    ],
+    "verificationScope": "owned-file-and-reload",
+    "limitations": [
+      "App matching and window behavior are not verified."
+    ]
+  },
+  {
+    "id": "rules.remove",
+    "guiMethods": [
+      "WindowRulesProvider.removeRule"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "rule",
+        "remove",
+        "<selector>",
+        "--api-version",
+        "1"
+      ]
+    ],
+    "reason": "Shared GUI/CLI plans and transactions with locked preflight, file fingerprints, bounded runtime reads, scoped verification and failure rollback. Automatic history undo is unavailable.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "recovery": "no-undo",
+    "historyUndo": false,
+    "failureRecovery": "Captured-file rollback plus checked recovery reload; concurrent later edits are retained.",
+    "files": [
+      "~/.config/hypr/omarchy-control.lua",
+      "~/.config/hypr/hyprland.lua"
+    ],
+    "discovery": [
+      "rule",
+      "list",
+      "--api-version",
+      "1"
+    ],
+    "options": [
+      "--dry-run"
+    ],
+    "parameters": [
+      {
+        "name": "selector",
+        "type": "string",
+        "source": "rule list --api-version 1: rules[].selector",
+        "format": "index@owned-module-sha256"
+      }
+    ],
+    "verificationScope": "owned-file-and-reload"
+  },
+  {
+    "id": "services.inspect",
+    "guiMethods": [
+      "ServicesProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "services",
+        "user",
+        "status"
+      ],
+      [
+        "services",
+        "system",
+        "status"
+      ],
+      [
+        "startup",
+        "list"
+      ]
+    ],
+    "reason": "Scoped systemd discovery requires readable unit and unit-file lists. XDG startup discovery exposes source files, preference state and unevaluated launch conditions; it does not prove an app will start.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [],
+    "mutation": false,
+    "options": [],
+    "recovery": "no-undo"
+  },
+  {
+    "id": "services.action",
+    "guiMethods": [
+      "ServicesProvider.serviceAction"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "services",
+        "<scope>",
+        "<action>",
+        "<unit>"
+      ]
+    ],
+    "reason": "Shared provider plans read current unit facts. Enablement is read back; restarts and completed one-shots require a newer process-start timestamp. Dependencies and service hooks can have additional effects outside selected-unit verification.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "scope",
+        "type": "string",
+        "enum": [
+          "user",
+          "system"
+        ]
+      },
+      {
+        "name": "action",
+        "type": "string",
+        "enum": [
+          "start",
+          "stop",
+          "restart",
+          "enable",
+          "disable"
+        ]
+      },
+      {
+        "name": "unit",
+        "type": "string",
+        "source": "services[].unit",
+        "discovery": [
+          "services",
+          "<scope>",
+          "status"
+        ],
+        "scope": "selected-systemd-manager",
+        "description": "A concrete .service unit; no patterns, templates or options."
+      }
+    ],
+    "discovery": [
+      "services",
+      "<scope>",
+      "status"
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "confirmation": "System stop/restart/disable requires --yes; that does not grant administrator authorization.",
+    "authorization": "CLI never asks for credentials; systemctl uses existing policy with --no-ask-password.",
+    "recovery": "no-undo"
+  },
+  {
+    "id": "startup.enabled",
+    "guiMethods": [
+      "ServicesProvider.setStartupEnabled"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "startup",
+        "enable",
+        "<desktop-id>"
+      ],
+      [
+        "startup",
+        "disable",
+        "<desktop-id>"
+      ]
+    ],
+    "reason": "Shared provider edits the highest-priority user desktop entry with file fingerprint checks and failure rollback. Package files and other desktop-entry groups/conditions are preserved; preference state does not prove future launch. User entry/directory symlinks are refused.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "desktop-id",
+        "type": "string",
+        "source": "apps[].id",
+        "discovery": [
+          "startup",
+          "list"
+        ]
+      }
+    ],
+    "discovery": [
+      "startup",
+      "list"
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "startup-preference-only"
+  },
+  {
+    "id": "system.inspect",
+    "guiMethods": [
+      "SystemProvider.refresh"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "system",
+        "status"
+      ],
+      [
+        "system",
+        "machine"
+      ],
+      [
+        "system",
+        "battery"
+      ],
+      [
+        "system",
+        "storage"
+      ],
+      [
+        "system",
+        "hooks"
+      ]
+    ],
+    "reason": "Shared completed snapshots expose section-level states, all detected battery supplies, nullable storage readings and user hook metadata. Failed/unreadable sources are not absence. Machine platform/session/version fields can remain partial; hook eligibility is not proof of execution.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [],
+    "mutation": false,
+    "options": [],
+    "recovery": "no-undo"
+  },
+  {
+    "id": "apps.inspect",
+    "guiMethods": [
+      "SystemProvider.refreshApps"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "apps",
+        "list"
+      ],
+      [
+        "mime",
+        "list"
+      ],
+      [
+        "mime",
+        "get",
+        "<type>"
+      ]
+    ],
+    "reason": "Shared installed-app and MIME reads honor XDG roots, nested desktop IDs, shadowing and per-read errors. Candidate lists contain declared MimeType support only, not every added association or inherited type.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "type",
+        "type": "string",
+        "description": "A concrete MIME type; mime list covers the seven GUI types, get accepts other valid types."
+      }
+    ],
+    "mutation": false,
+    "options": [],
+    "recovery": "no-undo"
+  },
+  {
+    "id": "apps.launch",
+    "guiMethods": [
+      "SystemProvider.launchApp"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "apps",
+        "launch",
+        "<desktop-id>"
+      ]
+    ],
+    "reason": "Shared installed-app validation delegates to uwsm-app or gtk-launch. Outcome launched is an unverified handoff, not a committed settings change or proof that a window appeared. No history undo or transaction is promised.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "desktop-id",
+        "type": "string",
+        "source": "apps[].id",
+        "discovery": [
+          "apps",
+          "list"
+        ]
+      }
+    ],
+    "discovery": [
+      "apps",
+      "list"
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo"
+  },
+  {
+    "id": "mime.set",
+    "guiMethods": [
+      "SystemProvider.setAssociation"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "mime",
+        "set",
+        "<type>",
+        "<desktop-id>"
+      ]
+    ],
+    "reason": "Shared provider selects the first current user desktop-specific default, otherwise the generic user override, and changes one Default Applications key. File/app fingerprints and successful xdg-mime readback guard mutations. User-file failure rollback exists; automatic history undo and functional file-opening verification do not.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "type",
+        "type": "string",
+        "description": "A concrete MIME type, including x-scheme-handler types."
+      },
+      {
+        "name": "desktop-id",
+        "type": "string",
+        "source": "apps[].id",
+        "discovery": [
+          "apps",
+          "list"
+        ]
+      }
+    ],
+    "discovery": [
+      "mime",
+      "get",
+      "<type>"
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "effective-default-handler"
+  },
+  {
+    "id": "diagnostics.export",
+    "guiMethods": [
+      "SystemProvider.exportDiagnostics"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "diagnostics",
+        "export"
+      ]
+    ],
+    "reason": "Shared awaited collection refreshes capabilities and runs a fingerprint-checked helper copy in non-sudo print mode, relocating its raw /tmp log into private bounded staging. Final private files are read back and fingerprinted; incomplete collection is explicit. Redaction is best effort; no upload or settings transaction occurs.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "local-export-artifact",
+    "compatibilityKeys": [
+      "diagnostics.export"
+    ]
+  },
+  {
+    "id": "launchers.set",
+    "guiMethods": [
+      "LauncherEditor.save"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "apps",
+        "launcher",
+        "set",
+        "<id>",
+        "[--name <name>]",
+        "[--icon <icon>]",
+        "[--hide|--show]"
+      ]
+    ],
+    "reason": "Shared LauncherEditor writes an owned per-user desktop override, optionally imports an icon file, and journals/readbacks the result. Name, icon and visibility can be changed together. No API v1 or dry-run; inspect apps launcher list --json first. Undo uses the transaction ID and refuses later edits.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "launchers.reset",
+    "guiMethods": [
+      "LauncherEditor.resetEntry"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "apps",
+        "launcher",
+        "reset",
+        "<id>"
+      ]
+    ],
+    "reason": "Shared LauncherEditor removes its owned override and restores the inherited desktop entry. Journal/readback and guarded transaction undo apply. Custom overrides or later edits are preserved. Unversioned interface.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "launchers.update",
+    "guiMethods": [
+      "LauncherEditor.updateEntry"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "apps",
+        "launcher",
+        "update",
+        "<id>"
+      ]
+    ],
+    "reason": "Shared LauncherEditor rebases an outdated owned override on the current installed desktop file while retaining selected edits. Journal/readback and guarded transaction undo apply. Unversioned interface.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "launchers.inspect",
+    "guiMethods": [
+      "LauncherEditor.reload"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "apps",
+        "launcher",
+        "list"
+      ]
+    ],
+    "reason": "Lists current desktop IDs, name, icon, kind, visibility, modification state, source path and outdated state. Optional --modified/--hidden filters; --json returns launchers. Read only, unversioned.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "launchers.icon-search",
+    "guiMethods": [
+      "LauncherEditor.packIcons"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "icons",
+        "search",
+        "<pack-id>",
+        "[query]"
+      ]
+    ],
+    "reason": "Shared bounded app/device icon picker lookup; the CLI selects an explicit pack, while the GUI uses its current pack. Result truncation is separate from incomplete source reads.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "pack-id",
+        "type": "string",
+        "source": "packs[].id",
+        "discovery": [
+          "icons",
+          "list",
+          "--api-version",
+          "1"
+        ]
+      },
+      {
+        "name": "query",
+        "type": "string",
+        "optional": true,
+        "maxLength": 512,
+        "description": "Case-insensitive substring of an icon name, not an app name or rendered image."
+      }
+    ],
+    "discovery": [
+      "icons",
+      "list",
+      "--api-version",
+      "1"
+    ],
+    "mutation": false,
+    "options": [
+      "--limit <1..300>"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "file-lookup-only"
+  },
+  {
+    "id": "launchers.icon-picker",
+    "guiMethods": [
+      "LauncherEditor.chooseIcon"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "File-picker selection prepares a draft; CLI launcher set accepts an icon file directly.",
+    "apiVersions": []
+  },
+  {
+    "id": "icons.import",
+    "guiMethods": [
+      "IconThemeImporter.choose",
+      "IconThemeImporter.confirm"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "icons",
+        "import",
+        "<path>",
+        "[--yes]"
+      ]
+    ],
+    "reason": "Shared bounded importer accepts a local directory or archive, validates index.theme and contents, stages the pack and verifies installation. --yes acknowledges a conflicting destination when required. Does not select the imported pack. Unversioned JSON has ok/id/name/message; failures can also use stderr.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "icons.import-ui",
+    "guiMethods": [
+      "IconThemeImporter.cancel",
+      "IconThemeImporter.dismiss",
+      "IconThemeImporter.reject"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "Import dialog cancellation/dismissal/rejection; CLI cancellation semantics need a separate operation contract.",
+    "apiVersions": []
+  },
+  {
+    "id": "updates.check",
+    "guiMethods": [
+      "UpdateProvider.check"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "update",
+        "check"
+      ]
+    ],
+    "reason": "Shared updater checks the app release/source for the current installation method. Network read; returns update metadata, not an installed update. Unversioned JSON; no desktop change.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "updates.install",
+    "guiMethods": [
+      "UpdateProvider.install"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "update",
+        "install",
+        "[--yes]"
+      ]
+    ],
+    "reason": "Shared updater requires --yes in the CLI, starts the installation-method-specific package/source workflow and reports its result. Package authorization or a terminal may still be required; launch is not verified installation. No automatic undo.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "updates.window-state",
+    "guiMethods": [
+      "UpdateProvider.refreshInstalled",
+      "UpdateProvider.readSource",
+      "UpdateProvider.restart"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "Window package-source/installed-version refresh and process restart. CLI update/check reports update information; restarting a finished CLI is not a settings operation.",
+    "apiVersions": []
+  },
+  {
+    "id": "theme.rendering",
+    "guiMethods": [
+      "Theme.refreshRounding",
+      "Theme.preview",
+      "Theme.thumbnail"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "Visual theme rendering and observation; theme selection itself is a typed catalog setting.",
+    "apiVersions": []
+  },
+  {
+    "id": "profile.status",
+    "guiMethods": [
+      "ProfileProvider.refresh"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "status"
+      ]
+    ],
+    "reason": "Shared repository and restore runner expose local/published versions, connection state and recent restore runs. Does not fetch remote changes; --json is the legacy structured interface.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.capture",
+    "guiMethods": [
+      "ProfileProvider.startCapture",
+      "ProfileProvider.includeApps"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "capture",
+        "[selection]",
+        "--dry-run"
+      ]
+    ],
+    "reason": "Shared ProfileCapture implements all GUI selection fields through --category, --setting, --suggested, --app, --suggested-apps, --themes, --background, --bar, --plugins, --dock, --launchers, --associations, --shortcuts, --window-rules and --file. --inherit/--forget and app exclusion options add CLI control. --dry-run reports the proposed capture; the implicit local Git working area may be prepared, but desktop settings are not written. --resolve-aur explicitly permits a network lookup.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.save",
+    "guiMethods": [
+      "ProfileProvider.saveReview"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "save",
+        "[--message <text>]"
+      ]
+    ],
+    "reason": "Shared repository commits an already captured local profile and optional message. Use capture --dry-run for review, capture without --dry-run to save the selected snapshot, then save for local history. Does not publish or change desktop settings.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.connect",
+    "guiMethods": [
+      "ProfileProvider.connectRepository"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "connect",
+        "<owner/name>"
+      ]
+    ],
+    "reason": "Shared repository connects an owner/name using the current GitHub login. Explicit user choice; may access the network. Does not restore the connected profile.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.create",
+    "guiMethods": [
+      "ProfileProvider.createRepository"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "connect",
+        "--create",
+        "<name>"
+      ]
+    ],
+    "reason": "Shared repository creates and connects a named GitHub repository through the current authorized gh login. Explicit user choice and network publication; does not restore desktop settings.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.fetch",
+    "guiMethods": [
+      "ProfileProvider.fetch"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "fetch"
+      ]
+    ],
+    "reason": "Shared repository fetches published history into the local repository. Does not apply it or replace desktop settings.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.publish",
+    "guiMethods": [
+      "ProfileProvider.publish"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "publish"
+      ]
+    ],
+    "reason": "Shared repository publishes saved local commits to the connected repository. Explicit user authorization; not part of an ordinary desktop change. Refuses unresolved divergence.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.resolve",
+    "guiMethods": [
+      "ProfileProvider.resolve"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "resolve",
+        "--use-published|--keep-mine"
+      ]
+    ],
+    "reason": "Shared repository resolves diverged local/published history using exactly one of --use-published or --keep-mine. Changes saved profile history, not the running desktop.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.history",
+    "guiMethods": [
+      "ProfileProvider.loadVersions"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "history",
+        "[--published]"
+      ]
+    ],
+    "reason": "Shared repository lists local or already-fetched published revisions. Does not fetch or restore. --json returns versions; an empty list alone does not prove remote history is absent.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.plan",
+    "guiMethods": [
+      "ProfileProvider.planRestore",
+      "ProfileProvider.choose"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "plan",
+        "[--revision <revision>]",
+        "[--use-saved <id>]",
+        "[--keep-local <id>]"
+      ]
+    ],
+    "reason": "Shared ProfilePlanner builds a durable review with per-item availability, conflicts, local/saved choice overrides and prerequisite order. Supports a directory or --revision, --use-saved and --keep-local. Does not apply desktop changes.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.apply",
+    "guiMethods": [
+      "ProfileProvider.startRestore"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "apply",
+        "<plan-id>",
+        "[--yes]",
+        "[--partial]"
+      ]
+    ],
+    "reason": "Shared ProfileRunner applies a reviewed plan ID. --yes acknowledges its consequences; --partial permits only the explicitly accepted eligible subset. Package steps run in the user terminal for authorization. A restore lease excludes unrelated coordinated writes. Result records per-item outcomes and supports resume/cancel; acceptance is not whole-profile success.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.resume",
+    "guiMethods": [
+      "ProfileProvider.resumeRestore"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "profile",
+        "resume",
+        "<run-id>"
+      ]
+    ],
+    "reason": "Shared ProfileRunner resumes a resumable run, rechecking remaining items and clearing an earlier cooperative cancellation request. Completed items are not blindly repeated. Package steps retain terminal authorization; inspect the resulting per-item states.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "profile.cancel",
+    "guiMethods": [
+      "ProfileProvider.cancelRestore"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "profile",
+        "cancel",
+        "<run-id>"
+      ]
+    ],
+    "reason": "A private durable request is consumed by the restore worker between operations. The current operation finishes and verifies; acceptance is not a completed cancellation.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "parameters": [
+      {
+        "name": "run-id",
+        "type": "string",
+        "discovery": [
+          "profile",
+          "status",
+          "--json"
+        ],
+        "source": "runs[].id"
+      }
+    ],
+    "verificationScope": "cancellation-request-only",
+    "recovery": "no-undo"
+  },
+  {
+    "id": "profile.drafts",
+    "guiMethods": [
+      "ProfileProvider.clearReview",
+      "ProfileProvider.clearPlan",
+      "ProfileProvider.clearRun"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "Clears the window draft/review; does not remove profile history or change the desktop.",
+    "apiVersions": []
+  },
+  {
+    "id": "backend.catalog",
+    "guiMethods": [
+      "Backend.entry",
+      "Backend.sections",
+      "Backend.panels",
+      "Backend.blocks"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "catalog"
+      ]
+    ],
+    "reason": "API v1 returns the typed schemas and classified destination contracts from the same catalog as the GUI. Read only; availability is not probed until describe --live/get.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [],
+    "mutation": false,
+    "options": []
+  },
+  {
+    "id": "backend.search",
+    "guiMethods": [
+      "Backend.search"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "search",
+        "<query>"
+      ]
+    ],
+    "reason": "API v1 searches the shared catalog without executing helpers or probing desktop services. Returns schemas and invocation metadata; providers are discoverable separately through commands/describe.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string"
+      }
+    ],
+    "mutation": false,
+    "options": []
+  },
+  {
+    "id": "backend.read",
+    "guiMethods": [
+      "Backend.refresh",
+      "Backend.refreshPage",
+      "Backend.availability"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "get",
+        "<id>"
+      ]
+    ],
+    "reason": "API v1 reads a typed setting through the shared engine and reports status, source, choices and current value. Custom/unavailable state does not establish a verified writable value.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string"
+      }
+    ],
+    "mutation": false,
+    "options": []
+  },
+  {
+    "id": "backend.plan",
+    "guiMethods": [
+      "Backend.planChange"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "plan",
+        "<id>",
+        "<value>"
+      ]
+    ],
+    "reason": "API v1 validates a typed value against current choices, capability, compatibility and ownership requirements. No write or implicit confirmation. Plans describe scoped effects and recovery.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ],
+    "mutation": false,
+    "options": []
+  },
+  {
+    "id": "backend.apply",
+    "guiMethods": [
+      "Backend.commit"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "apply",
+        "<id>",
+        "<value>"
+      ]
+    ],
+    "reason": "API v1 uses the shared engine/coordinator, validates choices again, journals and verifies readback. Consequential changes require --yes. Partial/failed transactions retain actual recovery evidence; no alternate-writer retry.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "type": "string"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--yes"
+    ]
+  },
+  {
+    "id": "backend.reset",
+    "guiMethods": [
+      "Backend.resetValue"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "reset",
+        "<id>"
+      ]
+    ],
+    "reason": "API v1 removes a supported owned override or calls the reviewed default writer through the shared engine. Capability, compatibility, ownership, journal and readback checks apply. Consequential inherited defaults require --yes. No dry-run; inspect describe/current state first. Already-default can return an uncommitted refusal.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [
+      {
+        "name": "id",
+        "type": "string"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--yes"
+    ]
+  },
+  {
+    "id": "backend.undo",
+    "guiMethods": [
+      "Backend.undo"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "undo",
+        "<transaction>"
+      ]
+    ],
+    "reason": "API v1 uses a journal transaction ID from history. Shared undo refuses nonundoable or already-undone transactions and later value/file edits; successful readback marks the original undone. It can restore inherited defaults. No dry-run; no general rollback promise for runtime actions.",
+    "apiVersions": [
+      1
+    ],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md",
+    "parameters": [
+      {
+        "name": "transaction",
+        "type": "string"
+      }
+    ],
+    "mutation": true,
+    "options": [
+      "--yes"
+    ]
+  },
+  {
+    "id": "backend.launch",
+    "guiMethods": [
+      "Backend.launch"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "launch",
+        "<id>"
+      ]
+    ],
+    "reason": "Unversioned launch <catalog-id> [--yes] opens the exact catalog destination. JSON reports opened/message, not changed settings or helper completion. Consequential routes require --yes. Native pages use their listed provider operations for headless work.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "backend.compat",
+    "guiMethods": [
+      "Backend.acceptCompat"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "compat",
+        "accept"
+      ]
+    ],
+    "reason": "Unversioned compat accept explicitly acknowledges all changed helper fingerprints and the current Hyprland version after user review. This is a policy change, not compatibility validation. Ordinary setting requests do not authorize automatically accepting drift.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "backend.icons.remove",
+    "guiMethods": [
+      "Backend.planIconRemoval",
+      "Backend.removeIconPack"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "icons",
+        "remove",
+        "<id>",
+        "[--yes]"
+      ]
+    ],
+    "reason": "Shared icon provider plans ownership and moves a user-owned inactive pack to Trash after --yes. Journals its result; undo <transaction-id> restores only while guarded state still matches. Installed/system/active packs are refused; unversioned interface.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "backend.iconic.retire",
+    "guiMethods": [
+      "Backend.retireIconic"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "icons",
+        "iconic",
+        "retire"
+      ]
+    ],
+    "reason": "Shared Iconic migration retires supported integration files into a guarded local handover. Inspect icons iconic status first. Unversioned text result; this is explicit integration maintenance, not selecting a pack.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "backend.iconic.restore",
+    "guiMethods": [
+      "Backend.restoreIconic"
+    ],
+    "classification": "legacy-cli",
+    "invocations": [
+      [
+        "icons",
+        "iconic",
+        "restore"
+      ]
+    ],
+    "reason": "Shared Iconic migration restores its recorded handover only while recorded paths still match. Later edits and conflicts are preserved. Unversioned text result; no claim that the desktop visually rendered the integration.",
+    "apiVersions": [],
+    "contractAudit": "shared-source-reviewed",
+    "documentation": "docs/CLI-API.md"
+  },
+  {
+    "id": "preferences.pins",
+    "guiMethods": [
+      "Backend.pinnedEntries",
+      "Backend.togglePin"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "preferences",
+        "pins"
+      ],
+      [
+        "preferences",
+        "pin",
+        "<catalog-id>"
+      ],
+      [
+        "preferences",
+        "unpin",
+        "<catalog-id>"
+      ]
+    ],
+    "reason": "Shared locked GUI/CLI preference writer preserves unrelated JSON fields, pin order and stale IDs; explicit idempotent mutations avoid toggle retries.",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "options": [
+      "--dry-run"
+    ],
+    "parameters": [
+      {
+        "name": "catalog-id",
+        "type": "string",
+        "discovery": [
+          "catalog",
+          "--api-version",
+          "1"
+        ],
+        "source": "entries[].id"
+      }
+    ],
+    "verificationScope": "Control-search-pin-preference-only",
+    "recovery": "no-undo"
+  },
+  {
+    "id": "icons.inspect",
+    "guiMethods": [],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "icons",
+        "list"
+      ]
+    ],
+    "reason": "Versioned installed icon pack inventory reports XDG search roots, locations and incomplete discovery; unversioned list output remains available.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [],
+    "mutation": false,
+    "options": [],
+    "recovery": "no-undo",
+    "verificationScope": "installed-pack-descriptors"
+  },
+  {
+    "id": "icons.samples",
+    "guiMethods": [
+      "Backend.iconSamples"
+    ],
+    "classification": "api-cli",
+    "invocations": [
+      [
+        "icons",
+        "samples",
+        "<pack-id>"
+      ]
+    ],
+    "reason": "Shared four-sample lookup exposes paths, originating packs and inheritance without decoding or rendering images.",
+    "apiVersions": [
+      1
+    ],
+    "parameters": [
+      {
+        "name": "pack-id",
+        "type": "string",
+        "source": "packs[].id",
+        "discovery": [
+          "icons",
+          "list",
+          "--api-version",
+          "1"
+        ]
+      }
+    ],
+    "discovery": [
+      "icons",
+      "list",
+      "--api-version",
+      "1"
+    ],
+    "mutation": false,
+    "options": [],
+    "recovery": "no-undo",
+    "verificationScope": "file-lookup-only"
+  },
+  {
+    "id": "backend.window",
+    "guiMethods": [
+      "Backend.iconsFolder",
+      "Backend.stateKey",
+      "Backend.pageShown",
+      "Backend.windowActivated",
+      "Backend.clearRestartNotice"
+    ],
+    "classification": "ui-only",
+    "invocations": [],
+    "reason": "Window navigation, presentation keys, file-picker location, and transient notices; no standalone persistent setting.",
+    "apiVersions": []
+  },
+  {
+    "id": "plugins.recover",
+    "guiMethods": [],
+    "classification": "api-cli",
+    "apiVersions": [
+      1
+    ],
+    "invocations": [
+      [
+        "plugin",
+        "recover",
+        "<token>"
+      ]
+    ],
+    "reason": "Restore a lifecycle snapshot only while plugin and shell-file fingerprints still match the post-write state; preserve displaced content and verify reloaded shell state.",
+    "mutation": true,
+    "options": [
+      "--dry-run",
+      "--yes"
+    ],
+    "parameters": [
+      {
+        "name": "token",
+        "type": "string",
+        "source": "transaction.extra.recoveryToken from clone/remove or history"
+      }
+    ],
+    "recovery": "resumable-guarded-file-recovery",
+    "verificationScope": "captured-plugin-files-and-reloaded-shell-configuration",
+    "compatibilityKeys": [
+      "plugins.recover"
+    ]
+  },
+  {
+    "id": "widgets.option",
+    "guiMethods": [],
+    "classification": "api-cli",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "invocations": [
+      [
+        "widget",
+        "option",
+        "<selector>",
+        "showPercentage",
+        "<true|false>"
+      ]
+    ],
+    "parameters": [
+      {
+        "name": "selector",
+        "type": "string",
+        "source": "bar status: bar.widgets[].selector for an enabled first-party omarchy.power object entry"
+      },
+      {
+        "name": "key",
+        "type": "enum",
+        "values": [
+          "showPercentage"
+        ]
+      },
+      {
+        "name": "value",
+        "type": "boolean",
+        "values": [
+          "true",
+          "false"
+        ]
+      }
+    ],
+    "options": [
+      "--dry-run"
+    ],
+    "discovery": [
+      "bar",
+      "status"
+    ],
+    "recovery": "no-undo",
+    "compatibilityKeys": [
+      "widgets.option"
+    ],
+    "reason": "Reviewed native alternative to battery.percentage. Uses the shared widget planner, an exact instance selector and explicit JSON boolean. It preserves other options/layout, requires matching live/persisted state, and verifies the complete resulting layout and option. Only the built-in Power showPercentage option is supported; absent means its reviewed false default. Unknown/custom formats and bare entries are refused. Rendering is unverified; unconfirmed external writes retain backups without automatic rollback or history undo.",
+    "optionSchema": {
+      "widgetId": "omarchy.power",
+      "key": "showPercentage",
+      "type": "boolean",
+      "defaultWhenOmitted": false,
+      "requiresFirstParty": true,
+      "requiresObjectEntry": true
+    }
+  },
+  {
+    "id": "preferences.crash-mutes",
+    "guiMethods": [],
+    "classification": "api-cli",
+    "apiVersions": [
+      1
+    ],
+    "mutation": true,
+    "invocations": [
+      [
+        "preferences",
+        "crash-mutes"
+      ],
+      [
+        "preferences",
+        "crash-mute",
+        "<program>"
+      ],
+      [
+        "preferences",
+        "crash-mute",
+        "<program>",
+        "<true|false>"
+      ]
+    ],
+    "parameters": [
+      {
+        "name": "program",
+        "type": "string",
+        "pattern": "^[A-Za-z0-9._-]{1,255}$",
+        "source": "Executable basename supplied by the user or preferences crash-mutes items; dot and dot-dot are refused."
+      },
+      {
+        "name": "value",
+        "type": "boolean",
+        "values": [
+          "true",
+          "false"
+        ],
+        "optional": true
+      }
+    ],
+    "options": [
+      "--dry-run"
+    ],
+    "discovery": [
+      "preferences",
+      "crash-mutes"
+    ],
+    "files": [
+      "~/.local/state/omarchy/toggles/crash-ignore/<program>"
+    ],
+    "compatibilityKeys": [
+      "preferences.crash-mutes"
+    ],
+    "recovery": "no-undo",
+    "verificationScope": "owned-crash-notification-marker-only; watcher behavior unverified",
+    "reason": "Explicit idempotent per-program preference writer with empty-marker path guards, coordinator preflight and readback. Custom, redirected or shared paths are refused. Unconfirmed external writes retain backups without automatic rollback. This controls notification muting, not crash capture."
+  }
+]

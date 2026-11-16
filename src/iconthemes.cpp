@@ -12,6 +12,9 @@
 #include <QSvgRenderer>
 #include <QUrl>
 #include <algorithm>
+#include <cerrno>
+#include <dirent.h>
+#include <sys/stat.h>
 
 #include "fileops.h"
 
@@ -22,6 +25,14 @@ constexpr qint64 MaxSvgBytes = 2 * 1024 * 1024;
 constexpr int MaxRasterSide = 1024;
 constexpr int MaxInheritance = 12;
 constexpr int MaxDirectories = 5000;
+constexpr int MaxThemes = 256;
+
+bool optionalMissing(const QString &path, int error) {
+    if (error != ENOENT) return false;
+    for (QString parent = path; parent != QLatin1String("/"); parent = QFileInfo(parent).absolutePath())
+        if (QFileInfo(parent).isSymLink() && !QFileInfo(parent).exists()) return false;
+    return true;
+}
 
 int intValue(const QHash<QByteArray, QByteArray> &group, const char *key, int fallback) {
     bool ok = false;
@@ -58,7 +69,7 @@ QList<IconPack::Directory> bySuitability(QList<IconPack::Directory> directories,
     return directories;
 }
 
-QString iconIn(const IconPack &pack, const QStringList &names, int size) {
+QString iconIn(const IconPack &pack, const QStringList &names, int size, int *remaining, QStringList *diagnostics) {
     const auto directories = bySuitability(pack.directories, size);
     // Pack first and then names, as the spec's fallback lookup does: a pack's own icon
     // says more about it than an exact name it inherited from somewhere else.
@@ -67,9 +78,20 @@ QString iconIn(const IconPack &pack, const QStringList &names, int size) {
             for (const QString &location : pack.locations) {
                 const QString base = location + "/" + directory.subdir + "/" + name;
                 for (const char *extension : {".svg", ".png"}) {
+                    if (--*remaining < 0) {
+                        if (diagnostics) diagnostics->append("Icon lookup exceeded its file limit");
+                        return {};
+                    }
                     const QString path = base + QLatin1String(extension);
-                    if (QFileInfo::exists(path))
+                    struct stat info;
+                    if (::stat(QFile::encodeName(path).constData(), &info) != 0) {
+                        if (diagnostics && !optionalMissing(path, errno))
+                            diagnostics->append("Icon file could not be read: " + path);
+                        continue;
+                    }
+                    if (S_ISREG(info.st_mode) && QFileInfo(path).isReadable())
                         return path;
+                    if (diagnostics) diagnostics->append("Icon is not a readable regular file: " + path);
                 }
             }
         }
@@ -77,16 +99,25 @@ QString iconIn(const IconPack &pack, const QStringList &names, int size) {
     return {};
 }
 
-void collectChain(const Env &env, const QString &id, const QString &language, QStringList *seen, QList<IconPack> *chain, int depth) {
-    if (depth > MaxInheritance || seen->contains(id) || !IconThemes::isValidId(id))
+void collectChain(const Env &env, const QString &id, const QString &language, QStringList *seen, QList<IconPack> *chain, int depth,
+                  QStringList *diagnostics, bool optional = false) {
+    if (seen->contains(id))
         return;
+    if (depth > MaxInheritance || seen->size() >= MaxThemes || !IconThemes::isValidId(id)) {
+        if (diagnostics) diagnostics->append("Icon inheritance is invalid or exceeds its limit: " + id);
+        return;
+    }
     *seen << id;
-    const IconPack pack = IconThemes::load(env, id, language);
-    if (!pack.found)
+    const IconPack pack = IconThemes::load(env, id, language, diagnostics);
+    if (!pack.found) {
+        if (diagnostics && (!optional || !pack.indexPath.isEmpty() || !pack.locations.isEmpty()))
+            diagnostics->append(id + ": " + pack.problem);
         return;
+    }
+    if (diagnostics && !pack.problem.isEmpty()) diagnostics->append(id + ": " + pack.problem);
     chain->append(pack);
     for (const QString &parent : pack.inherits)
-        collectChain(env, parent, language, seen, chain, depth + 1);
+        collectChain(env, parent, language, seen, chain, depth + 1, diagnostics, parent == QLatin1String("hicolor"));
 }
 
 }  // namespace
@@ -104,6 +135,41 @@ int IconPack::Directory::distance(int wanted) const {
 }
 
 namespace IconThemes {
+
+QStringList directoryNames(const QString &path, int *remaining, QStringList *diagnostics) {
+    QStringList names;
+    DIR *directory = ::opendir(QFile::encodeName(path).constData());
+    if (!directory) {
+        // A missing descendant of a dangling directory link is not a genuinely
+        // absent optional root. Do not silently turn it into an empty inventory.
+        if (diagnostics && !optionalMissing(path, errno)) diagnostics->append("Icon directory could not be read: " + path);
+        return names;
+    }
+    if (!QFileInfo(path).isExecutable()) {
+        if (diagnostics) diagnostics->append("Icon directory cannot be traversed: " + path);
+        ::closedir(directory);
+        return names;
+    }
+    for (;;) {
+        errno = 0;
+        const auto *entry = ::readdir(directory);
+        if (!entry) {
+            if (errno && diagnostics) diagnostics->append("Icon directory read failed: " + path);
+            break;
+        }
+        const QString name = QFile::decodeName(entry->d_name);
+        if (name == QLatin1String(".") || name == QLatin1String("..")) continue;
+        if (*remaining <= 0) {
+            if (diagnostics) diagnostics->append("Icon directory enumeration exceeded its entry limit: " + path);
+            break;
+        }
+        --*remaining;
+        names << name;
+    }
+    ::closedir(directory);
+    names.sort();
+    return names;
+}
 
 QStringList searchRoots(const Env &env) {
     QStringList roots{env.dataHome + "/icons", env.home + "/.icons"};
@@ -151,16 +217,23 @@ IconPack parseIndex(const QByteArray &contents, const QString &id, const QString
         pack.name = id;
     pack.comment = localized(main, "Comment", language);
     pack.hidden = main.value("Hidden").trimmed().toLower() == "true";
-    for (const QString &parent : splitList(main.value("Inherits")))
+    for (const QString &parent : splitList(main.value("Inherits"))) {
+        if (pack.inherits.size() >= MaxThemes) {
+            pack.problem = QStringLiteral("index.theme has excessive inherited themes");
+            break;
+        }
         pack.inherits << parent;
+    }
     QStringList subdirs = splitList(main.value("Directories"));
     for (const QString &scaled : splitList(main.value("ScaledDirectories")))
         if (!subdirs.contains(scaled))
             subdirs << scaled;
     for (const QString &subdir : std::as_const(subdirs)) {
         // A pack that names a folder outside itself is not going to be looked in there.
-        if (pack.directories.size() >= MaxDirectories || subdir.startsWith('/') || subdir.split('/').contains(QStringLiteral("..")))
+        if (pack.directories.size() >= MaxDirectories || subdir.startsWith('/') || subdir.split('/').contains(QStringLiteral(".."))) {
+            pack.problem = QStringLiteral("index.theme has invalid or excessive icon directories");
             continue;
+        }
         const auto group = groups.constFind(subdir.toUtf8());
         if (group == groups.constEnd() || !group->contains("Size"))
             continue;
@@ -178,7 +251,7 @@ IconPack parseIndex(const QByteArray &contents, const QString &id, const QString
     return pack;
 }
 
-IconPack load(const Env &env, const QString &id, const QString &language) {
+IconPack load(const Env &env, const QString &id, const QString &language, QStringList *diagnostics) {
     IconPack pack;
     pack.id = id;
     if (!isValidId(id)) {
@@ -189,12 +262,20 @@ IconPack load(const Env &env, const QString &id, const QString &language) {
     QString index;
     for (const QString &root : searchRoots(env)) {
         const QString location = root + "/" + id;
-        if (!QFileInfo(location).isDir())
+        struct stat info;
+        if (::stat(QFile::encodeName(location).constData(), &info) != 0) {
+            if (diagnostics && !optionalMissing(location, errno))
+                diagnostics->append("Icon pack location could not be read: " + location);
             continue;
+        }
+        if (!S_ISDIR(info.st_mode)) continue;
         locations << location;
         // The first descriptor in lookup order speaks for the whole theme.
-        if (index.isEmpty() && QFileInfo::exists(location + "/index.theme"))
-            index = location + "/index.theme";
+        if (index.isEmpty()) {
+            const QString candidate = location + "/index.theme";
+            if (::stat(QFile::encodeName(candidate).constData(), &info) == 0 || errno != ENOENT || QFileInfo(candidate).isSymLink())
+                index = candidate;
+        }
     }
     if (index.isEmpty()) {
         pack.problem = locations.isEmpty() ? QStringLiteral("not installed") : QStringLiteral("no index.theme");
@@ -202,13 +283,18 @@ IconPack load(const Env &env, const QString &id, const QString &language) {
         return pack;
     }
     QFile file(index);
-    if (file.size() > MaxIndexBytes || !file.open(QIODevice::ReadOnly)) {
+    if (!QFileInfo(index).isFile() || file.size() > MaxIndexBytes || !file.open(QIODevice::ReadOnly)) {
         pack.problem = QStringLiteral("index.theme could not be read");
         pack.locations = locations;
         pack.indexPath = index;
         return pack;
     }
-    pack = parseIndex(file.readAll(), id, language);
+    const QByteArray contents = file.read(MaxIndexBytes + 1);
+    if (contents.size() > MaxIndexBytes || file.error() != QFile::NoError) {
+        pack.problem = QStringLiteral("index.theme could not be read within its size limit");
+    } else {
+        pack = parseIndex(contents, id, language);
+    }
     pack.locations = locations;
     pack.indexPath = index;
     return pack;
@@ -216,17 +302,22 @@ IconPack load(const Env &env, const QString &id, const QString &language) {
 
 QList<IconPack> discover(const Env &env, const QString &alwaysInclude, QStringList *diagnostics) {
     QStringList ids;
+    int remaining = 10000;
     for (const QString &root : searchRoots(env)) {
-        const QDir directory(root);
-        for (const QString &name : directory.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
-            if (!ids.contains(name))
+        for (const QString &name : directoryNames(root, &remaining, diagnostics))
+            if (!name.startsWith('.') && QFileInfo(root + "/" + name).isDir() && !ids.contains(name))
                 ids << name;
     }
     QList<IconPack> packs;
+    int inspected = 0;
     for (const QString &id : std::as_const(ids)) {
+        if (inspected++ >= MaxThemes) {
+            if (diagnostics) diagnostics->append("Icon pack discovery exceeded its theme limit");
+            break;
+        }
         if (!isValidId(id))
             continue;
-        const IconPack pack = load(env, id);
+        const IconPack pack = load(env, id, {}, diagnostics);
         // A folder with no descriptor is ordinary here, such as loose app icons.
         if (!pack.found) {
             if (diagnostics && !pack.problem.isEmpty() && !pack.indexPath.isEmpty())
@@ -236,6 +327,7 @@ QList<IconPack> discover(const Env &env, const QString &alwaysInclude, QStringLi
         if (!pack.hasIcons() || (pack.hidden && id != alwaysInclude))
             continue;
         if (diagnostics) {
+            if (!pack.problem.isEmpty()) diagnostics->append(id + ": " + pack.problem);
             for (const QString &parent : pack.inherits)
                 if (parent != QLatin1String("hicolor") && !load(env, parent).found)
                     diagnostics->append(id + ": inherits " + parent + ", which is not installed");
@@ -248,28 +340,26 @@ QList<IconPack> discover(const Env &env, const QString &alwaysInclude, QStringLi
     return packs;
 }
 
-QString findIcon(const Env &env, const QString &id, const QStringList &names, int size, QString *fromTheme) {
-    QStringList seen;
-    QList<IconPack> chain;
-    collectChain(env, id, {}, &seen, &chain, 0);
-    // The spec makes hicolor the last resort for every theme, named or not.
-    collectChain(env, QStringLiteral("hicolor"), {}, &seen, &chain, 0);
+QString findIcon(const Env &env, const QString &id, const QStringList &names, int size, QString *fromTheme, QStringList *diagnostics) {
+    const auto chain = lookupChain(env, id, diagnostics);
+    int remaining = 100000;
     for (const IconPack &pack : std::as_const(chain)) {
-        const QString path = iconIn(pack, names, size);
+        const QString path = iconIn(pack, names, size, &remaining, diagnostics);
         if (!path.isEmpty()) {
             if (fromTheme)
                 *fromTheme = pack.id;
             return path;
         }
+        if (remaining <= 0) break;
     }
     return {};
 }
 
-QList<IconPack> lookupChain(const Env &env, const QString &id) {
+QList<IconPack> lookupChain(const Env &env, const QString &id, QStringList *diagnostics) {
     QStringList seen;
     QList<IconPack> chain;
-    collectChain(env, id, {}, &seen, &chain, 0);
-    collectChain(env, QStringLiteral("hicolor"), {}, &seen, &chain, 0);
+    collectChain(env, id, {}, &seen, &chain, 0, diagnostics);
+    collectChain(env, QStringLiteral("hicolor"), {}, &seen, &chain, 0, diagnostics, true);
     return chain;
 }
 

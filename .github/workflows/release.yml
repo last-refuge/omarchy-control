@@ -17,7 +17,8 @@ jobs:
       - name: Install build tools
         run: >-
           pacman -Syu --noconfirm --needed
-          git github-cli curl desktop-file-utils ttf-dejavu
+          git github-cli curl python systemd libarchive desktop-file-utils xdg-utils
+          ttf-dejavu noto-fonts noto-fonts-cjk
           qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
 
       - uses: actions/checkout@v4

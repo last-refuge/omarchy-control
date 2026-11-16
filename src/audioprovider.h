@@ -7,6 +7,7 @@
 
 #include "changecoordinator.h"
 #include "commandrunner.h"
+#include "provideroperation.h"
 
 class AudioProvider : public QObject {
     Q_OBJECT
@@ -28,6 +29,9 @@ public:
     QString status() const { return m_status; }
     int defaultOutputVolume() const;
     QString pendingDefault() const { return m_pendingDefault; }
+    QString effectiveOutput() const { return m_defaultOutputSink; }
+    bool outputRoutingKnown() const { return m_routingKnown; }
+    ProviderPlan plan(const QString &side, const QString &action, const QString &target, const QString &value = {}, const QString &expectedIdentity = {}) const;
 
     Q_INVOKABLE void refresh();
     // Listens for PipeWire events only while the Sound page is on screen.
@@ -50,17 +54,19 @@ public:
 
 signals:
     void changed();
+    void refreshed();
+    void operationFinished(const Transaction &transaction);
     void message(const QString &text, bool isError);
 
 private:
-    void setDefault(const QString &name, bool input);
-    QString volumeTarget(const QString &name) const;
+    void change(const QString &side, const QString &action, const QString &target, const QString &value = {});
 
     CommandRunner *m_runner;
     ChangeCoordinator *m_coordinator;
     QVariantList m_outputs, m_inputs, m_streams;
     QString m_status = "loading";
     QString m_defaultOutputSink;
+    bool m_routingKnown = false;
     QString m_pendingDefault;
     QHash<QString, QString> m_appIcons;
     QProcess *m_subscribe = nullptr;

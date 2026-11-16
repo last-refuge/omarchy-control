@@ -96,6 +96,36 @@ main() {
       die "pacman stopped. If it could not find a dependency, update this computer with 'omarchy update' and try again."
   fi
 
+  # Package hooks notify user managers. Also activate for the actual invoking
+  # user, including a terminal without a running user manager. Older published
+  # packages do not carry this helper and keep their prior install behavior.
+  local integration=/usr/lib/omarchy-control/agent-integration/user-recovery
+  if [[ -f $integration ]]; then
+    if ((EUID == 0)); then
+      say "Agent integration activates in desktop user sessions; root was not registered."
+    elif /usr/bin/python3 "$integration" activate >"$tmp/agent-integration.json" 2>"$tmp/agent-integration.err"; then
+      /usr/bin/python3 - "$tmp/agent-integration.json" <<'PY'
+import json, sys
+try:
+    result = json.load(open(sys.argv[1]))
+    if not isinstance(result, dict):
+        raise ValueError("unexpected activation response")
+    if result.get("outcome") == "opted_out":
+        print("Agent skill integration remains opted out.")
+    elif result.get("ok") and result.get("verified") and result.get("outcome") == "activated":
+        print("Agent skills registered for this user. Start a fresh supported agent session to load them.")
+        if result.get("userManagerActivation") == "deferred":
+            print("User-manager scheduling is prepared for the next session.")
+    else:
+        print("Agent registration needs review. Run: omarchy-control skill status")
+except (OSError, ValueError):
+    print("Agent registration was not confirmed. Run: omarchy-control skill status")
+PY
+    else
+      say "The app installed; agent registration needs review. Run: omarchy-control skill status"
+    fi
+  fi
+
   say ""
   say "Omarchy Control is installed. Find it in your app launcher, or run:"
   say "  omarchy-control open"

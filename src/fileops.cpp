@@ -10,6 +10,30 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <cerrno>
+#include <sys/stat.h>
+#include <unistd.h>
+
+QString FileOps::emptyMarkerError(const QString &homePath, const QString &path) {
+    const QString home = QDir::cleanPath(homePath);
+    if (QDir::cleanPath(path) != path || !path.startsWith(home + '/'))
+        return QStringLiteral("The preference marker is outside the user's home.");
+    const QStringList parts = path.mid(home.size() + 1).split('/');
+    QString current = home;
+    for (int i = -1; i < parts.size(); ++i) {
+        if (i >= 0) current += '/' + parts[i];
+        struct stat info{};
+        if (::lstat(QFile::encodeName(current).constData(), &info) != 0) {
+            if (errno == ENOENT) continue;
+            return QStringLiteral("The preference marker path could not be inspected.");
+        }
+        const bool leaf = i == parts.size() - 1;
+        if (info.st_uid != getuid() || (info.st_mode & 0022) || S_ISLNK(info.st_mode)
+            || (leaf ? !S_ISREG(info.st_mode) || info.st_nlink != 1 || info.st_size != 0 : !S_ISDIR(info.st_mode)))
+            return QStringLiteral("The preference marker or an ancestor is linked, shared, or contains custom content; it was left alone.");
+    }
+    return {};
+}
 
 namespace {
 

@@ -12,6 +12,7 @@
 #include <QJsonObject>
 #include <QDirIterator>
 #include <QProcess>
+#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -39,6 +40,7 @@
 #include "catalog.h"
 #include "changecoordinator.h"
 #include "cli.h"
+#include "cliapi.h"
 #include "commandrunner.h"
 #include "compat.h"
 #include "windowrulesprovider.h"
@@ -46,6 +48,7 @@
 #include <QSysInfo>
 #include "coverage.h"
 #include "displayprovider.h"
+#include "displaypreview.h"
 #include "env.h"
 #include "fileops.h"
 #include "helperlauncher.h"
@@ -55,7 +58,10 @@
 #include "iconthemeprovider.h"
 #include "iconthemes.h"
 #include "networkprovider.h"
+#include "networkpreview.h"
 #include "pluginsprovider.h"
+#include "pluginfiles.h"
+#include <sys/stat.h>
 #include "servicesprovider.h"
 #include "settingsengine.h"
 #include "shortcutsprovider.h"
@@ -108,6 +114,592 @@ struct Sandbox {
         writeFile(env.configHome + "/hypr/hyprland.lua", "dofile(\"x\")\nrequire(\"default.hypr.omarchy\")\nrequire(\"hypr.monitors\")\nrequire(\"hypr.autostart\")\nrequire(\"default.hypr.toggles\")\n-- custom\nrequire(\"hypr.mine\")\n");
     }
     void omarchy(const QByteArray &body) const { command("omarchy", body); }
+    void debugHelper() const {
+        command("omarchy-debug", "LOG_FILE=\"/tmp/omarchy-debug.log\"\nif [ \"$LOG_FILE\" = /tmp/omarchy-debug.log ]; then touch \"$HOME/public-log-used\"; exit 42; fi\nif [ -f \"$HOME/raw-limit\" ]; then head -c 3000000 /dev/zero > \"$LOG_FILE\"; exit $?; fi\nprintf 'private raw fixture\\n' > \"$LOG_FILE\"\nexec omarchy debug \"$@\"");
+    }
+    void bluetooth(const QByteArray &body) const {
+        command("bluetoothctl", "case \"$1\" in list) echo 'Controller 00:11:22:33:44:55 Test'; exit 0;; show) echo 'Powered: yes'; exit 0;; esac\n" + body);
+    }
+};
+
+struct DisplayDesk {
+    Sandbox s; Env env;
+    DisplayDesk() {
+        s.minimalHyprland();
+        writeFile(s.dir.path() + "/obeys", "1"); writeFile(s.dir.path() + "/x", "0");
+        s.command("hyprctl", kStatefulCompositor);
+        env = s.env; env.process.insert("OC_TEST_ROOT", s.dir.path());
+        writeFile(env.appStateDir + "/display-recovery-check.json", R"({"passed":true,"hyprland":"0.56.2"})");
+    }
+    QString layout(int x) { const QString path = s.dir.path() + "/layout.json"; writeFile(path, QJsonDocument(QJsonArray{QJsonObject{{"output", "eDP-1"}, {"x", x}}}).toJson()); return path; }
+    QJsonObject api(const QStringList &args) { return CliApi::execute(env, args).body; }
+};
+
+struct NetworkDesk {
+    Sandbox s;
+    NetworkDesk() {
+        writeFile(s.env.home + "/radio-enabled", "true");
+        writeFile(s.env.home + "/radio-hardware", "true");
+        set("general", "enabled:full\n");
+        set("devices", "wlan0:wifi:connected:Home\nlo:loopback:connected (externally):lo\nbr0:bridge:disconnected:\nfuture0:future-type:future-state:Odd\\: Name\n");
+        set("saved", "Same:11111111-1111-1111-1111-111111111111:802-11-wireless:yes\nSame:22222222-2222-2222-2222-222222222222:802-11-wireless:no\nBridge:33333333-3333-3333-3333-333333333333:bridge:no\n");
+        set("wifi", "*:Cafe\\: Lab:40:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan0\n :Cafe\\: Lab:90:WPA2:02\\:00\\:00\\:00\\:00\\:02:wlan0\n\n :Cafe\\: Lab:20:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan1\n ::0:--:02\\:00\\:00\\:00\\:00\\:03:wlan0\n");
+        s.command("nmcli", R"SH(
+[ "$LC_ALL" = C.UTF-8 ] && [ "$LANGUAGE" = C ] || { echo wrong-locale >&2; exit 5; }
+case "$*" in
+  *GENERAL.DBUS-PATH*)
+    device="${@: -1}"
+    if [ -f "$HOME/lookup-fail-$device" ]; then exit 8; fi
+    if [ -f "$HOME/object-$device" ]; then cat "$HOME/object-$device"; else echo "/org/freedesktop/NetworkManager/Devices/$device"; fi
+    exit 0;;
+  *WIFI,CONNECTIVITY*) section=general;;
+  *DEVICE,TYPE,STATE,CONNECTION*) section=devices;;
+  *NAME,UUID,TYPE,ACTIVE*) section=saved;;
+  *IN-USE,SSID,SIGNAL,SECURITY,BSSID,DEVICE*) section=wifi;;
+  *) echo unexpected-command >&2; exit 9;;
+esac
+touch "$HOME/started-$section"
+if [ -f "$HOME/delay-$section" ]; then
+  cp "$HOME/read-$section" "$HOME/captured-$section"
+  while [ ! -f "$HOME/release-reads" ]; do sleep .01; done
+  cat "$HOME/captured-$section"
+else
+  cat "$HOME/read-$section"
+fi
+mode=$(cat "$HOME/mode-$section" 2>/dev/null)
+case "$mode" in
+  fail) echo fixture-failure >&2; exit 8;;
+  truncated) head -c 1100000 /dev/zero | tr '\0' X;;
+  stderr-truncated) head -c 1100000 /dev/zero | tr '\0' X >&2;;
+  timeout) exec sleep 10;;
+esac
+exit 0)SH");
+        s.command("busctl", R"SH(
+case "$*" in
+  *"get-property org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.NetworkManager WirelessEnabled WirelessHardwareEnabled")
+    mode=$(cat "$HOME/radio-read-mode" 2>/dev/null)
+    [ ! -f "$HOME/radio-written" ] || mode=$(cat "$HOME/radio-readback-mode" 2>/dev/null)
+    case "$mode" in
+      malformed) printf 'b false\nb maybe\n'; exit 0;;
+      extra) printf 'b false\nb true\nb false\n'; exit 0;;
+      timeout) exec sleep 8;;
+    esac
+    printf 'b %s\nb %s\n' "$(cat "$HOME/radio-enabled")" "$(cat "$HOME/radio-hardware")"
+    case "$mode" in
+      fail) echo fixture-read-failed >&2; exit 8;;
+      truncated) head -c 70000 /dev/zero | tr '\0' X;;
+      stderr-truncated) head -c 70000 /dev/zero | tr '\0' X >&2;;
+    esac
+    exit 0;;
+  *"org.freedesktop.DBus.Properties Set ssv org.freedesktop.NetworkManager WirelessEnabled b "*)
+    case "$*" in *--allow-interactive-authorization=no*) ;; *) exit 9;; esac
+    value="${@: -1}"
+    echo "$value" >> "$HOME/radio-calls"
+    touch "$HOME/radio-started"
+    mode=$(cat "$HOME/radio-write-mode" 2>/dev/null)
+    case "$mode" in
+      denied) echo 'Wi-Fi write not authorized' >&2; exit 1;;
+      timeout) exec sleep 25;;
+      held) while [ ! -f "$HOME/release-radio" ]; do sleep .01; done;;
+    esac
+    touch "$HOME/radio-written"
+    if [ "$mode" != no-op ]; then
+      printf '%s' "$value" > "$HOME/radio-enabled"
+      if [ "$value" = true ]; then echo enabled:unknown; else echo disabled:unknown; fi > "$HOME/read-general"
+    fi
+    case "$mode" in
+      output) echo unexpected;;
+      truncated) head -c 70000 /dev/zero | tr '\0' X;;
+      changed-then-failed) exit 1;;
+    esac
+    exit 0;;
+esac
+case "$*" in *--allow-interactive-authorization=no*"RequestScan a{sv} 0") ;; *) echo unexpected-command >&2; exit 9;; esac
+for arg in "$@"; do case "$arg" in /org/freedesktop/NetworkManager/Devices/*) device="${arg##*/}";; esac; done
+echo "$device" >> "$HOME/scan-calls"
+touch "$HOME/scan-started"
+mode=$(cat "$HOME/scan-mode-$device" 2>/dev/null)
+case "$mode" in
+  denied) echo 'Scan not authorized' >&2; exit 1;;
+  output) echo unexpected;;
+  truncated) head -c 70000 /dev/zero | tr '\0' X;;
+  timeout) exec sleep 25;;
+  held) while [ ! -f "$HOME/release-scan" ]; do sleep .01; done;;
+esac
+exit 0)SH");
+    }
+    void set(const QString &section, const QByteArray &bytes) { writeFile(s.env.home + "/read-" + section, bytes); }
+    void mode(const QString &section, const QString &mode) { writeFile(s.env.home + "/mode-" + section, mode.toUtf8()); }
+    Env ownedPreviewDriver() {
+        previewReceipt();
+        const QString script = s.env.home + "/preview-driver.py";
+        writeFile(script, R"PY(import json,os,pathlib,sys,time
+h=pathlib.Path(os.environ['HOME']); directory=pathlib.Path(os.environ['XDG_STATE_HOME'])/'omarchy-control/network-previews'
+a=sys.argv[1:]; verb=a[2]; token=a[3]; path=directory/(token+'.json'); r=json.loads(path.read_text())
+mode=(h/'owned-mode').read_text() if (h/'owned-mode').exists() else ''
+if mode=='invalid': print('invalid'); sys.exit(0)
+if mode=='slow': time.sleep(.3)
+ok=True
+if verb=='keep':
+    assert '--yes' in a
+    if mode=='keep-failed': r['phase']='unknown';ok=False
+    else: r['phase']='kept'
+elif verb=='revert': r['phase']='reverted'
+elif mode=='daemon-changed': r['phase']='daemon_changed';ok=False
+if mode=='unconfirmed': ok=False
+path.write_text(json.dumps(r))
+print(json.dumps(dict(apiVersion=1,ok=ok,outcome=r['phase'],verified=verb!='status' and ok,data=dict(receipt=r,targetStateVerified=ok,remainingSeconds=50))))
+sys.exit(0 if ok else 1)
+)PY");
+        s.command("preview-control", "exec '" + QStandardPaths::findExecutable("python3").toUtf8() + "' '" + script.toUtf8() + "' \"$@\"");
+        Env env = s.env; env.selfBinary = s.bin("preview-control"); return env;
+    }
+    QString previewReceipt(const QString &phase = "preview") {
+        const QString path = s.env.appStateDir + "/network-previews";
+        QDir().mkpath(path);
+        QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+        const QString token(32, 'a');
+        const QJsonObject value{{"version", 1}, {"token", token}, {"phase", phase}, {"action", "activate"}, {"interface", "wlan0"},
+            {"uuid", "22222222-2222-2222-2222-222222222222"}, {"beforeUuid", "11111111-1111-1111-1111-111111111111"}, {"beforeState", 100},
+            {"device", "/org/freedesktop/NetworkManager/Devices/one"}, {"udi", "fixture-one"}, {"type", 2}, {"busId", QString(32, 'b')}, {"owner", ":1.2"},
+            {"requestedBootMs", "1"}, {"checkpoint", "/org/freedesktop/NetworkManager/Checkpoint/1"}, {"createdBootMs", "1"}, {"expiresBootMs", "60001"},
+            {"active", "/org/freedesktop/NetworkManager/ActiveConnection/2"}, {"message", ""}};
+        FileOps::atomicWrite(path + "/" + token + ".json", QJsonDocument(value).toJson());
+        FileOps::atomicWrite(path + "/current.json", QJsonDocument(QJsonObject{{"token", token}}).toJson());
+        return path + "/" + token + ".json";
+    }
+};
+
+
+// A compositor whose live bindings change only on reload. Module data is read
+// as JSON text; neither fixture nor discovery evaluates any Lua.
+struct HyprDesk {
+    Sandbox s;
+    HyprDesk() {
+        s.minimalHyprland();
+        writeFile(s.env.home + "/stock.json", "[]");
+        writeFile(s.env.home + "/live.json", "[]");
+        const QString backend = s.env.home + "/hypr.py";
+        writeFile(backend, R"PY(import json, os, pathlib, sys
+h=pathlib.Path(os.environ['HOME']); a=sys.argv[1:]
+def mode(name): return (h/name).exists()
+def emit(value): print(json.dumps(value))
+def records():
+    m=h/'.config/hypr/omarchy-control.lua'
+    if not m.exists(): return {}
+    for line in m.read_text().splitlines():
+        if line.startswith('-- omarchy-control-data: '): return json.loads(line.split(': ',1)[1])
+    return {}
+n=int((h/'reloads').read_text()) if (h/'reloads').exists() else 0
+if a==['-j','version']:
+    emit({'version':'9.9.0' if mode('new-version') else '0.56.2'})
+elif a==['-j','configerrors']:
+    if mode('bad-errors'): print('{}'); sys.exit(0)
+    if mode('post-bad-errors') and n>0: print('{}'); sys.exit(0)
+    emit(['baseline warning'] + (['new rule error'] if mode('new-error') and records().get('rules') else []))
+elif a==['-j','binds']:
+    if mode('bad-binds'): sys.exit(1)
+    rows=json.loads((h/'live.json').read_text())
+    if mode('wrong-command') and n>0:
+        for b in rows: b['dispatcher']='exec'; b['arg']='different command'
+    emit(rows)
+elif a==['reload']:
+    n+=1; (h/'reloads').write_text(str(n))
+    if mode('recovery-fail') and n>1: sys.exit(1)
+    if mode('edit-after-reload') and n==1:
+        m=h/'.config/hypr/omarchy-control.lua'
+        m.write_text(m.read_text()+'\n-- concurrent external edit\n')
+    if not mode('no-effect'):
+        rows=json.loads((h/'stock.json').read_text())
+        for record in records().get('binds',[]):
+            parts=record['keys'].split(' + ')
+            mask=sum({'SUPER':64,'CTRL':4,'ALT':8,'SHIFT':1}[v] for v in parts[:-1])
+            if record.get('replaces'): rows=[b for b in rows if not (b['modmask']==mask and b['key'].upper()==parts[-1] and not b.get('submap'))]
+            if not record.get('unbindOnly'): rows.append(dict(modmask=mask,key=parts[-1],description=record.get('description',''),dispatcher='__lua',arg=str(100+len(rows)),submap=''))
+        (h/'live.json').write_text(json.dumps(rows))
+else: sys.exit(91)
+)PY");
+        const QString python = QStandardPaths::findExecutable("python3");
+        s.command("hyprctl", "exec '" + python.toUtf8() + "' '" + backend.toUtf8() + "' \"$@\"");
+    }
+    void mode(const QString &name) { writeFile(s.env.home + "/" + name, "1"); }
+    void stock(const QJsonArray &rows) {
+        writeFile(s.env.home + "/stock.json", QJsonDocument(rows).toJson());
+        writeFile(s.env.home + "/live.json", QJsonDocument(rows).toJson());
+    }
+    QString selector(const QString &family) {
+        const auto reply = CliApi::execute(s.env, family == QLatin1String("rule") ? QStringList{"rule", "list", "--api-version", "1"} : QStringList{"shortcut", "list"});
+        const auto data = reply.body.value("data").toObject();
+        const auto rows = family == QLatin1String("rule") ? data.value("rules").toArray() : data.value("owned").toObject().value("binds").toArray();
+        return rows.isEmpty() ? QString() : rows.first().toObject().value("selector").toString();
+    }
+};
+
+
+// Stateful shell preferences and a separate in-memory configuration. The
+// fixture can leave either side unchanged, so process success cannot prove a write.
+struct ShellDesk {
+    Sandbox s;
+    QString config() const { return s.env.configHome + "/omarchy/shell.json"; }
+    void mode(const QString &name) { writeFile(s.env.home + "/" + name, "1"); }
+    QJsonObject object() const { return QJsonDocument::fromJson(readAll(config())).object(); }
+    void powerWidget(const QJsonValue &entry = QJsonObject{{"id", "omarchy.power"}, {"customOption", "preserve"}}) {
+        mode("power-widget");
+        auto d = object(); auto bar = d.value("bar").toObject(); auto layout = bar.value("layout").toObject(); auto right = layout.value("right").toArray();
+        right.append(entry); layout["right"] = right; bar["layout"] = layout; d["bar"] = bar;
+        const auto bytes = QJsonDocument(d).toJson(); writeFile(config(), bytes); writeFile(s.env.home + "/live-shell.json", bytes);
+    }
+    ShellDesk() {
+        const QByteArray config = R"({"version":1,"bar":{"layout":{"left":[{"id":"omarchy.menu","unknownOption":"keep"},{"id":"omarchy.clock","format":"first"},{"id":"omarchy.clock","format":"second"}],"centerBegin":[],"center":[],"centerEnd":[],"right":["local.widget","local.tray"],"tray":[]}},"plugins":[{"id":"local.panel"}],"dock":{"pinned":["a","gone"]},"custom":{"keep":true}})";
+        writeFile(this->config(), config); writeFile(s.env.home + "/live-shell.json", config);
+        writeFile(s.env.omarchyPath + "/config/omarchy/shell.json", config);
+        for (const QString &id : {QString("a"), QString("b")})
+            writeFile(s.env.dataHome + "/applications/" + id + ".desktop", "[Desktop Entry]\nType=Application\nName=" + id.toUtf8() + "\nExec=app\n");
+        const QString backend = s.env.home + "/shell-backend.py";
+        writeFile(backend, R"PY(import copy, json, os, pathlib, sys, time, shutil
+h=pathlib.Path(os.environ['HOME']); kind=sys.argv[1]; a=sys.argv[2:]
+c=h/'.config/omarchy/shell.json'; l=h/'live-shell.json'
+sections=['left','centerBegin','center','centerEnd','right','tray']
+def mode(n): return (h/n).exists()
+def emit(v): print(json.dumps(v))
+def identity(v): return v if isinstance(v,str) else v['id']
+def config(): return json.loads(c.read_text())
+def live(): return json.loads(l.read_text())
+def rows():
+    d=live(); layout=d['bar']['layout']; disabled=d.get('disabledPlugins',[])
+    table=[('omarchy.bar',['bar'],True,''),('local.alt-bar',['bar'],False,''),('omarchy.menu',['bar-widget'],True,''),('omarchy.clock',['bar-widget'],True,''),('local.widget',['bar-widget'],False,''),('local.tray',['bar-widget'],False,'omarchy.tray'),('omarchy.service',['service'],True,''),('local.panel',['panel'],False,'')]
+    if mode('power-widget'): table.append(('omarchy.power',['bar-widget'],not mode('shadow-power'),''))
+    if mode('lifecycle'):
+        table=[v for v in table if v[2] or (h/'.config/omarchy/plugins'/v[0]).exists()]
+        for manifest in (h/'.config/omarchy/plugins').glob('*/manifest.json'):
+            if manifest.parent.name.startswith('.'): continue
+            m=json.loads(manifest.read_text())
+            if not any(v[0]==m['id'] for v in table): table.append((m['id'],m['kinds'],False,m.get('omarchy',{}).get('clonedFrom','')))
+    out=[]
+    for id,kinds,first,clone in table:
+        enabled=(d['bar'].get('id','omarchy.bar')==id) if kinds==['bar'] else (any(identity(v)==id for s in sections for v in layout.get(s,[])) if kinds==['bar-widget'] else (id not in disabled if first else any(v['id']==id for v in d.get('plugins',[]))))
+        out.append(dict(id=id,name=id,kinds=kinds,firstParty=first,clonedFrom=clone,canDisable=kinds!=['bar'],active=kinds==['bar'] and enabled,enabled=enabled))
+    return out
+if kind=='shell':
+    if a==['shell','listShellConfig']:
+        if mode('live-down'): sys.exit(1)
+        if mode('malformed-live'): print('[]'); sys.exit(0)
+        emit(live()); sys.exit(0)
+    if a==['shell','rescanPlugins']: print('ok'); sys.exit(0)
+    if a==['shell','reloadConfig']:
+        l.write_bytes(c.read_bytes()); print('ok'); sys.exit(0)
+    sys.exit(91)
+if kind!='omarchy': sys.exit(92)
+if a==['plugin','list','--json']:
+    if mode('plugin-down'): sys.exit(1)
+    if mode('bad-registry'): print('{}'); sys.exit(0)
+    if mode('truncated-registry'): print('[]'); print('x'*4300000); sys.exit(0)
+    r=rows()
+    if mode('duplicate-registry'): r.append(r[0])
+    if mode('unicode-registry'): r.append(dict(id='local.функция',name='Unicode',kinds=['panel'],firstParty=False,clonedFrom='',canDisable=True,active=False,enabled=False))
+    if mode('false-registry') and (h/'changed').exists():
+        for item in r:
+            if item['id']=='omarchy.service': item['enabled']=False
+    emit(r); sys.exit(0)
+d=config()
+if mode('noop'): sys.exit(0)
+if a[:2]==['plugin','clone']:
+    source=a[2]; new=os.environ['USER']+'.'+source.removeprefix('omarchy.')
+    target=h/'.config/omarchy/plugins'/new
+    shutil.copytree(pathlib.Path(os.environ['OMARCHY_PATH'])/'shell/plugins/clock',target)
+    m=json.loads((target/'manifest.json').read_text()); m['id']=new; m['omarchy']={'clonedFrom':source}; (target/'manifest.json').write_text(json.dumps(m))
+    for section in sections:
+        for v in d['bar']['layout'].get(section,[]):
+            if isinstance(v,dict) and v['id']==source: v['id']=new
+elif a[:2]==['plugin','remove']:
+    assert a[3:]==['--yes']
+    target=h/'.config/omarchy/plugins'/a[2]
+    manifest=json.loads((target/'manifest.json').read_text()); source=manifest.get('omarchy',{}).get('clonedFrom','')
+    if target.is_symlink(): target.unlink()
+    elif (target/'.git').is_dir(): shutil.rmtree(target)
+    else: target.rename(target.parent/('.'+target.name+'.bak.fixture'))
+    d['plugins']=[v for v in d.get('plugins',[]) if v['id']!=a[2]]
+    for section in sections:
+        for v in d['bar']['layout'].get(section,[]):
+            if isinstance(v,dict) and v['id']==a[2]: v['id']=source
+elif a[:2]==['plugin','disable']:
+    id=a[2]
+    if id=='omarchy.service': d.setdefault('disabledPlugins',[]).append(id)
+    elif id=='local.panel': d['plugins']=[v for v in d['plugins'] if v['id']!=id]
+    else:
+        for s in sections: d['bar']['layout'][s]=[v for v in d['bar']['layout'].get(s,[]) if identity(v)!=id]
+elif a[:2]==['plugin','enable']:
+    id=a[2]
+    if id=='omarchy.service': d['disabledPlugins']=[v for v in d.get('disabledPlugins',[]) if v!=id]
+    elif id=='local.alt-bar' or id=='omarchy.bar': d['bar']['id']=id
+    elif id=='local.panel': d['plugins'].append({'id':id})
+    else: d['bar']['layout']['centerEnd'].append({'id':id})
+elif a[:2]==['bar','move']:
+    id=a[2]; destination=a[4]; index=int(a[6]); source=a[8]; original=int(a[10])
+    entry=d['bar']['layout'][source].pop(original)
+    assert identity(entry)==id
+    if mode('lose-options'): entry={'id':id}
+    d['bar']['layout'][destination].insert(index,entry)
+elif a[:2]==['bar','set']:
+    id,key,value=a[2:5]
+    assert a[5]=='--json' and a[6]=='--from-section' and a[8]=='--from-index'
+    source=a[7]; index=int(a[9]); entry=d['bar']['layout'][source][index]
+    assert isinstance(entry,dict) and identity(entry)==id
+    entry[key]=json.loads(value)
+    if mode('lose-options'): d['bar']['layout'][source][index]={'id':id,key:json.loads(value)}
+    if mode('change-bar'): d['bar']['background']='unexpected change'
+elif a[:2]==['dock','pin']:
+    if a[2] not in d['dock']['pinned']: d['dock']['pinned'].append(a[2])
+elif a[:2]==['dock','unpin']: d['dock']['pinned']=[id for id in d['dock']['pinned'] if id!=a[2]]
+else: sys.exit(93)
+(h/'changed').write_text('1')
+if mode('slow'): time.sleep(.4)
+if mode('false-registry'): sys.exit(0)
+if not mode('memory-only'): c.write_text(json.dumps(d))
+if not mode('disk-only'): l.write_text(json.dumps(d))
+if mode('concurrent-edit'):
+    d['external-choice']='keep'; c.write_text(json.dumps(d)); sys.exit(4)
+if mode('fail-after-write'): sys.exit(4)
+)PY");
+        const QString python = QStandardPaths::findExecutable("python3");
+        for (const auto &pair : {qMakePair(QString("omarchy"), QString("omarchy")), qMakePair(QString("omarchy-shell"), QString("shell"))})
+            s.command(pair.first, "exec '" + python.toUtf8() + "' '" + backend.toUtf8() + "' '" + pair.second.toUtf8() + "' \"$@\"");
+    }
+    QJsonObject api(const QStringList &args) { return CliApi::execute(s.env, args).body; }
+    QString selector(const QString &id, int occurrence = 0) {
+        const auto widgets = api({"bar", "status"}).value("data").toObject().value("bar").toObject().value("widgets").toArray();
+        for (const auto &value : widgets) if (value.toObject().value("id").toString() == id && occurrence-- == 0) return value.toObject().value("selector").toString();
+        return {};
+    }
+};
+
+// Stateful IPC fixtures. Reads and writes use the same device facts, so a
+// successful subprocess alone can never make the provider's verification pass.
+struct DeviceDesk {
+    Sandbox s;
+    QString state() const { return s.env.home + "/devices.json"; }
+    void mode(const QString &name) { writeFile(s.env.home + "/" + name, "1"); }
+    QJsonObject data() const { return QJsonDocument::fromJson(readAll(state())).object(); }
+    void set(const QString &key, const QJsonValue &value) {
+        auto object = data(); object[key] = value; writeFile(state(), QJsonDocument(object).toJson());
+    }
+    DeviceDesk() {
+        writeFile(state(), R"({"defaultOut":"dsp","defaultIn":"mic","speakersVolume":40,"dspVolume":100,"phonesVolume":30,"micVolume":60,"mic2Volume":50,"speakersMute":false,"dspMute":false,"phonesMute":false,"micMute":false,"mic2Mute":false,"streamSink":11,"radio":true,"otherRadio":false,"paired":true,"connected":false,"known":true})");
+        const QString script = s.env.home + "/backend.py";
+        writeFile(script, R"PY(import json, os, pathlib, sys, time
+h=pathlib.Path(os.environ['HOME'])
+state=h/'devices.json'
+d=json.loads(state.read_text())
+kind=sys.argv[1]; a=sys.argv[2:]
+def mode(name): return (h/name).exists()
+def emit(value): print(json.dumps(value))
+def change():
+    if not mode('noop'):
+        state.write_text(json.dumps(d))
+    (h/'changed').write_text('1')
+    sys.exit(0)
+def node(name,index,identity):
+    return dict(name=name,index=index,description=name,mute=d[name+'Mute'],volume={'mono':{'value_percent':str(d[name+'Volume'])+'%'}},properties={'object.id':str(identity)})
+if kind=='pactl':
+    if a[:3]==['-f','json','list']:
+        if mode('malformed'): print('not-json'); sys.exit(0)
+        if mode('fail-after') and mode('changed'): sys.exit(2)
+        if a[3]=='sinks':
+            reads=int((h/'sink-reads').read_text()) if (h/'sink-reads').exists() else 0
+            (h/'sink-reads').write_text(str(reads+1))
+            emit([node('dsp',10,100),node('speakers',11,999 if mode('recycle-device') and reads else 101),node('phones',12,102)])
+        elif a[3]=='sources': emit([node('mic',20,200),node('mic2',21,201)])
+        else:
+            reads=int((h/'stream-reads').read_text()) if (h/'stream-reads').exists() else 0
+            (h/'stream-reads').write_text(str(reads+1))
+            emit([dict(index=7,sink=d['streamSink'],properties={'application.name':'Player','object.serial':'701' if mode('recycle-stream') and reads else '700'})])
+    elif a[0]=='get-default-sink': print(d['defaultOut'])
+    elif a[0]=='get-default-source': print(d['defaultIn'])
+    elif a[0] in ['set-sink-volume','set-source-volume']:
+        d[a[1]+'Volume']=int(a[2].removesuffix('%')); change()
+    elif a[0] in ['set-sink-mute','set-source-mute']:
+        d[a[1]+'Mute']=a[2]=='1'; change()
+    elif a[0]=='move-sink-input':
+        d['streamSink']={'dsp':10,'speakers':11,'phones':12}[a[2]]; change()
+    else: sys.exit(2)
+elif kind=='omarchy':
+    if a==['audio','output','sink']:
+        if mode('slow-route'): time.sleep(.12)
+        print('speakers' if d['defaultOut']=='dsp' else d['defaultOut'])
+    elif a[:4] in [['audio','output','set','default'],['audio','input','set','default']]:
+        d['defaultOut' if a[1]=='output' else 'defaultIn']=a[5]; change()
+    elif a[:2]==['bluetooth','power']:
+        d['radio']=a[2]=='on'; d['otherRadio']=a[2]=='on' and not mode('partial-power-on'); change()
+    elif a[:2]==['bluetooth','device']:
+        if a[2]=='connect': d['radio']=True; d['connected']=True
+        elif a[2]=='disconnect': d['connected']=False
+        elif a[2]=='forget': d['radio']=True; d['known']=False; d['paired']=False; d['connected']=False
+        change()
+    else: sys.exit(2)
+elif kind=='bluetoothctl':
+    if a[0]=='list': print('Controller 00:11:22:33:44:55 First\nController 00:11:22:33:44:66 Second')
+    elif a[0]=='show':
+        if mode('radio-read-fails') or (mode('radio-after-fails') and mode('changed')): sys.exit(2)
+        print('Powered: '+('yes' if d['radio' if a[1].endswith('55') else 'otherRadio'] else 'no'))
+    elif a[0]=='devices':
+        if mode('list-after-fails') and mode('changed'): sys.exit(2)
+        if d['known']: print('Device AA:BB:CC:DD:EE:01 Headset')
+    elif a[0]=='info':
+        if mode('info-after-fails') and mode('changed'): print('Connected: no'); sys.exit(2)
+        if mode('empty-info-after') and mode('changed'): sys.exit(0)
+        if not d['known']: sys.exit(1)
+        print('Name: Headset\nPaired: '+('yes' if d['paired'] else 'no')+'\nConnected: '+('yes' if d['connected'] else 'no'))
+    else: sys.exit(2)
+)PY");
+        const QString python = QStandardPaths::findExecutable("python3");
+        for (const QString &kind : {QString("pactl"), QString("omarchy"), QString("bluetoothctl")})
+            s.command(kind, "exec '" + python.toUtf8() + "' '" + script.toUtf8() + "' " + kind.toUtf8() + " \"$@\"");
+    }
+};
+
+struct ServiceDesk {
+    Sandbox s;
+    QString state() const { return s.env.home + "/services.json"; }
+    QJsonObject data() const { return QJsonDocument::fromJson(readAll(state())).object(); }
+    void mode(const QString &name) { writeFile(s.env.home + "/" + name, "1"); }
+    void set(const QString &scope, const QString &key, const QString &value) {
+        auto all = data(); auto facts = all.value(scope).toObject(); facts[key] = value; all[scope] = facts;
+        writeFile(state(), QJsonDocument(all).toJson());
+    }
+    ServiceDesk() {
+        QJsonObject all;
+        for (const QString &scope : {QStringLiteral("user"), QStringLiteral("system")})
+            all[scope] = QJsonObject{{"Id", "agent.service"}, {"LoadState", "loaded"}, {"FragmentPath", "/usr/lib/systemd/" + scope + "/agent.service"},
+                                    {"ActiveState", "inactive"}, {"SubState", "dead"}, {"UnitFileState", "disabled"}, {"Type", "simple"},
+                                    {"Result", "success"}, {"InvocationID", "old"}, {"ExecMainStartTimestampMonotonic", "10"}};
+        writeFile(state(), QJsonDocument(all).toJson());
+        const QString script = s.env.home + "/service-backend.py";
+        writeFile(script, R"SV(import json, os, pathlib, sys
+h=pathlib.Path(os.environ['HOME']); state=h/'services.json'
+d=json.loads(state.read_text()); a=sys.argv[1:]
+scope='system' if '--system' in a else 'user'; f=d[scope]
+def mode(name): return (h/name).exists()
+def emit(value): print(json.dumps(value))
+if mode(scope+'-unavailable'): sys.exit(2)
+if 'list-units' in a:
+    emit([dict(unit='agent.service',load=f['LoadState'],active=f['ActiveState'],sub=f['SubState'],description=scope+' agent')])
+elif 'list-unit-files' in a:
+    if mode('files-error'): sys.exit(2)
+    if mode('malformed-list'): print('{}'); sys.exit(0)
+    emit([dict(unit_file='agent.service',state=f['UnitFileState'])])
+elif 'show' in a:
+    count=int((h/'show-count').read_text()) if (h/'show-count').exists() else 0
+    (h/'show-count').write_text(str(count+1))
+    if mode('read-after-fails') and mode('changed'): sys.exit(2)
+    if mode('empty-after') and mode('changed'): sys.exit(0)
+    if a[-1]!='agent.service': f['Id']=a[-1]; f['LoadState']='not-found'
+    if mode('stale-before-write') and count>=2: f['FragmentPath']='/different.service'
+    if mode('identity-after') and mode('changed'): f['Id']='replacement.service'
+    if mode('missing-field'): del f['ActiveState']
+    for key,value in f.items(): print(key+'='+value)
+else:
+    action=next((v for v in a if v in ['start','stop','restart','enable','disable']),None)
+    if not action: sys.exit(2)
+    if mode('authorization-denied'):
+        assert '--no-ask-password' in a
+        print('Interactive authentication required.',file=sys.stderr); sys.exit(1)
+    if not mode('noop'):
+        if action in ['start','restart']:
+            f['ExecMainStartTimestampMonotonic']=str(int(f['ExecMainStartTimestampMonotonic'])+1)
+            f['InvocationID']='new'+f['ExecMainStartTimestampMonotonic']; f['Result']='success'
+            f['ActiveState']='inactive' if f['Type']=='oneshot' else 'active'
+        elif action=='stop': f['ActiveState']='inactive'
+        elif action in ['enable','disable']: f['UnitFileState']='enabled' if action=='enable' else 'disabled'
+        if mode('activating-after'): f['ActiveState']='activating'
+        state.write_text(json.dumps(d))
+    (h/'changed').write_text('1')
+)SV");
+        s.command("systemctl", "exec '" + QStandardPaths::findExecutable("python3").toUtf8() + "' '" + script.toUtf8() + "' \"$@\"");
+    }
+};
+
+struct MimeDesk {
+    Sandbox s;
+    QString generic() const { return s.env.configHome + "/mimeapps.list"; }
+    void mode(const QString &name) { writeFile(s.env.home + "/" + name, "1"); }
+    void app(const QString &id, const QString &extra = {}, bool user = false) {
+        writeFile((user ? s.env.dataHome : s.env.dataDirs.last()) + "/applications/" + id,
+                  ("[Desktop Entry]\nType=Application\nName=" + id + "\nExec=true\nMimeType=text/plain;application/pdf;application/x-custom;\n" + extra).toUtf8());
+    }
+    MimeDesk() {
+        app("a.desktop"); app("b.desktop", "NoDisplay=true\n");
+        s.env.process.insert("XDG_CONFIG_DIRS", s.env.sys("/etc/xdg"));
+        s.env.process.insert("XDG_CURRENT_DESKTOP", "Hyprland");
+        writeFile(generic(), "# keep\n[Default Applications]\ntext/plain=a.desktop;\napplication/pdf=a.desktop;\n[Added Associations]\ntext/plain=a.desktop;b.desktop;\n");
+        const QString script = s.env.home + "/mime-backend.py";
+        writeFile(script, R"MI(import fcntl, os, pathlib, sys
+h=pathlib.Path(os.environ['HOME']); a=sys.argv[1:]
+def mode(name): return (h/name).exists()
+if a[:2]!=['query','default']: sys.exit(2)
+with (h/'query-count').open('a+') as counter:
+    fcntl.flock(counter,fcntl.LOCK_EX); counter.seek(0); count=int(counter.read() or '0')
+    counter.seek(0); counter.truncate(); counter.write(str(count+1)); counter.flush()
+if mode('query-fails'): print('b.desktop'); sys.exit(2)
+if mode('multiple-results'): print('a.desktop\nb.desktop'); sys.exit(0)
+if mode('empty-query'): sys.exit(0)
+config=pathlib.Path(os.environ['XDG_CONFIG_HOME'])
+desktops=[v.lower() for v in os.environ.get('XDG_CURRENT_DESKTOP','').split(':') if v]
+files=[config/(v+'-mimeapps.list') for v in desktops]+[config/'mimeapps.list']
+answer='a.desktop'
+for file in files:
+    if not file.exists(): continue
+    group=''
+    for raw in file.read_text().splitlines():
+        line=raw.strip()
+        if line.startswith('['): group=line
+        elif group=='[Default Applications]' and line.startswith(a[2]+'='):
+            answer=line.split('=',1)[1].split(';')[0]; break
+    else: continue
+    break
+if mode('app-replaced') and count>=2:
+    target=pathlib.Path(os.environ['XDG_DATA_HOME'])/'applications/b.desktop'
+    target.parent.mkdir(parents=True,exist_ok=True); target.write_text('[Desktop Entry]\nHidden=true\n')
+if mode('unknown-handler'): answer='missing.desktop'
+if mode('ignore-write'): answer='a.desktop'
+if mode('fail-after-write') and answer=='b.desktop': print(answer); sys.exit(2)
+print(answer)
+)MI");
+        s.command("xdg-mime", "exec '" + QStandardPaths::findExecutable("python3").toUtf8() + "' '" + script.toUtf8() + "' \"$@\"");
+        s.command("gtk-launch", "exit 0");
+    }
+};
+
+struct FactsDesk {
+    Sandbox s;
+    QString exports() const { return s.env.appStateDir + "/exports"; }
+    void mode(const QString &name) { writeFile(s.env.home + "/" + name, "1"); }
+    void battery(const QString &name, const QString &capacity, const QString &status = "Charging", const QString &cycles = "0") {
+        const QString path = s.env.sys("/sys/class/power_supply/") + name;
+        writeFile(path + "/type", "Battery\n"); writeFile(path + "/capacity", capacity.toUtf8() + "\n");
+        writeFile(path + "/status", status.toUtf8() + "\n"); writeFile(path + "/cycle_count", cycles.toUtf8() + "\n");
+    }
+    FactsDesk() {
+        s.debugHelper();
+        QDir().mkpath(s.env.sys("/sys/class/power_supply"));
+        writeFile(s.env.sys("/sys/class/dmi/id/product_name"), "Fixture laptop\n");
+        writeFile(s.env.sys("/sys/class/dmi/id/sys_vendor"), "Fixture vendor\n");
+        s.env.process.insert("XDG_SESSION_TYPE", "wayland");
+        s.command("df", "printf 'Filesystem Type 1B-blocks Used Avail Use%% Mounted on\\n/dev/a btrfs 1000 420 580 42%% /\\n/dev/a btrfs 1000 420 580 42%% /home\\n'");
+        s.command("hyprctl", "case \"$*\" in *version*) echo '{\"version\":\"0.56.2\"}';; *devices*) echo '{\"mice\":[]}' ;; esac");
+        s.omarchy(R"SH(case "$1" in
+version) if [ -f "$HOME/slow" ]; then sleep .15; fi; echo 4.5.0;;
+shell) exit 0;;
+debug)
+    if [ -f "$HOME/timeout" ]; then exec sleep 40; fi
+    if [ -f "$HOME/slow" ]; then sleep .15; fi
+    if [ -f "$HOME/empty" ]; then exit 0; fi
+    if [ -f "$HOME/truncated" ]; then head -c 1100000 /dev/zero | tr '\0' X; exit 0; fi
+    if [ -f "$HOME/stderr-truncated" ]; then head -c 1100000 /dev/zero | tr '\0' X >&2; echo report; exit 0; fi
+    printf 'Local debug report\npassword="two secret words"\n'
+    printf 'token: hidden-token\n' >&2
+    if [ -f "$HOME/fail" ]; then exit 7; fi;;
+esac)SH");
+    }
 };
 
 // A sandbox whose Hyprland holds blur as the real one would: the fake used by the
@@ -2167,7 +2759,7 @@ private slots:
 case "$*" in
   "-f json list sinks") echo '[{"index":151,"name":"spk","description":"S","volume":{},"properties":{"object.id":"84"}},{"index":152,"name":"hp","description":"H","volume":{},"properties":{"object.id":"76"}}]';;
   "-f json list sources") echo '[]';;
-  "-f json list sink-inputs") echo '[{"index":7,"sink":151,"volume":{},"properties":{"application.name":"Browser"}}]';;
+  "-f json list sink-inputs") echo '[{"index":7,"sink":151,"volume":{},"properties":{"application.name":"Browser","object.serial":"700"}}]';;
   get-default-sink) echo spk;;
 esac)SH");
         ChangeCoordinator coordinator(s.env);
@@ -2199,7 +2791,7 @@ esac)SH");
     void aBluetoothFailureStaysWithItsDevice() {
         Sandbox s;
         s.omarchy(R"SH(case "$*" in "bluetooth power is-on") exit 0;; esac; exit 0)SH");
-        s.command("bluetoothctl", R"SH(
+        s.bluetooth(R"SH(
 case "$1" in
   devices) printf 'Device AA:BB:CC:DD:EE:03 Office Mouse\nDevice AA:BB:CC:DD:EE:04 Office Mouse\n';;
   info) printf 'Name: Office Mouse\nConnected: no\nPaired: yes\n';;
@@ -2258,11 +2850,13 @@ esac)SH");
     void bluetoothDeviceRemovalIsVerified() {
         Sandbox s;
         s.omarchy("exit 0");
-        s.command("bluetoothctl", "echo 'Connected: no'");
+        s.bluetooth("case \"$1\" in devices) echo 'Device AA:BB:CC:DD:EE:01 Headset';; info) printf 'Connected: no\\nPaired: yes\\n';; esac");
         ChangeCoordinator coordinator(s.env);
         CommandRunner runner(s.env);
         BluetoothProvider bluetooth(&runner, &coordinator);
         QSignalSpy messages(&bluetooth, &BluetoothProvider::message);
+        bluetooth.refresh();
+        QTRY_COMPARE(bluetooth.status(), QString("ok"));
         bluetooth.connectDevice("AA:BB:CC:DD:EE:01");
         QTRY_VERIFY_WITH_TIMEOUT(messages.count() >= 1, 5000);
         QVERIFY(messages.first().at(1).toBool());
@@ -2270,6 +2864,635 @@ esac)SH");
     }
     void networkTerseEscapes() {
         QCOMPARE(NetworkProvider::splitTerse(R"(a\:b:c\\d:e)"), (QStringList{"a:b", "c\\d", "e"}));
+    }
+    void cliNetworkSnapshotRetainsReportedIdentitiesAndSeparatesUnknownState() {
+        NetworkDesk desk;
+        desk.s.env.process.insert("LC_ALL", "de_DE.UTF-8");
+        desk.s.env.process.insert("CLICOLOR_FORCE", "1");
+        const auto reply = CliApi::execute(desk.s.env, {"network", "status"});
+        QCOMPARE(reply.exitCode, 0);
+        QVERIFY(reply.body.value("verified").toBool());
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("complete").toBool());
+        QCOMPARE(data.value("devices").toArray().size(), 4);
+        const auto future = data.value("devices").toArray().last().toObject();
+        QCOMPARE(future.value("connection").toString(), QString("Odd: Name"));
+        QVERIFY(future.value("connected").isNull());
+        QVERIFY(!future.value("stateKnown").toBool());
+        QCOMPARE(data.value("saved").toArray().size(), 3);
+        QCOMPARE(data.value("accessPoints").toArray().size(), 4);
+        const auto points = data.value("accessPoints").toArray();
+        QCOMPARE(points[0].toObject().value("ssid").toString(), QString("Cafe: Lab"));
+        QVERIFY(points[3].toObject().value("ssidEmpty").toBool());
+        QVERIFY(!points[3].toObject().value("secured").toBool());
+        QVERIFY(!data.value("scanRequested").toBool());
+        QVERIFY(!data.value("connectivityCheckRequested").toBool());
+        QVERIFY(!data.value("accessPointAgeKnown").toBool());
+        QVERIFY(!data.value("atomic").toBool());
+        QCOMPARE(desk.s.calls().size(), 4);
+        for (const auto &call : desk.s.calls()) {
+            QVERIFY(call.contains("-c no -e yes"));
+            QVERIFY(!call.contains("--ask") && !call.contains("--show-secrets") && !call.contains("connectivity check"));
+            if (call.contains("wifi list")) QVERIFY(call.endsWith("--rescan no"));
+        }
+    }
+    void networkDurablePreviewBlocksGuiRadioScansAndRestoreLeases() {
+        NetworkDesk desk; desk.previewReceipt();
+        ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        QVERIFY(!NetworkPreview::pendingReason(desk.s.env).isEmpty());
+        QString error; QVERIFY(!coordinator.acquireLease("restore", &error)); QVERIFY(!error.isEmpty());
+        bool applied = false, settled = false;
+        ChangeCoordinator::Request request; request.settingId = "network.dns";
+        request.apply = [&](auto done) { applied = true; done(true, {}); };
+        coordinator.submit(std::move(request), [&](const auto &tx) { settled = true; QCOMPARE(tx.phase, QString("failed")); });
+        QVERIFY(settled); QVERIFY(!applied);
+        provider.activate("11111111-1111-1111-1111-111111111111", "Home");
+        provider.deactivate("wlan0"); provider.setWifiEnabled(false);
+        for (const auto &call : desk.s.calls()) QVERIFY(!call.contains("connection up") && !call.contains("device disconnect") && !call.contains("CheckpointCreate"));
+        const auto radio = CliApi::execute(desk.s.env, {"network", "radio", "false", "--yes"});
+        QCOMPARE(radio.exitCode, 1);
+        QCOMPARE(radio.body.value("error").toObject().value("code").toString(), QString("busy"));
+        QVariantMap scan; provider.requestScan({}, [&](const auto &value) { scan = value; });
+        QTRY_VERIFY(!scan.isEmpty());
+        QVERIFY(!scan.value("ok").toBool());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls") && !QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+    }
+    void networkGuiAdoptsAndSettlesOwnedCliTokens_data() {
+        QTest::addColumn<QString>("action");
+        QTest::newRow("keep") << "keep";
+        QTest::newRow("revert") << "revert";
+    }
+    void networkGuiAdoptsAndSettlesOwnedCliTokens() {
+        QFETCH(QString, action);
+        NetworkDesk desk; const Env env = desk.ownedPreviewDriver();
+        CommandRunner runner(env); ChangeCoordinator coordinator(env); NetworkProvider provider(&runner, &coordinator);
+        provider.refresh();
+        QTRY_VERIFY_WITH_TIMEOUT(provider.awaitingKeep() && provider.canKeep(), 5000);
+        QCOMPARE(provider.ownedPreview().value("token").toString(), QString(32, 'a'));
+        QSignalSpy messages(&provider, &NetworkProvider::message);
+        if (action == "keep") provider.keepConnection(); else provider.revertConnection();
+        QTRY_VERIFY_WITH_TIMEOUT(!provider.awaitingKeep() && !provider.busy(), 5000);
+        QVERIFY(!messages.isEmpty()); QVERIFY(!messages.last().at(1).toBool());
+        const auto receipt = NetworkPreview::localReceipt(env);
+        QCOMPARE(receipt.value("phase").toString(), action == "keep" ? QString("kept") : QString("reverted"));
+        QVERIFY(desk.s.calls().filter("preview-control network preview " + action + " " + QString(32, 'a')).size() == 1);
+        for (const auto &call : desk.s.calls()) QVERIFY(!call.startsWith("busctl ") && !call.contains("connection up") && !call.contains("device disconnect"));
+    }
+    void networkGuiNeverKeepsAnUnconfirmedOwnedPreview() {
+        NetworkDesk desk; const Env env = desk.ownedPreviewDriver();
+        writeFile(env.home + "/owned-mode", "unconfirmed");
+        CommandRunner runner(env); ChangeCoordinator coordinator(env); NetworkProvider provider(&runner, &coordinator);
+        provider.refresh();
+        QTRY_VERIFY_WITH_TIMEOUT(desk.s.calls().filter("preview-control network preview status").size() >= 1, 5000);
+        QVERIFY(provider.awaitingKeep()); QVERIFY(!provider.canKeep());
+        provider.keepConnection();
+        QTest::qWait(50);
+        QVERIFY(desk.s.calls().filter("preview-control network preview keep").isEmpty());
+        QFile::remove(env.home + "/owned-mode");
+        QTRY_VERIFY_WITH_TIMEOUT(provider.canKeep(), 5000);
+        writeFile(env.home + "/owned-mode", "keep-failed");
+        QSignalSpy messages(&provider, &NetworkProvider::message);
+        provider.keepConnection();
+        QTRY_VERIFY_WITH_TIMEOUT(!provider.busy() && !messages.isEmpty(), 5000);
+        QVERIFY(messages.last().at(1).toBool()); QVERIFY(provider.awaitingKeep()); QVERIFY(!provider.canKeep());
+        QFile::remove(env.home + "/owned-mode");
+        provider.revertConnection();
+        QTRY_VERIFY_WITH_TIMEOUT(!provider.awaitingKeep(), 5000);
+    }
+    void networkDurablePreviewRejectsUnsafeReceipts_data() {
+        QTest::addColumn<QString>("mode");
+        for (const auto &mode : {"symlink", "public-file", "public-directory", "bad-json", "extra-field", "stale-file", "bad-token"}) QTest::newRow(mode) << QString(mode);
+    }
+    void networkDurablePreviewRejectsUnsafeReceipts() {
+        QFETCH(QString, mode);
+        NetworkDesk desk; const QString file = desk.previewReceipt();
+        const QString directory = QFileInfo(file).absolutePath();
+        if (mode == "symlink") { QFile::remove(file); QVERIFY(QFile::link(desk.s.env.home + "/radio-enabled", file)); }
+        if (mode == "public-file") QFile::setPermissions(file, QFile::ReadOwner | QFile::WriteOwner | QFile::ReadOther);
+        if (mode == "public-directory") QFile::setPermissions(directory, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadOther);
+        if (mode == "bad-json") writeFile(file, "{");
+        if (mode == "extra-field") { auto value = QJsonDocument::fromJson(readAll(file)).object(); value["unrecognized"] = "do-not-trust"; FileOps::atomicWrite(file, QJsonDocument(value).toJson()); }
+        if (mode == "stale-file") QFile::remove(file);
+        if (mode == "bad-token") FileOps::atomicWrite(directory + "/current.json", "{\"token\":\"../../other\"}");
+        QVERIFY(!NetworkPreview::pendingReason(desk.s.env).isEmpty());
+        const auto status = CliApi::execute(desk.s.env, {"network", "preview", "status"});
+        QCOMPARE(status.exitCode, 1);
+        QVERIFY(!status.body.value("verified").toBool());
+        QVERIFY(desk.s.calls().isEmpty());
+    }
+    void networkTerminalReceiptDoesNotPretendToVerifyCurrentConnectivity() {
+        NetworkDesk desk; desk.previewReceipt("kept");
+        QVERIFY(NetworkPreview::pendingReason(desk.s.env).isEmpty());
+        const auto status = CliApi::execute(desk.s.env, {"network", "preview", "status"});
+        QCOMPARE(status.exitCode, 0);
+        QCOMPARE(status.body.value("outcome").toString(), QString("kept"));
+        QVERIFY(status.body.value("data").toObject().value("historicalReceipt").toBool());
+        QVERIFY(!status.body.value("verified").toBool());
+        QVERIFY(desk.s.calls().isEmpty());
+    }
+    void cliNetworkRadioPlansAndVerifiesOnlyTheSwitch() {
+        NetworkDesk desk;
+        const auto planned = CliApi::execute(desk.s.env, {"network", "radio", "false", "--dry-run"});
+        QCOMPARE(planned.exitCode, 0);
+        const auto plan = planned.body.value("data").toObject();
+        QCOMPARE(plan.value("before").toString(), QString("true"));
+        QCOMPARE(plan.value("after").toString(), QString("false"));
+        QVERIFY(!plan.value("confirmText").toString().isEmpty());
+        QCOMPARE(plan.value("details").toObject().value("devices").toArray(), QJsonArray{"wlan0"});
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.appStateDir + "/journal.jsonl"));
+        const auto unconfirmed = CliApi::execute(desk.s.env, {"network", "radio", "false"});
+        QCOMPARE(unconfirmed.exitCode, 1);
+        QCOMPARE(unconfirmed.body.value("error").toObject().value("code").toString(), QString("confirmation_required"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls"));
+        const auto changed = CliApi::execute(desk.s.env, {"network", "radio", "false", "--yes"});
+        QCOMPARE(changed.exitCode, 0);
+        QCOMPARE(changed.body.value("outcome").toString(), QString("committed"));
+        QVERIFY(changed.body.value("verified").toBool());
+        const auto data = changed.body.value("data").toObject();
+        QCOMPARE(data.value("verificationScope").toString(), QString("NetworkManager-radio-switch-only"));
+        QVERIFY(!data.value("readback").toObject().value("enabled").toBool());
+        QVERIFY(!data.value("connectionVerified").toBool() && !data.value("internetReachabilityVerified").toBool());
+        QCOMPARE(readAll(desk.s.env.home + "/radio-calls"), QByteArray("false\n"));
+        ChangeCoordinator history(desk.s.env);
+        QCOMPARE(history.history().size(), 1);
+        QVERIFY(!history.history().first().undoable());
+        QCOMPARE(history.history().first().before, QString("true"));
+        const auto enabled = CliApi::execute(desk.s.env, {"network", "radio", "true"});
+        QCOMPARE(enabled.exitCode, 0);
+        QVERIFY(enabled.body.value("data").toObject().value("readback").toObject().value("enabled").toBool());
+        QCOMPARE(readAll(desk.s.env.home + "/radio-calls"), QByteArray("false\ntrue\n"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+    }
+    void cliNetworkRadioRefusesUnknownStateAndHardwareBlocks_data() {
+        QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("code");
+        for (const auto &mode : {"fail", "malformed", "extra", "truncated", "stderr-truncated", "timeout", "devices-fail"})
+            QTest::newRow(mode) << QString(mode) << QString("read_unavailable");
+        QTest::newRow("no-adapter") << QString("no-adapter") << QString("unavailable");
+        QTest::newRow("missing-tool") << QString("missing-tool") << QString("unavailable");
+        QTest::newRow("hardware-off") << QString("hardware-off") << QString("hardware_blocked");
+    }
+    void cliNetworkRadioRefusesUnknownStateAndHardwareBlocks() {
+        QFETCH(QString, mode); QFETCH(QString, code);
+        NetworkDesk desk;
+        if (mode == "no-adapter") desk.set("devices", "lo:loopback:unmanaged:\n");
+        else if (mode == "devices-fail") desk.mode("devices", "fail");
+        else if (mode == "missing-tool") QFile::remove(desk.s.bin("busctl"));
+        else if (mode == "hardware-off") writeFile(desk.s.env.home + "/radio-hardware", "false");
+        else writeFile(desk.s.env.home + "/radio-read-mode", mode.toUtf8());
+        const auto result = CliApi::execute(desk.s.env, {"network", "radio", "true"});
+        QCOMPARE(result.exitCode, 1);
+        QCOMPARE(result.body.value("error").toObject().value("code").toString(), code);
+        QVERIFY(!result.body.value("verified").toBool());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls"));
+    }
+    void cliNetworkRadioDoesNotConfuseTheHardwareSwitchWithItsOwnPreference() {
+        NetworkDesk desk;
+        writeFile(desk.s.env.home + "/radio-hardware", "false");
+        // Hardware-blocked enabling is refused; disabling can still be verified.
+        const auto disabled = CliApi::execute(desk.s.env, {"network", "radio", "false", "--yes"});
+        QCOMPARE(disabled.exitCode, 0);
+        QVERIFY(disabled.body.value("verified").toBool());
+        QVERIFY(!disabled.body.value("data").toObject().value("readback").toObject().value("hardwareEnabled").toBool());
+        desk.set("general", "malformed-but-unrelated\n");
+        const auto planned = CliApi::execute(desk.s.env, {"network", "radio", "false", "--dry-run"});
+        QCOMPARE(planned.exitCode, 0);
+        QCOMPARE(planned.body.value("data").toObject().value("before").toString(), QString("false"));
+    }
+    void cliNetworkRadioDoesNotTrustWriterExitOrUnreadableReadback_data() {
+        QTest::addColumn<QString>("mode"); QTest::addColumn<bool>("readback");
+        for (const auto &mode : {"denied", "output", "truncated", "changed-then-failed", "timeout", "no-op"})
+            QTest::newRow(mode) << QString(mode) << false;
+        for (const auto &mode : {"fail", "malformed", "truncated", "stderr-truncated", "timeout"})
+            QTest::newRow((QString("readback-") + mode).toLatin1().constData()) << QString(mode) << true;
+    }
+    void cliNetworkRadioDoesNotTrustWriterExitOrUnreadableReadback() {
+        QFETCH(QString, mode); QFETCH(bool, readback);
+        NetworkDesk desk;
+        writeFile(desk.s.env.home + (readback ? "/radio-readback-mode" : "/radio-write-mode"), mode.toUtf8());
+        const auto result = CliApi::execute(desk.s.env, {"network", "radio", "false", "--yes"});
+        QCOMPARE(result.exitCode, 1);
+        QCOMPARE(result.body.value("outcome").toString(), QString("partial"));
+        QVERIFY(!result.body.value("verified").toBool());
+        QCOMPARE(readAll(desk.s.env.home + "/radio-calls"), QByteArray("false\n"));
+        const auto observed = result.body.value("data").toObject().value("readback");
+        if (readback) {
+            QCOMPARE(observed.toObject().value("status").toString(), QString("read_unavailable"));
+            QVERIFY(observed.toObject().value("enabled").isNull());
+        } else if (mode == "no-op") QVERIFY(observed.toObject().value("enabled").toBool());
+        else QVERIFY(observed.isNull());
+    }
+    void networkRadioRefreshesQueuedPreconditions_data() {
+        QTest::addColumn<QString>("changed");
+        for (const auto &value : {"switch", "hardware", "inventory"}) QTest::newRow(value) << QString(value);
+    }
+    void networkRadioRefreshesQueuedPreconditions() {
+        QFETCH(QString, changed);
+        NetworkDesk desk; ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        ProviderPlan plan; bool planned = false;
+        provider.planWifiEnabled(false, [&](const auto &value) { plan = value; planned = true; });
+        QTRY_VERIFY(planned); QVERIFY(plan.ok);
+        ChangeCoordinator::Done release;
+        ChangeCoordinator::Request prior; prior.settingId = "prior";
+        prior.apply = [&](auto done) { release = done; };
+        coordinator.submit(std::move(prior), [](const auto &) {}); QVERIFY(release);
+        Transaction result; bool done = false;
+        connect(&provider, &NetworkProvider::operationFinished, this, [&](const auto &tx) { result = tx; done = true; });
+        provider.changeWifiEnabled(plan, true); QVERIFY(provider.radioBusy());
+        if (changed == "switch") writeFile(desk.s.env.home + "/radio-enabled", "false");
+        if (changed == "hardware") writeFile(desk.s.env.home + "/radio-hardware", "false");
+        if (changed == "inventory") desk.set("devices", "wlan1:wifi:unavailable:\n");
+        release(true, {}); QTRY_VERIFY(done);
+        QCOMPARE(result.phase, QString("failed"));
+        QVERIFY(!provider.radioBusy());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls"));
+    }
+    void networkRadioHonorsTheRestoreLeaseAndGlobalLock() {
+        NetworkDesk desk; ChangeCoordinator lease(desk.s.env);
+        QVERIFY(lease.acquireLease("fixture"));
+        auto result = CliApi::execute(desk.s.env, {"network", "radio", "false", "--yes"});
+        QCOMPARE(result.exitCode, 1);
+        QCOMPARE(result.body.value("error").toObject().value("code").toString(), QString("busy"));
+        QVERIFY(desk.s.calls().isEmpty()); lease.releaseLease();
+        QLockFile lock(desk.s.env.appStateDir + "/change.lock"); QVERIFY(lock.tryLock(0));
+        result = CliApi::execute(desk.s.env, {"network", "radio", "false", "--yes"}); lock.unlock();
+        QCOMPARE(result.exitCode, 1);
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls"));
+    }
+    void networkGuiRadioUsesTheSharedPlanAndProtectsAnActiveWrite() {
+        NetworkDesk desk; ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        writeFile(desk.s.env.home + "/radio-write-mode", "held");
+        provider.setWifiEnabled(false); QVERIFY(provider.radioBusy());
+        QTRY_VERIFY(QFileInfo::exists(desk.s.env.home + "/radio-started"));
+        provider.setWifiEnabled(true); QVERIFY(provider.radioBusy());
+        QVERIFY(provider.busy());
+        provider.activate("11111111-1111-1111-1111-111111111111", "Home");
+        provider.deactivate("wlan0");
+        for (const auto &call : desk.s.calls()) {
+            QVERIFY(!call.contains("connection up") && !call.contains("device disconnect"));
+        }
+        QVariantMap scan;
+        provider.requestScan({}, [&](const auto &value) { scan = value; });
+        QTRY_VERIFY(!scan.isEmpty());
+        QVERIFY(!scan.value("ok").toBool());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+        writeFile(desk.s.env.home + "/release-radio", "1");
+        QTRY_VERIFY(!provider.radioBusy());
+        QTRY_COMPARE(provider.states().value("general").toMap().value("status").toString(), QString("ok"));
+        QVERIFY(!provider.wifiEnabled());
+        QCOMPARE(readAll(desk.s.env.home + "/radio-calls"), QByteArray("false\n"));
+    }
+    void networkRadioRefusesAnActiveDisconnect() {
+        NetworkDesk desk; ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        provider.deactivate("wlan0");
+        ProviderPlan plan; bool done = false;
+        provider.planWifiEnabled(false, [&](const auto &value) { plan = value; done = true; });
+        QVERIFY(done); QVERIFY(!plan.ok);
+        QCOMPARE(plan.errorCode, QString("busy"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/radio-calls"));
+        QTRY_VERIFY(provider.pending().isEmpty());
+    }
+    void cliNetworkScanPlansWithoutRequestsAndJournalsOnlyRequestAcceptance() {
+        NetworkDesk desk;
+        auto reply = CliApi::execute(desk.s.env, {"network", "rescan", "wlan0", "--dry-run"});
+        QCOMPARE(reply.exitCode, 0);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("planned"));
+        QVERIFY(!reply.body.value("verified").toBool());
+        const auto details = reply.body.value("data").toObject().value("details").toObject();
+        QCOMPARE(details.value("devices").toArray(), QJsonArray{"wlan0"});
+        QVERIFY(!details.value("scanCompletionVerified").toBool());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.appStateDir + "/journal.jsonl"));
+        QCOMPARE(desk.s.calls().size(), 2);
+        reply = CliApi::execute(desk.s.env, {"network", "rescan", "wlan0"});
+        QCOMPARE(reply.exitCode, 0);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("scan_requested"));
+        QVERIFY(!reply.body.value("verified").toBool());
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("requestAccepted").toBool());
+        QVERIFY(!data.value("scanCompletionVerified").toBool() && !data.value("accessPointAgeKnown").toBool());
+        QCOMPARE(data.value("transaction").toObject().value("phase").toString(), QString("committed"));
+        QCOMPARE(data.value("transaction").toObject().value("extra").toObject().value("verificationScope").toString(), QString("scan-request-acceptance-only"));
+        QCOMPARE(readAll(desk.s.env.home + "/scan-calls"), QByteArray("wlan0\n"));
+        ChangeCoordinator history(desk.s.env);
+        QCOMPARE(history.history().size(), 1);
+        QCOMPARE(history.history().first().kind, QString("action"));
+        QVERIFY(!history.history().first().undoable());
+        const auto cached = CliApi::execute(desk.s.env, {"network", "wifi"});
+        QCOMPARE(cached.exitCode, 0);
+        QVERIFY(!cached.body.value("data").toObject().value("scanRequested").toBool());
+        QCOMPARE(readAll(desk.s.env.home + "/scan-calls"), QByteArray("wlan0\n"));
+    }
+    void cliNetworkScanSelectsEligibleAdaptersAndKeepsPartialResults() {
+        NetworkDesk desk;
+        desk.set("devices", "wlan0:wifi:disconnected:\nwlan1:wifi:connected:Home\nwlan2:wifi:unavailable:\nwlan3:wifi:unmanaged:\nwlan4:wifi:connected (externally):external\nfuture0:wifi:future-state:\n");
+        auto plan = CliApi::execute(desk.s.env, {"network", "rescan", "--dry-run"});
+        QCOMPARE(plan.exitCode, 0);
+        QCOMPARE(plan.body.value("data").toObject().value("details").toObject().value("devices").toArray(), (QJsonArray{"wlan0","wlan1"}));
+        QCOMPARE(plan.body.value("data").toObject().value("details").toObject().value("excluded").toArray().size(), 4);
+        writeFile(desk.s.env.home + "/scan-mode-wlan1", "denied");
+        const auto reply = CliApi::execute(desk.s.env, {"network", "rescan"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("partial"));
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("requestAccepted").isNull());
+        const auto rows = data.value("results").toArray();
+        QCOMPARE(rows.size(), 2);
+        QVERIFY(rows[0].toObject().value("requestAccepted").toBool());
+        QVERIFY(rows[1].toObject().value("requestAccepted").isNull());
+        QCOMPARE(readAll(desk.s.env.home + "/scan-calls"), QByteArray("wlan0\nwlan1\n"));
+    }
+    void cliNetworkScanResolvesEveryTargetBeforeSendingRequests() {
+        NetworkDesk desk;
+        desk.set("devices", "wlan0:wifi:disconnected:\nwlan1:wifi:disconnected:\n");
+        writeFile(desk.s.env.home + "/lookup-fail-wlan1", "1");
+        const auto reply = CliApi::execute(desk.s.env, {"network", "rescan"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("blocked"));
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        QVERIFY(!reply.body.value("data").toObject().value("requestAttempted").toBool());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+    }
+    void cliNetworkScanLimitsTheBatchAndRetainsUnsentTargets() {
+        NetworkDesk desk;
+        QStringList devices;
+        for (int i = 0; i < 16; ++i) {
+            const QString name = "wlan" + QString::number(i);
+            devices << name + ":wifi:disconnected:";
+            writeFile(desk.s.env.home + "/scan-mode-" + name, "timeout");
+        }
+        desk.set("devices", (devices.join('\n') + '\n').toUtf8());
+        const auto reply = CliApi::execute(desk.s.env, {"network", "rescan"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("unknown"));
+        const auto rows = reply.body.value("data").toObject().value("results").toArray();
+        QCOMPARE(rows.size(), 16);
+        // Coarse timers may expire slightly early. Do not assume precisely two
+        // processes start; require truthful evidence for attempts and unsent rows.
+        int attempted = 0;
+        for (const auto &value : rows) {
+            const auto row = value.toObject();
+            if (row.value("requestAttempted").toBool()) {
+                ++attempted;
+                QVERIFY(row.value("requestAccepted").isNull());
+            } else {
+                QCOMPARE(row.value("requestAccepted"), QJsonValue(false));
+            }
+        }
+        QVERIFY(attempted > 0 && attempted < rows.size());
+        QCOMPARE(readAll(desk.s.env.home + "/scan-calls").trimmed().split('\n').size(), attempted);
+    }
+    void cliNetworkScanRefusalsDoNotSendRequests_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::addColumn<QString>("code");
+        QTest::newRow("off") << QString("off") << QString("unavailable");
+        QTest::newRow("unmanaged") << QString("unmanaged") << QString("unavailable");
+        QTest::newRow("non-wifi") << QString("non-wifi") << QString("invalid_value");
+        QTest::newRow("missing") << QString("missing") << QString("stale_target");
+        QTest::newRow("failed-read") << QString("failed-read") << QString("read_unavailable");
+        QTest::newRow("bad-path") << QString("bad-path") << QString("read_unavailable");
+        QTest::newRow("missing-busctl") << QString("missing-busctl") << QString("unavailable");
+    }
+    void cliNetworkScanRefusalsDoNotSendRequests() {
+        QFETCH(QString, mode);
+        QFETCH(QString, code);
+        NetworkDesk desk;
+        if (mode == "off") desk.set("general", "disabled:none\n");
+        if (mode == "unmanaged") desk.set("devices", "wlan0:wifi:unmanaged:\n");
+        if (mode == "non-wifi") desk.set("devices", "wlan0:ethernet:connected:Wired\n");
+        if (mode == "missing") desk.set("devices", {});
+        if (mode == "failed-read") desk.mode("devices", "fail");
+        if (mode == "bad-path") writeFile(desk.s.env.home + "/object-wlan0", "/org/freedesktop/NetworkManager/Other/1\n");
+        if (mode == "missing-busctl") QFile::remove(desk.s.bin("busctl"));
+        const auto reply = CliApi::execute(desk.s.env, {"network", "rescan", "wlan0"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), code);
+        QVERIFY(!reply.body.value("data").toObject().value("requestAttempted").toBool());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+    }
+    void cliNetworkScanFailedRepliesRemainUnconfirmed_data() {
+        QTest::addColumn<QString>("mode");
+        for (const auto &mode : {"denied", "output", "truncated", "timeout"}) QTest::newRow(mode) << QString(mode);
+    }
+    void cliNetworkScanFailedRepliesRemainUnconfirmed() {
+        QFETCH(QString, mode);
+        NetworkDesk desk;
+        writeFile(desk.s.env.home + "/scan-mode-wlan0", mode.toUtf8());
+        const auto reply = CliApi::execute(desk.s.env, {"network", "rescan", "wlan0"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("unknown"));
+        QVERIFY(!reply.body.value("verified").toBool());
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("requestAttempted").toBool() && data.value("requestAccepted").isNull());
+        QVERIFY(!data.value("scanCompletionVerified").toBool());
+        QCOMPARE(data.value("transaction").toObject().value("phase").toString(), QString("partial"));
+        QCOMPARE(readAll(desk.s.env.home + "/scan-calls"), QByteArray("wlan0\n"));
+    }
+    void networkScanHonorsLeaseAndGlobalChangeLock() {
+        NetworkDesk desk;
+        ChangeCoordinator lease(desk.s.env);
+        QVERIFY(lease.acquireLease("restore-fixture"));
+        auto reply = CliApi::execute(desk.s.env, {"network", "rescan", "wlan0"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("busy"));
+        QVERIFY(desk.s.calls().isEmpty());
+        lease.releaseLease();
+        QLockFile other(desk.s.env.appStateDir + "/change.lock");
+        QVERIFY(other.tryLock(0));
+        reply = CliApi::execute(desk.s.env, {"network", "rescan", "wlan0"});
+        other.unlock();
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+    }
+    void networkQueuedScanRefreshesPreconditionsBeforeRequests() {
+        NetworkDesk desk;
+        ChangeCoordinator coordinator(desk.s.env);
+        CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        ChangeCoordinator::Done release;
+        ChangeCoordinator::Request prior;
+        prior.settingId = "fixture-prior";
+        prior.apply = [&](auto done) { release = done; };
+        coordinator.submit(std::move(prior), [](const auto &) {});
+        QVERIFY(release);
+        QVariantMap result;
+        bool done = false;
+        provider.requestScan("wlan0", [&](const auto &value) { result = value; done = true; });
+        desk.set("general", "disabled:none\n");
+        release(true, {});
+        QTRY_VERIFY(done);
+        QCOMPARE(result.value("outcome").toString(), QString("blocked"));
+        QVERIFY(!result.value("requestAttempted").toBool());
+        QVERIFY(!provider.scanning());
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/scan-calls"));
+    }
+    void networkGuiScanUsesTheSharedPathAndKeepsDuplicateRequestsSeparate() {
+        NetworkDesk desk;
+        ChangeCoordinator coordinator(desk.s.env);
+        CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        writeFile(desk.s.env.home + "/scan-mode-wlan0", "held");
+        provider.rescan();
+        QTRY_VERIFY(QFileInfo::exists(desk.s.env.home + "/scan-started"));
+        QVERIFY(provider.scanning());
+        QVariantMap duplicate;
+        provider.requestScan("wlan0", [&](const auto &value) { duplicate = value; });
+        QCOMPARE(duplicate.value("errorCode").toString(), QString("busy"));
+        QVERIFY(provider.scanning());
+        writeFile(desk.s.env.home + "/release-scan", "1");
+        QTRY_VERIFY(!provider.scanning());
+        QCOMPARE(provider.scanResult().value("outcome").toString(), QString("scan_requested"));
+        QTRY_COMPARE(provider.status(), QString("ok"));
+        QCOMPARE(readAll(desk.s.env.home + "/scan-calls"), QByteArray("wlan0\n"));
+    }
+    void cliNetworkScopedReadsDoNotProbeUnrelatedSources_data() {
+        QTest::addColumn<QString>("section");
+        for (const auto &section : {"general", "devices", "saved", "wifi"}) QTest::newRow(section) << QString(section);
+    }
+    void cliNetworkScopedReadsDoNotProbeUnrelatedSources() {
+        QFETCH(QString, section);
+        NetworkDesk desk;
+        const auto reply = CliApi::execute(desk.s.env, {"network", section});
+        QCOMPARE(reply.exitCode, 0);
+        const auto data = reply.body.value("data").toObject();
+        QCOMPARE(desk.s.calls().size(), 1);
+        QCOMPARE(data.value("requestedSections").toArray(), QJsonArray{section});
+        const auto states = data.value("states").toObject();
+        for (const auto &key : QStringList{"general", "devices", "saved", "wifi"})
+            QCOMPARE(states.value(key).toObject().value("status").toString(), key == section ? QString("ok") : QString("not_requested"));
+        if (section != QLatin1String("general")) QVERIFY(data.value("wifiEnabled").isNull());
+        if (section != QLatin1String("saved")) QVERIFY(data.value("saved").isNull());
+    }
+    void cliNetworkFailureNeverBecomesAnOffRadioOrEmptyVerifiedList_data() {
+        QTest::addColumn<QString>("section");
+        QTest::addColumn<QString>("mode");
+        for (const auto &section : {"general", "devices", "saved", "wifi"})
+            for (const auto &mode : {"fail", "truncated", "stderr-truncated"})
+                QTest::newRow(qPrintable(QString(section) + "-" + mode)) << QString(section) << QString(mode);
+        QTest::newRow("timeout") << QString("general") << QString("timeout");
+    }
+    void cliNetworkFailureNeverBecomesAnOffRadioOrEmptyVerifiedList() {
+        QFETCH(QString, section);
+        QFETCH(QString, mode);
+        NetworkDesk desk;
+        desk.mode(section, mode);
+        const auto reply = CliApi::execute(desk.s.env, {"network", "status"});
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(!reply.body.value("verified").toBool());
+        const auto data = reply.body.value("data").toObject();
+        QCOMPARE(data.value("status").toString(), QString("partial"));
+        QVERIFY(!data.value("complete").toBool());
+        QCOMPARE(data.value("states").toObject().value(section).toObject().value("status").toString(), QString("read_unavailable"));
+        if (section == QLatin1String("general")) QVERIFY(data.value("wifiEnabled").isNull());
+        else QVERIFY(data.value(section == QLatin1String("wifi") ? "accessPoints" : section).isNull());
+    }
+    void cliNetworkRejectsMalformedAndAmbiguousRecords_data() {
+        QTest::addColumn<QString>("section");
+        QTest::addColumn<QByteArray>("bytes");
+        QTest::newRow("general-empty") << QString("general") << QByteArray();
+        QTest::newRow("general-unknown-radio") << QString("general") << QByteArray("maybe:full\n");
+        QTest::newRow("general-extra-row") << QString("general") << QByteArray("enabled:full\nenabled:full\n");
+        QTest::newRow("general-extra-field") << QString("general") << QByteArray("enabled:full:extra\n");
+        QTest::newRow("device-short") << QString("devices") << QByteArray("wlan0:wifi:connected\n");
+        QTest::newRow("device-empty-id") << QString("devices") << QByteArray(":wifi:disconnected:\n");
+        QTest::newRow("device-duplicate") << QString("devices") << QByteArray("wlan0:wifi:connected:Home\nwlan0:wifi:disconnected:\n");
+        QTest::newRow("bad-escape") << QString("devices") << QByteArray("wlan0:wifi:connected:bad\\qname\n");
+        QTest::newRow("dangling-escape") << QString("devices") << QByteArray("wlan0:wifi:connected:bad\\\n");
+        QTest::newRow("invalid-utf8") << QString("devices") << (QByteArray("wlan0:wifi:connected:") + char(0xff));
+        QTest::newRow("saved-invalid-uuid") << QString("saved") << QByteArray("Home:11111111--111-1111-1111-111111111111:wifi:yes\n");
+        QTest::newRow("saved-invalid-active") << QString("saved") << QByteArray("Home:11111111-1111-1111-1111-111111111111:wifi:unknown\n");
+        QTest::newRow("saved-duplicate-uuid") << QString("saved") << QByteArray("Home:11111111-1111-1111-1111-111111111111:wifi:yes\nDifferent:11111111-1111-1111-1111-111111111111:ethernet:no\n");
+        QTest::newRow("wifi-invalid-signal") << QString("wifi") << QByteArray("*:Home:oops:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan0\n");
+        QTest::newRow("wifi-large-signal") << QString("wifi") << QByteArray("*:Home:101:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan0\n");
+        QTest::newRow("wifi-bad-bssid") << QString("wifi") << QByteArray("*:Home:50:WPA2:bad:wlan0\n");
+        QTest::newRow("wifi-missing-fields") << QString("wifi") << QByteArray("*:Home:50:WPA2\n");
+        QTest::newRow("wifi-active-flag") << QString("wifi") << QByteArray("?:Home:50:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan0\n");
+        QTest::newRow("wifi-duplicate-identity") << QString("wifi") << QByteArray("*:Home:50:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan0\n :Other:30::02\\:00\\:00\\:00\\:00\\:01:wlan0\n");
+    }
+    void cliNetworkRejectsMalformedAndAmbiguousRecords() {
+        QFETCH(QString, section);
+        QFETCH(QByteArray, bytes);
+        NetworkDesk desk;
+        desk.set(section, bytes);
+        const auto reply = CliApi::execute(desk.s.env, {"network", section});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        QVERIFY(!reply.body.value("data").toObject().value("complete").toBool());
+    }
+    void cliNetworkEmptyInventoriesAndUnknownConnectivityAreValidReads() {
+        NetworkDesk desk;
+        desk.set("general", "disabled:unknown\n");
+        for (const auto &section : {"devices", "saved", "wifi"}) desk.set(section, {});
+        const auto reply = CliApi::execute(desk.s.env, {"network", "status"});
+        QCOMPARE(reply.exitCode, 0);
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("complete").toBool());
+        QCOMPARE(data.value("wifiEnabled"), QJsonValue(false));
+        QVERIFY(!data.value("connectivityKnown").toBool());
+        QVERIFY(data.value("devices").toArray().isEmpty());
+        QVERIFY(data.value("saved").toArray().isEmpty());
+        QVERIFY(data.value("accessPoints").toArray().isEmpty());
+    }
+    void cliNetworkMissingToolAndExcessiveRowsRemainUnavailable() {
+        Sandbox s;
+        const auto missing = CliApi::execute(s.env, {"network", "status"});
+        QCOMPARE(missing.exitCode, 1);
+        const auto data = missing.body.value("data").toObject();
+        QCOMPARE(data.value("status").toString(), QString("unavailable"));
+        QVERIFY(data.value("wifiEnabled").isNull() && data.value("devices").isNull());
+        NetworkDesk desk;
+        QByteArray rows;
+        for (int i = 0; i < 4097; ++i) rows += "device" + QByteArray::number(i) + ":ethernet:disconnected:\n";
+        desk.set("devices", rows);
+        const auto excessive = CliApi::execute(desk.s.env, {"network", "devices"});
+        QCOMPARE(excessive.exitCode, 1);
+        QVERIFY(excessive.body.value("data").toObject().value("devices").isNull());
+    }
+    void networkRefreshWaitsForAllReadsAndIgnoresEveryStaleSection() {
+        NetworkDesk desk;
+        ChangeCoordinator coordinator(desk.s.env);
+        CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        QSignalSpy refreshed(&provider, &NetworkProvider::refreshed);
+        for (const auto &section : {"general", "devices", "saved", "wifi"}) writeFile(desk.s.env.home + "/delay-" + section, "1");
+        provider.refresh();
+        QTRY_VERIFY(QFile::exists(desk.s.env.home + "/captured-general") && QFile::exists(desk.s.env.home + "/captured-devices")
+                    && QFile::exists(desk.s.env.home + "/captured-saved") && QFile::exists(desk.s.env.home + "/captured-wifi"));
+        QCOMPARE(refreshed.size(), 0);
+        for (const auto &section : {"general", "devices", "saved", "wifi"}) QFile::remove(desk.s.env.home + "/delay-" + section);
+        desk.set("general", "disabled:none\n");
+        desk.set("devices", "new0:ethernet:disconnected:\n");
+        desk.set("saved", {}); desk.set("wifi", {});
+        provider.refresh();
+        QTRY_COMPARE(refreshed.size(), 1);
+        writeFile(desk.s.env.home + "/release-reads", "1");
+        QTRY_COMPARE(runner.activeCount(), 0);
+        QCOMPARE(provider.snapshot().value("generation").toInt(), 2);
+        QCOMPARE(provider.devices().first().toMap().value("device").toString(), QString("new0"));
+        QVERIFY(provider.saved().isEmpty() && provider.networks().isEmpty());
+        QVERIFY(!provider.wifiEnabled());
+    }
+    void networkGuiKeepsItsGroupingAndNeverKeepsAStaleFailedList() {
+        NetworkDesk desk;
+        ChangeCoordinator coordinator(desk.s.env);
+        CommandRunner runner(desk.s.env);
+        NetworkProvider provider(&runner, &coordinator);
+        QSignalSpy refreshed(&provider, &NetworkProvider::refreshed);
+        provider.refresh();
+        QTRY_COMPARE(refreshed.size(), 1);
+        QCOMPARE(provider.devices().size(), 1);
+        QCOMPARE(provider.saved().size(), 2);
+        QCOMPARE(provider.networks().size(), 1);
+        QCOMPARE(provider.networks().first().toMap().value("signal").toInt(), 40);
+        desk.mode("devices", "fail"); desk.mode("wifi", "fail");
+        provider.refresh();
+        QTRY_COMPARE(refreshed.size(), 2);
+        QVERIFY(provider.devices().isEmpty() && provider.networks().isEmpty());
+        QCOMPARE(provider.states().value("devices").toMap().value("status").toString(), QString("read_unavailable"));
     }
     void networkDeduplicatesAccessPoints() {
         const auto rows = NetworkProvider::parseNetworks(" :Cafe:30:WPA2\n :Cafe:70:WPA2\n*:Home:40:WPA3\n :Open:20:\n ::10:WPA2\n");
@@ -2646,7 +3869,7 @@ esac)SH");
         const auto rows = ServicesProvider::mergeUnits(
             R"([{"unit":"b.service","active":"active","description":"B"},{"unit":"a.service","active":"failed","description":"A"},{"unit":"t.timer","active":"active"}])",
             R"([{"unit_file":"b.service","state":"enabled"},{"unit_file":"c.service","state":"disabled"},{"unit_file":"g@.service","state":"disabled"},{"unit_file":"s.service","state":"static"}])");
-        QCOMPARE(rows.size(), 3);
+        QCOMPARE(rows.size(), 4);
         QCOMPARE(rows[0].toMap().value("unit").toString(), QString("a.service"));
         QVERIFY(rows[0].toMap().value("failed").toBool());
         QCOMPARE(rows[1].toMap().value("enabled").toString(), QString("enabled"));
@@ -2654,8 +3877,11 @@ esac)SH");
     }
     void serviceActionsAreConstrained() {
         QVERIFY(ServicesProvider::isSafeUnit("foo-bar@x.service"));
+        QVERIFY(!ServicesProvider::isSafeUnit(""));
         QVERIFY(!ServicesProvider::isSafeUnit("foo.timer"));
         QVERIFY(!ServicesProvider::isSafeUnit("--now.service; reboot"));
+        QVERIFY(!ServicesProvider::isSafeUnit("--bad.service"));
+        QVERIFY(!ServicesProvider::isSafeUnit("foo.service\n"));
         Sandbox s;
         s.command("systemctl", "echo active");
         ChangeCoordinator coordinator(s.env);
@@ -2669,17 +3895,18 @@ esac)SH");
         QVERIFY(s.calls().isEmpty());
     }
     void serviceStartIsVerified() {
-        Sandbox s;
-        s.command("systemctl", kScript11);
-        ChangeCoordinator coordinator(s.env);
-        CommandRunner runner(s.env);
+        ServiceDesk desk;
+        desk.set("user", "ActiveState", "failed");
+        desk.mode("noop");
+        ChangeCoordinator coordinator(desk.s.env);
+        CommandRunner runner(desk.s.env);
         ServicesProvider services(&runner, &coordinator);
         QSignalSpy messages(&services, &ServicesProvider::message);
-        services.serviceAction("foo.service", "start", false);
+        services.serviceAction("agent.service", "start", false);
         QTRY_VERIFY_WITH_TIMEOUT(messages.count() >= 1, 5000);
         QVERIFY(messages.first().at(1).toBool());
         QVERIFY(messages.first().at(0).toString().contains("did not start"));
-        QVERIFY(s.calls().join('\n').contains("systemctl --user start foo.service"));
+        QVERIFY(desk.s.calls().join('\n').contains("systemctl --user start agent.service"));
     }
     void startupMasksWithoutTouchingTheSystemEntry() {
         Sandbox s;
@@ -2737,15 +3964,13 @@ esac)SH");
         QVERIFY(shortcuts.checkKeys("SUPER + Y").value("conflicts").toStringList().isEmpty());
         QSignalSpy messages(&shortcuts, &ShortcutsProvider::message);
         shortcuts.addBinding("SUPER + E", "Mine", "mine", false);
-        QCOMPARE(messages.count(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(messages.count(), 1, 5000);
         QVERIFY(messages.first().at(1).toBool());
         QVERIFY(!QFile::exists(s.env.configHome + "/hypr/omarchy-control.lua"));
     }
     void shortcutAddIsVerifiedAndRemovable() {
-        Sandbox s;
-        s.minimalHyprland();
-        // Binds appear once the module holds one.
-        s.command("hyprctl", kScript12);
+        HyprDesk desk;
+        Sandbox &s = desk.s;
         ChangeCoordinator coordinator(s.env);
         CommandRunner runner(s.env);
         ShortcutsProvider shortcuts(&runner, &coordinator);
@@ -2795,16 +4020,17 @@ esac)SH");
         QVERIFY(layout.value("center").toList().isEmpty());
     }
     void pluginToggleIsVerifiedThroughTheShell() {
-        Sandbox s;
-        s.omarchy(kScript13);
+        ShellDesk desk;
+        Sandbox &s = desk.s;
+        desk.mode("noop");
         ChangeCoordinator coordinator(s.env);
         CommandRunner runner(s.env);
         PluginsProvider plugins(&runner, &coordinator);
         QSignalSpy messages(&plugins, &PluginsProvider::message);
-        plugins.setEnabled("omarchy.a", true);
+        plugins.setEnabled("omarchy.service", false);
         QTRY_VERIFY_WITH_TIMEOUT(messages.count() >= 1, 5000);
         QVERIFY(messages.first().at(1).toBool());
-        QVERIFY(s.calls().join('\n').contains("omarchy plugin enable omarchy.a"));
+        QVERIFY(s.calls().join('\n').contains("omarchy plugin disable omarchy.service"));
     }
     void storageParsingSkipsPseudoFilesystems() {
         const auto rows = SystemProvider::parseDf("Filesystem Type 1B Used Avail Use% Mounted\n/dev/a btrfs 100 42 58 42% /\ntmpfs tmpfs 10 1 9 10% /run\n/dev/b ext4 100 95 5 95% /my disk\n");
@@ -2848,6 +4074,157 @@ esac)SH");
     }
 
     // ---- Displays -------------------------------------------------------------
+    void displayDiscoveryRejectsMalformedReadsAndAwaitsBothSources() {
+        Sandbox s;
+        monitorFixture(s, twoMonitors());
+        auto reply = CliApi::execute(s.env, {"display", "status"});
+        QVERIFY(reply.body.value("ok").toBool());
+        const auto data = reply.body.value("data").toObject();
+        QCOMPARE(data.value("monitors").toArray().size(), 3);
+        QCOMPARE(data.value("hyprlandVersion").toString(), QString("0.56.2"));
+        QVERIFY(!data.value("physicalAppearanceVerified").toBool());
+        writeFile(s.dir.path() + "/hypr-monitors", "{broken");
+        reply = CliApi::execute(s.env, {"display", "status"});
+        QVERIFY(!reply.body.value("ok").toBool());
+        QVERIFY(reply.body.value("data").toObject().value("monitors").isNull());
+        QCOMPARE(reply.body.value("data").toObject().value("versionStatus").toString(), QString("ok"));
+        QVariantList rows; QString error;
+        QVERIFY(DisplayProvider::decodeMonitors("[]", &rows, &error));
+        QVERIFY(rows.isEmpty());
+        const auto valid = QJsonDocument::fromJson(twoMonitors()).array().first().toObject();
+        for (const auto &field : {QString("width"), QString("x"), QString("scale"), QString("transform")}) {
+            auto malformed = valid; malformed[field] = "invalid";
+            QVERIFY2(!DisplayProvider::decodeMonitors(QJsonDocument(QJsonArray{malformed}).toJson(), &rows, &error), qPrintable(field));
+        }
+        QVERIFY(!DisplayProvider::decodeMonitors(QJsonDocument(QJsonArray{valid, valid}).toJson(), &rows, &error));
+        QVERIFY(!DisplayProvider::isSafeOutputName("DP-1\n"));
+    }
+    void displayRecoveryResumesAnInterruptedPersistencePhase_data() {
+        QTest::addColumn<QString>("stopAfter");
+        QTest::newRow("module write") << "module";
+        QTest::newRow("both file writes") << "both";
+        QTest::newRow("later edit") << "edited";
+    }
+    void displayRecoveryResumesAnInterruptedPersistencePhase() {
+        QFETCH(QString, stopAfter);
+        DisplayDesk desk;
+        const auto rows = desk.api({"display", "status"}).value("data").toObject().value("monitors").toArray();
+        auto layout = rows; auto row = layout.first().toObject(); row["x"] = 40; layout[0] = row;
+        HyprModule target(desk.env); QVERIFY(target.load());
+        const auto original = readAll(target.hyprlandPath());
+        const QString token = "dp-" + QString(32, 'a'); QString error;
+        QJsonObject receipt{{"schema", 1}, {"token", token}, {"session", "sandbox"}, {"hyprland", "0.56.2"}, {"phase", "keeping"},
+            {"deadline", double(QDateTime::currentMSecsSinceEpoch() + 15000)}, {"original", rows}, {"layout", layout},
+            {"fingerprints", QJsonObject{{target.path(), "missing"}, {target.hyprlandPath(), FileOps::fingerprint(target.hyprlandPath())}}}};
+        QVERIFY(DisplayPreview::prepare(desk.env, &error));
+        QVERIFY(DisplayPreview::save(desk.env, receipt, &error));
+        target.setMonitors(QJsonArray{QJsonObject{{"output", "eDP-1"}, {"mode", "1920x1200@60.00"}, {"position", "40x0"}, {"scale", 1}}});
+        QByteArray import; QVERIFY(target.plannedImport(&import));
+        QVERIFY2(DisplayPreview::capturePersistence(desk.env, &receipt, target.render(), import, &error), qPrintable(error));
+        writeFile(target.path(), target.render());
+        if (stopAfter != "module") writeFile(target.hyprlandPath(), import);
+        if (stopAfter == "edited") writeFile(target.hyprlandPath(), import + "-- later edit\n");
+        writeFile(desk.s.dir.path() + "/x", "40");
+        // No owner remains: the separate revert process reconstructs the timer
+        // plan and uses the durable before/after guards to recover partial files.
+        const auto reply = desk.api({"display", "preview", "revert", token});
+        QCOMPARE(reply.value("ok").toBool(), stopAfter != "edited");
+        QCOMPARE(readAll(desk.s.dir.path() + "/x").trimmed(), QByteArray("0"));
+        if (stopAfter == "edited") {
+            QCOMPARE(readAll(target.hyprlandPath()), import + "-- later edit\n");
+            QVERIFY(QFileInfo::exists(target.path()));
+            QCOMPARE(DisplayPreview::load(desk.env, token).value("phase").toString(), QString("restore_failed"));
+        } else {
+            QCOMPARE(readAll(target.hyprlandPath()), original);
+            QVERIFY(!QFileInfo::exists(target.path()));
+            QCOMPARE(DisplayPreview::load(desk.env, token).value("phase").toString(), QString("reverted"));
+        }
+    }
+    void displayLayoutPlansAreTypedAndDoNotStartRecovery() {
+        DisplayDesk desk;
+        const auto file = desk.layout(40);
+        const auto plan = desk.api({"display", "layout", file, "--dry-run"});
+        QVERIFY2(plan.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(plan).toJson())));
+        QCOMPARE(plan.value("outcome").toString(), QString("planned"));
+        QVERIFY(!QFile::exists(desk.s.env.appStateDir + "/history.jsonl"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.appStateDir + "/display-previews"));
+        QVERIFY(!QFile::exists(desk.s.dir.path() + "/hypr-eval"));
+        QVERIFY(!desk.api({"display", "layout", file}).value("ok").toBool());
+        for (const auto &bytes : {QByteArray("[]"), QByteArray("[{\"output\":\"eDP-1\",\"enabled\":false}]"), QByteArray("[{\"output\":\"eDP-1\",\"x\":\"40\"}]"), QByteArray("[{\"output\":\"eDP-1\",\"x\":40.5}]"), QByteArray("[{\"output\":\"eDP-1\",\"unknown\":1}]"), QByteArray("[{\"output\":\"eDP-1\",\"mirrorOf\":\"bad\\\\\\\"name\"}]"), QByteArray("[{\"output\":\"eDP-1\"},{\"output\":\"eDP-1\"}]")}) {
+            writeFile(file, bytes);
+            QVERIFY(!desk.api({"display", "layout", file, "--dry-run"}).value("ok").toBool());
+        }
+        QVERIFY(!QFile::exists(desk.s.dir.path() + "/hypr-eval"));
+    }
+    void displayKeepAdoptsTheTokenAfterTheCallerHasExited() {
+        DisplayDesk desk;
+        const auto file = desk.layout(40);
+        QProcess caller; caller.setProcessEnvironment(desk.env.process);
+        caller.start(QCoreApplication::applicationFilePath(), {"--cli-sandbox", desk.s.dir.path(), "display", "layout", file, "--yes"});
+        QVERIFY(caller.waitForStarted());
+        QTRY_COMPARE_WITH_TIMEOUT(caller.state(), QProcess::NotRunning, 15000);
+        const auto reply = QJsonDocument::fromJson(caller.readAllStandardOutput()).object();
+        QVERIFY2(reply.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(reply).toJson()) + caller.readAllStandardError()));
+        const QString token = reply.value("data").toObject().value("receipt").toObject().value("token").toString();
+        QVERIFY(DisplayPreview::validToken(token));
+        QCOMPARE(readAll(desk.s.dir.path() + "/x").trimmed(), QByteArray("40"));
+        AppCore core(desk.env); DisplayProvider gui(&core.runner, &core.coordinator);
+        gui.refresh(); QTRY_VERIFY_WITH_TIMEOUT(gui.previewing(), 5000);
+        QCOMPARE(gui.previewToken(), token);
+        QVERIFY(!desk.api({"display", "preview", "keep", token}).value("ok").toBool());
+        const auto kept = desk.api({"display", "preview", "keep", token, "--yes"});
+        QVERIFY2(kept.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(kept).toJson())));
+        QCOMPARE(kept.value("outcome").toString(), QString("kept"));
+        const auto receipt = DisplayPreview::load(desk.env, token);
+        QCOMPARE(receipt.value("phase").toString(), QString("kept"));
+        QVERIFY(!receipt.value("physicalAppearanceVerified").toBool());
+        HyprModule module(desk.env); QVERIFY(module.load()); QVERIFY(module.importInstalled());
+        QCOMPARE(module.monitors().first().toObject().value("position").toString(), QString("40x0"));
+        QVERIFY(!desk.api({"display", "preview", "revert", token}).value("ok").toBool());
+        gui.refresh(); QTRY_VERIFY_WITH_TIMEOUT(!gui.busy(), 5000);
+        QVERIFY(DisplayPreview::pendingReason(desk.env).isEmpty());
+    }
+    void displayPreviewExpiryAndExplicitRevertSurviveTheCaller_data() {
+        QTest::addColumn<bool>("expire");
+        QTest::newRow("explicit revert") << false;
+        QTest::newRow("timeout after caller exits") << true;
+    }
+    void displayPreviewExpiryAndExplicitRevertSurviveTheCaller() {
+        QFETCH(bool, expire);
+        DisplayDesk desk;
+        const auto reply = desk.api({"display", "layout", desk.layout(40), "--yes"});
+        QVERIFY2(reply.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(reply).toJson())));
+        const QString token = reply.value("data").toObject().value("receipt").toObject().value("token").toString();
+        AppCore other(desk.env); QString error;
+        QVERIFY(!other.coordinator.acquireLease("run-aaaaaaaaaaaa", &error));
+        QVERIFY(error.contains("preview"));
+        const auto blocked = desk.api({"network", "disconnect", "wlan0", "--yes"});
+        QCOMPARE(blocked.value("error").toObject().value("code").toString(), QString("display_preview_pending"));
+        if (!expire) {
+            const auto reverted = desk.api({"display", "preview", "revert", token});
+            QVERIFY2(reverted.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(reverted).toJson())));
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(DisplayPreview::load(desk.env, token).value("phase").toString(), QString("reverted"), 22000);
+        QCOMPARE(readAll(desk.s.dir.path() + "/x").trimmed(), QByteArray("0"));
+        QVERIFY(DisplayPreview::load(desk.env, token).value("restoreVerified").toBool());
+        QVERIFY(!QFileInfo::exists(HyprModule(desk.env).path()));
+        QVERIFY(!desk.api({"display", "preview", "keep", token, "--yes"}).value("ok").toBool());
+        QVERIFY(DisplayPreview::pendingReason(desk.env).isEmpty());
+    }
+    void displayKeepPreservesHandEditsAndReportsTheRestoredPreview() {
+        DisplayDesk desk;
+        const auto reply = desk.api({"display", "layout", desk.layout(40), "--yes"});
+        QVERIFY(reply.value("ok").toBool());
+        const QString token = reply.value("data").toObject().value("receipt").toObject().value("token").toString();
+        const QString config = HyprModule(desk.env).hyprlandPath();
+        const auto edited = readAll(config) + "-- later hand edit\n"; writeFile(config, edited);
+        const auto kept = desk.api({"display", "preview", "keep", token, "--yes"});
+        QVERIFY(!kept.value("ok").toBool());
+        QCOMPARE(DisplayPreview::load(desk.env, token).value("phase").toString(), QString("reverted"));
+        QCOMPARE(readAll(config), edited);
+        QCOMPARE(readAll(desk.s.dir.path() + "/x").trimmed(), QByteArray("0"));
+        QVERIFY(!QFileInfo::exists(HyprModule(desk.env).path()));
+    }
     void aDisplaysCurrentModeIsAlwaysValid() {
         // Found on a real nested output, which lists no modes at all.
         Sandbox s;
@@ -2972,7 +4349,7 @@ esac)SH");
     void watchdogSkipsUnpluggedOutputs() {
         Sandbox s;
         // DP-1 went away during the preview.
-        monitorFixture(s, R"([{"name":"eDP-1","width":1,"height":1,"refreshRate":60,"x":0,"y":0,"scale":1,"transform":0,"availableModes":[]},{"name":"DP-2","disabled":true,"width":1,"height":1,"refreshRate":60,"availableModes":[]}])");
+        monitorFixture(s, R"([{"name":"eDP-1","width":1,"height":1,"refreshRate":60,"x":0,"y":0,"scale":1,"transform":0,"availableModes":[]},{"name":"DP-2","disabled":true,"width":1,"height":1,"refreshRate":60,"x":0,"y":0,"scale":1,"transform":0,"availableModes":[]}])");
         const QString plan = watchdogPlan(s, 0);
         QCOMPARE(DisplayProvider::runWatchdog(s.env, plan), 0);
         const QByteArray evals = readAll(s.dir.path() + "/hypr-eval");
@@ -2982,7 +4359,7 @@ esac)SH");
     void watchdogNeverLeavesEveryOutputOff() {
         Sandbox s;
         // Every output it remembered is gone; whatever is left must come on.
-        monitorFixture(s, R"([{"name":"HDMI-7","width":1,"height":1,"refreshRate":60,"availableModes":[]}])");
+        monitorFixture(s, R"([{"name":"HDMI-7","width":1,"height":1,"refreshRate":60,"x":0,"y":0,"scale":1,"transform":0,"availableModes":[]}])");
         const QString plan = watchdogPlan(s, 0);
         QCOMPARE(DisplayProvider::runWatchdog(s.env, plan), 0);
         const QByteArray evals = readAll(s.dir.path() + "/hypr-eval");
@@ -3546,8 +4923,9 @@ esac
     void aWidgetMoveToleratesASlowWrite() {
         Sandbox s;
         const QString config = s.env.configHome + "/omarchy/shell.json";
-        writeFile(config, "{\"bar\":{\"layout\":{\"left\":[{\"id\":\"w\"}],\"right\":[]}}}");
-        s.omarchy("case \"$1\" in bar) (sleep 0.4; printf '{\"bar\":{\"layout\":{\"left\":[],\"right\":[{\"id\":\"w\"}]}}}' > \"$HOME/.config/omarchy/shell.json\") & ;; plugin) exit 1;; esac");
+        writeFile(config, "{\"version\":1,\"bar\":{\"layout\":{\"left\":[{\"id\":\"w\"}],\"right\":[]}}}");
+        s.omarchy("case \"$1\" in bar) (sleep 0.4; printf '{\"version\":1,\"bar\":{\"layout\":{\"left\":[],\"right\":[{\"id\":\"w\"}]}}}' > \"$HOME/.config/omarchy/shell.json\") & ;; plugin) exit 1;; esac");
+        s.command("omarchy-shell", "case \"$2\" in listShellConfig) cat \"$HOME/.config/omarchy/shell.json\";; esac");
         ChangeCoordinator coordinator(s.env);
         CommandRunner runner(s.env);
         PluginsProvider plugins(&runner, &coordinator);
@@ -3563,13 +4941,13 @@ esac
         QVERIFY(ServicesProvider::withHidden("[Desktop Entry]\nName=A\n", true).contains("Hidden=true"));
     }
     void aOneShotServiceThatRanIsAStart() {
-        Sandbox s;
-        s.command("systemctl", "case \"$*\" in *show*) printf 'ActiveState=inactive\\nResult=success\\n';; *list-*) echo '[]';; esac");
-        ChangeCoordinator coordinator(s.env);
-        CommandRunner runner(s.env);
+        ServiceDesk desk;
+        desk.set("user", "Type", "oneshot");
+        ChangeCoordinator coordinator(desk.s.env);
+        CommandRunner runner(desk.s.env);
         ServicesProvider services(&runner, &coordinator);
         QSignalSpy messages(&services, &ServicesProvider::message);
-        services.serviceAction("foo.service", "start", false);
+        services.serviceAction("agent.service", "start", false);
         QTRY_VERIFY_WITH_TIMEOUT(messages.count() >= 1, 5000);
         QVERIFY(!messages.first().at(1).toBool());
     }
@@ -3724,7 +5102,9 @@ esac
         // Let the post-restore read and refresh finish before judging the outcome.
         QTest::qWait(500);
         QVERIFY2(displays.outcome().isEmpty(), qPrintable(displays.outcome().value("detail").toString()));
-        QVERIFY(QDir(env.runtimeDir + "/omarchy-control").entryList({"display-*"}, QDir::Files).isEmpty());
+        const auto leftovers = QDir(env.runtimeDir + "/omarchy-control").entryList({"display-*"}, QDir::Files);
+        for (const auto &path : leftovers) QVERIFY(path.endsWith(".result"));
+        QCOMPARE(displays.previewReceipt().value("phase").toString(), QString("reverted"));
     }
     void recoveryCheckFailsWhenTheWatchdogCannotStart() {
         Sandbox s;
@@ -3753,7 +5133,9 @@ esac
         DisplayProvider displays(&runner, &coordinator);
         QSignalSpy finished(&displays, &DisplayProvider::checkFinished);
         displays.refresh();
-        QTRY_VERIFY_WITH_TIMEOUT(displays.monitors().size() == 1, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(displays.status(), QString("unavailable"), 5000);
+        QVERIFY(displays.monitors().isEmpty());
+        QVERIFY(!displays.editingUnlocked());
         displays.runRecoveryCheck();
         QTRY_VERIFY_WITH_TIMEOUT(finished.count() == 1, 5000);
         QVERIFY(!finished.first().at(0).toBool());
@@ -3815,12 +5197,27 @@ esac
         QVERIFY(root.value("settings").toObject().size() > 25);
         for (const auto &key : root.value("settings").toObject().keys())
             QVERIFY2(catalog.find(key), qPrintable(key));
-        // Profile adapters are pinned apart from settings, and every command they name is too.
+        // Every declared provider/profile dependency has a reviewed fingerprint;
+        // extending adapters must not invalidate an otherwise legitimate pin map.
         const QJsonObject adapters = root.value("adapters").toObject();
-        QCOMPARE(adapters.keys(), (QStringList{"profile.bar", "profile.plugins", "profile.themes"}));
+        QStringList required{"profile.bar", "profile.plugins", "profile.themes"};
+        const auto operations = QJsonDocument::fromJson(readAll(PROJECT_ROOT "/src/data/cli-operations.json")).array();
+        for (const auto &row : operations)
+            for (const auto &key : row.toObject().value("compatibilityKeys").toArray())
+                required << key.toString();
+        for (const QString &key : required)
+            QVERIFY2(adapters.contains(key), qPrintable(key));
+        const auto inventory = QJsonDocument::fromJson(readAll(PROJECT_ROOT "/docs/inventory-2026-11-05.json")).object();
+        QSet<QString> binaries;
+        for (const auto &row : inventory.value("commands").toArray())
+            binaries.insert(row.toObject().value("binary").toString());
         for (const QJsonValue &binaries : adapters)
             for (const QJsonValue &binary : binaries.toArray())
                 QVERIFY2(root.value("commands").toObject().contains(binary.toString()), qPrintable(binary.toString()));
+        for (const QString &name : root.value("commands").toObject().keys()) {
+            QVERIFY2(binaries.contains(name), qPrintable(name));
+            QVERIFY(QRegularExpression("^[a-f0-9]{64}$").match(root.value("commands").toObject().value(name).toString()).hasMatch());
+        }
     }
     void packageWorkWaitsForPacman() {
         Sandbox s;
@@ -3972,6 +5369,14 @@ esac
         QTest::newRow("opacity high") << "x" << "opacity" << "7" << false;
         QTest::newRow("no blur") << "steam" << "noblur" << "" << true;
         QTest::newRow("unknown action") << "x" << "exec" << "rm" << false;
+        QTest::newRow("ignored float value") << "x" << "float" << "unexpected" << false;
+        QTest::newRow("ignored tile value") << "x" << "tile" << "0.9" << false;
+        QTest::newRow("ignored noblur value") << "x" << "noblur" << "true" << false;
+        QTest::newRow("workspace trailing newline") << "x" << "workspace" << "3\n" << false;
+        QTest::newRow("opacity trailing newline") << "x" << "opacity" << "0.9\n" << false;
+        QTest::newRow("match control") << "fire\nfox" << "float" << "" << false;
+        QTest::newRow("special workspace") << "x" << "workspace" << "special:notes" << true;
+        QTest::newRow("long match") << QString(121, 'x') << "float" << "" << false;
     }
     void windowRuleValidation() {
         QFETCH(QString, match);
@@ -4566,9 +5971,10 @@ esac
     }
     // A fake curl that answers the API, then serves the two release files.
     static void fakeGitHub(const Sandbox &s, const QString &version, const QByteArray &packageBytes, const QByteArray &listedBytes) {
-        const QByteArray name = "omarchy-control-" + version.toUtf8() + "-1-x86_64.pkg.tar.zst";
+        const QByteArray architecture = QSysInfo::currentCpuArchitecture() == "arm64" ? QByteArray("aarch64") : QSysInfo::currentCpuArchitecture().toUtf8();
+        const QByteArray name = "omarchy-control-" + version.toUtf8() + "-1-" + architecture + ".pkg.tar.zst";
         const QByteArray sum = QCryptographicHash::hash(listedBytes, QCryptographicHash::Sha256).toHex();
-        writeFile(s.dir.path() + "/api.json", releaseJson(version));
+        writeFile(s.dir.path() + "/api.json", releaseJson(version).replace("x86_64", architecture));
         writeFile(s.dir.path() + "/package", packageBytes);
         s.command("curl", "for last; do :; done\n"
                           "while [ $# -gt 0 ]; do [ \"$1\" = -o ] && dest=$2; shift; done\n"
@@ -4639,6 +6045,9 @@ esac
 
         // No package for this architecture: known about, but not installable.
         QVERIFY(!Updater::interpret(respond(releaseJson("0.2.0"), 200), "aarch64").release.installable());
+        const QByteArray armRelease = releaseJson("0.2.0").replace("x86_64", "aarch64");
+        QVERIFY(Updater::interpret(respond(armRelease, 200), "aarch64").release.installable());
+        QVERIFY(Updater::interpret(respond(armRelease, 200), "arm64").release.installable());
 
         // A response cannot point the download anywhere else.
         QByteArray elsewhere = releaseJson("0.2.0");
@@ -4677,7 +6086,8 @@ esac
         QCOMPARE(Cli::run(s.env, {"update", "install"}), 0);
         const QStringList sudo = s.calls().filter(QRegularExpression("^sudo "));
         QCOMPARE(sudo.size(), 1);
-        QVERIFY2(sudo.first().startsWith("sudo pacman -U " + s.env.appCacheDir + "/updates/omarchy-control-0.2.0-1-x86_64.pkg.tar.zst"), qPrintable(sudo.first()));
+        const QString architecture = QSysInfo::currentCpuArchitecture() == "arm64" ? QStringLiteral("aarch64") : QSysInfo::currentCpuArchitecture();
+        QVERIFY2(sudo.first().startsWith("sudo pacman -U " + s.env.appCacheDir + "/updates/omarchy-control-0.2.0-1-" + architecture + ".pkg.tar.zst"), qPrintable(sudo.first()));
         QVERIFY(!sudo.first().contains("--noconfirm"));
         QCOMPARE(readAll(s.dir.path() + "/installed"), QByteArray("real package"));
         QVERIFY(!QFile::exists(s.env.appCacheDir + "/updates"));
@@ -4854,6 +6264,1782 @@ esac
         QCOMPARE(Cli::run(s.env, {"search", "theme"}), 0);
         QCOMPARE(Cli::run(s.env, {"history"}), 0);
     }
+    void cliApiDiscoveryDoesNotProbeOrChangeTheDesktop() {
+        Sandbox s;
+        s.minimalHyprland();
+        s.omarchy("exit 0");
+        const QString file = s.env.configHome + "/omarchy/shell.json";
+        writeFile(file, "{\"idle\":{\"lock\":300}}\n");
+        for (const QStringList &args : QList<QStringList>{{"commands"}, {"catalog"}, {"describe", "appearance.blur.size"},
+                                                         {"search", "microphone"}, {"coverage", "--cli"}}) {
+            const auto reply = CliApi::execute(s.env, QStringList{"--api-version", "1"} + args);
+            QCOMPARE(reply.exitCode, 0);
+            QCOMPARE(reply.body.value("apiVersion").toInt(), 1);
+            QVERIFY(reply.body.value("error").isNull());
+        }
+        QVERIFY(s.calls().isEmpty());
+        const auto literal = CliApi::execute(s.env, {"--api-version", "1", "search", "--", "--yes"});
+        QCOMPARE(literal.exitCode, 0);
+        QVERIFY(s.calls().isEmpty());
+        QCOMPARE(readAll(file), QByteArray("{\"idle\":{\"lock\":300}}\n"));
+        QVERIFY(!QFile::exists(s.env.appStateDir + "/history.jsonl"));
+        QVERIFY(!QFileInfo::exists(s.env.home + "/.claude/skills"));
+        const auto description = CliApi::execute(s.env, {"describe", "appearance.blur.size"}).body.value("data").toObject();
+        QVERIFY(description.value("writable").toBool());
+        QCOMPARE(description.value("schema").toObject().value("minimum").toInt(), 1);
+        QCOMPARE(description.value("schema").toObject().value("maximum").toInt(), 20);
+        QVERIFY(description.value("files").toArray().contains(s.env.configHome + "/hypr/omarchy-control-blur.lua"));
+        QCOMPARE(description.value("availability").toObject().value("status").toString(), QString("not_checked"));
+        const auto gap = CliApi::execute(s.env, {"describe", "display.layout"}).body.value("data").toObject();
+        QCOMPARE(gap.value("classification").toString(), QString("api-cli"));
+        QVERIFY(!gap.value("invocations").toArray().isEmpty());
+        const auto ledger = CliApi::coverage(Catalog());
+        QVERIFY(!ledger.value("complete").toBool());
+        QCOMPARE(ledger.value("counts").toObject().value("cli-gap").toInt(), 0);
+        QVERIFY(ledger.value("counts").toObject().value("legacy-cli").toInt() > 0);
+        QSet<QString> operationIds;
+        for (const auto &row : ledger.value("entries").toArray())
+            if (row.toObject().value("surface") == "gui-operation") operationIds.insert(row.toObject().value("id").toString());
+        for (const auto &row : ledger.value("entries").toArray())
+            for (const auto &operation : row.toObject().value("operationIds").toArray())
+                QVERIFY2(operationIds.contains(operation.toString()), qPrintable(operation.toString()));
+        const auto native = CliApi::execute(s.env, {"describe", "native.displays"}).body.value("data").toObject();
+        QVERIFY(native.value("operationIds").toArray().contains("display.layout"));
+        const auto target = CliApi::execute(s.env, {"describe", "displays.brightness"}).body.value("data").toObject();
+        QCOMPARE(target.value("target").toObject().value("enumeration").toArray(), QJsonArray({"display", "status"}));
+    }
+    void crashMutingHasExplicitPlansAndGuardedReadback() {
+        Sandbox s;
+        for (const auto &helper : {"omarchy-crash-mute", "omarchy-toggle", "omarchy-toggle-enabled"}) s.command(helper, "exit 0");
+        s.omarchy("[[ \"$1 $2 $3\" == 'crash mute --' ]] || exit 91\n"
+                  "dir=\"$HOME/.local/state/omarchy/toggles/crash-ignore\"\n"
+                  "if [[ $5 == on ]]; then mkdir -p \"$dir\"; touch \"$dir/$4\"; else rm -f \"$dir/$4\"; fi\n");
+        auto api = [&](const QStringList &args) { return CliApi::execute(s.env, QStringList{"preferences"} + args).body; };
+        const QString path = s.env.stateHome + "/omarchy/toggles/crash-ignore/hyprland";
+        QVERIFY(api({"crash-mutes"}).value("data").toObject().value("items").toArray().isEmpty());
+        QVERIFY(!QFileInfo::exists(s.env.stateHome + "/omarchy/toggles/crash-ignore"));
+        QCOMPARE(api({"crash-mute", "hyprland"}).value("data").toObject().value("muted"), QJsonValue(false));
+        QCOMPARE(api({"crash-mute", "hyprland", "true", "--dry-run"}).value("outcome").toString(), QString("planned"));
+        QVERIFY(s.calls().isEmpty());
+        QVERIFY(api({"crash-mute", "hyprland", "true"}).value("verified").toBool());
+        QCOMPARE(readAll(path), QByteArray());
+        QCOMPARE(api({"crash-mutes"}).value("data").toObject().value("items").toArray().first().toObject().value("program").toString(), QString("hyprland"));
+        const int calls = s.calls().size();
+        QVERIFY(api({"crash-mute", "hyprland", "true"}).value("verified").toBool());
+        QCOMPARE(s.calls().size(), calls);
+        QVERIFY(api({"crash-mute", "hyprland", "false"}).value("verified").toBool());
+        QVERIFY(!QFileInfo::exists(path));
+        for (const auto &tx : ChangeCoordinator(s.env).history()) QVERIFY(!tx.undoable());
+        for (const auto &value : {"TRUE", "1", "yes"}) QVERIFY(!api({"crash-mute", "hyprland", value}).value("ok").toBool());
+        for (const auto &program : {"../outside", ".", "..", "two words"}) QVERIFY(!api({"crash-mute", program, "true"}).value("ok").toBool());
+        QVERIFY(!api({"crash-mute", "hyprland", "--dry-run"}).value("ok").toBool());
+        const auto emptyName = api({"crash-mute", ""});
+        QCOMPARE(emptyName.value("error").toObject().value("code").toString(), QString("invalid_arguments"));
+        QVERIFY(!api({"crash-mute", "hyprland", ""}).value("ok").toBool());
+        QCOMPARE(api({"crash-mute", "hyprland", "yes"}).value("outcome").toString(), QString("blocked"));
+        Env strict = s.env; strict.enforceCompat = true;
+        QCOMPARE(CliApi::execute(strict, {"preferences", "crash-mute", "hyprland", "true", "--dry-run"}).body.value("error").toObject().value("code").toString(), QString("compatibility_blocked"));
+        QCOMPARE(CliApi::execute(s.env, {"describe", "crash.mute"}).body.value("data").toObject().value("nativeOperations").toArray(), QJsonArray{"preferences.crash-mutes"});
+        const auto matches = CliApi::execute(s.env, {"search", "mute crash"}).body.value("data").toArray();
+        QVERIFY(std::any_of(matches.begin(), matches.end(), [](const auto &row) { return row.toObject().value("id") == "crash.mute"; }));
+    }
+    void crashMutingPreservesUnsafeMarkers_data() {
+        backgroundIntroductionsPreserveUnsafeAndEditedMarkers_data();
+    }
+    void crashMutingPreservesUnsafeMarkers() {
+        QFETCH(QString, mode);
+        const QString kind = mode;
+        Sandbox s;
+        const QString directory = s.env.stateHome + "/omarchy/toggles/crash-ignore";
+        const QString path = directory + "/app";
+        QDir().mkpath(directory);
+        const QString outside = s.env.home + "/outside";
+        writeFile(outside, "custom");
+        if (kind == "nonempty") writeFile(path, "custom");
+        else if (kind == "symlink") QVERIFY(QFile::link(outside, path));
+        else if (kind == "dangling") QVERIFY(QFile::link(outside + "-missing", path));
+        else if (kind == "hardlink") QVERIFY(::link(QFile::encodeName(outside).constData(), QFile::encodeName(path).constData()) == 0);
+        else if (kind == "directory") QVERIFY(QDir().mkpath(path));
+        else if (kind == "shared-parent") QVERIFY(QFile::setPermissions(directory, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther));
+        const auto reply = CliApi::execute(s.env, {"preferences", "crash-mute", "app", "false"}).body;
+        QCOMPARE(reply.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QCOMPARE(readAll(outside), QByteArray("custom")); QVERIFY(s.calls().isEmpty());
+    }
+    void crashMutingRetainsBackupsForAnUnconfirmedHelper() {
+        Sandbox s;
+        for (const auto &helper : {"omarchy-crash-mute", "omarchy-toggle", "omarchy-toggle-enabled"}) s.command(helper, "exit 0");
+        s.omarchy("mkdir -p \"$HOME/.local/state/omarchy/toggles/crash-ignore\"\n"
+                  "echo custom > \"$HOME/.local/state/omarchy/toggles/crash-ignore/app\"\nexit 0\n");
+        const auto reply = CliApi::execute(s.env, {"preferences", "crash-mute", "app", "true"}).body;
+        QCOMPARE(reply.value("outcome").toString(), QString("partial")); QVERIFY(!reply.value("verified").toBool());
+        QCOMPARE(readAll(s.env.stateHome + "/omarchy/toggles/crash-ignore/app"), QByteArray("custom\n"));
+        const auto tx = ChangeCoordinator(s.env).history().first(); QVERIFY(!tx.undoable()); QVERIFY(!tx.files.isEmpty());
+    }
+    void backgroundIntroductionsHaveExplicitVerifiedChangesAndUndo() {
+        Sandbox s;
+        s.command("omarchy-theme-bg-intro", "exit 0");
+        s.omarchy("case \"$*\" in\n"
+                  " 'theme bg intro disable') mkdir -p \"$HOME/.local/state/omarchy/toggles\"; touch \"$HOME/.local/state/omarchy/toggles/background-intros-off\";;\n"
+                  " 'theme bg intro enable') rm -f \"$HOME/.local/state/omarchy/toggles/background-intros-off\";;\n"
+                  "esac\nexit 1 # a stopped shell may reject the notification after the write\n");
+        AppCore core(s.env);
+        const QString id = "appearance.background.intros";
+        QCOMPARE(readSetting(core.engine, id).value, QString("true"));
+        const auto plan = core.engine.plan(id, "false");
+        QVERIFY(plan.ok);
+        QVERIFY(plan.files.contains(s.env.stateHome + "/omarchy/toggles/background-intros-off"));
+        QVERIFY(s.calls().isEmpty());
+        const auto off = applySetting(core.engine, id, "false");
+        QCOMPARE(off.phase, QString("committed"));
+        QVERIFY(off.undoable());
+        QCOMPARE(readSetting(core.engine, id).value, QString("false"));
+        const int count = s.calls().size();
+        QCOMPARE(applySetting(core.engine, id, "false").phase, QString("committed"));
+        QCOMPARE(s.calls().size(), count);
+        const auto on = applySetting(core.engine, id, "true");
+        QCOMPARE(on.phase, QString("committed"));
+        QCOMPARE(readSetting(core.engine, id).value, QString("true"));
+        bool finished = false;
+        core.engine.undo(on.id, [&](const auto &tx) { QCOMPARE(tx.phase, QString("committed")); finished = true; });
+        QTRY_VERIFY(finished);
+        QCOMPARE(readSetting(core.engine, id).value, QString("false"));
+        for (const auto &call : s.calls()) QVERIFY(!call.contains("intro toggle"));
+        const auto route = CliApi::execute(s.env, {"describe", "appearance.background.intro"}).body.value("data").toObject();
+        QCOMPARE(route.value("nativeSetting").toString(), id);
+        Env strict = s.env; strict.enforceCompat = true;
+        s.command("omarchy-theme-bg-intro", "exit 0 # changed helper");
+        AppCore guarded(strict);
+        QCOMPARE(guarded.engine.plan(id, "true").errorCode, QString("compatibility_blocked"));
+    }
+    void backgroundIntroductionsPreserveUnsafeAndEditedMarkers_data() {
+        QTest::addColumn<QString>("mode");
+        for (const auto &mode : {"nonempty", "symlink", "dangling", "hardlink", "directory", "shared-parent"}) QTest::newRow(mode) << QString(mode);
+    }
+    void backgroundIntroductionsPreserveUnsafeAndEditedMarkers() {
+        QFETCH(QString, mode);
+        Sandbox s;
+        s.command("omarchy-theme-bg-intro", "exit 0");
+        const QString flag = s.env.stateHome + "/omarchy/toggles/background-intros-off";
+        const QString other = s.env.home + "/other";
+        writeFile(flag, {}); writeFile(other, {});
+        if (mode == "nonempty") writeFile(flag, "personal content\n");
+        if (mode == "directory") { QFile::remove(flag); QVERIFY(QDir().mkdir(flag)); }
+        if (mode == "symlink" || mode == "dangling") { QFile::remove(flag); QVERIFY(QFile::link(mode == "symlink" ? other : other + "-missing", flag)); }
+        if (mode == "hardlink") { QFile::remove(flag); QCOMPARE(::link(QFile::encodeName(other).constData(), QFile::encodeName(flag).constData()), 0); }
+        if (mode == "shared-parent") QVERIFY(QFile::setPermissions(QFileInfo(flag).absolutePath(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner | QFile::ReadGroup | QFile::WriteGroup | QFile::ExeGroup | QFile::ReadOther | QFile::WriteOther | QFile::ExeOther));
+        AppCore core(s.env);
+        QCOMPARE(core.engine.plan("appearance.background.intros", "true").errorCode, QString("ownership_conflict"));
+        QCOMPARE(readSetting(core.engine, "appearance.background.intros").status, QString("unavailable"));
+        const auto tx = applySetting(core.engine, "appearance.background.intros", "true");
+        QCOMPARE(tx.phase, QString("failed"));
+        QVERIFY(s.calls().isEmpty());
+        if (mode == "nonempty") QCOMPARE(readAll(flag), QByteArray("personal content\n"));
+        QVERIFY(QFileInfo::exists(other));
+        QVERIFY(!QFileInfo::exists(other + "-missing"));
+    }
+    void queuedBackgroundIntroductionWriteRefusesAnInterveningEdit() {
+        Sandbox s; s.command("omarchy-theme-bg-intro", "exit 0"); s.omarchy("exit 0"); AppCore core(s.env);
+        ChangeCoordinator::Done release;
+        ChangeCoordinator::Request blocker; blocker.settingId = "fixture";
+        blocker.apply = [&](auto done) { release = done; };
+        core.coordinator.submit(std::move(blocker), [](const auto &) {});
+        QVERIFY(bool(release));
+        bool finished = false;
+        core.engine.apply("appearance.background.intros", "false", [&](const auto &tx) { QCOMPARE(tx.phase, QString("failed")); finished = true; });
+        QVERIFY(!finished);
+        const QString flag = s.env.stateHome + "/omarchy/toggles/background-intros-off";
+        writeFile(flag, "later edit\n");
+        release(true, {});
+        QTRY_VERIFY(finished);
+        QCOMPARE(readAll(flag), QByteArray("later edit\n"));
+        QVERIFY(s.calls().isEmpty());
+    }
+    void backgroundIntroductionFailurePreservesAnEditDuringTheHelper() {
+        Sandbox s; s.command("omarchy-theme-bg-intro", "exit 0");
+        s.omarchy("mkdir -p \"$HOME/.local/state/omarchy/toggles\"\nprintf 'later content\\n' > \"$HOME/.local/state/omarchy/toggles/background-intros-off\"\nexit 1\n");
+        AppCore core(s.env);
+        const auto tx = applySetting(core.engine, "appearance.background.intros", "false");
+        QCOMPARE(tx.phase, QString("partial"));
+        QVERIFY(!tx.undoable());
+        QCOMPARE(readAll(s.env.stateHome + "/omarchy/toggles/background-intros-off"), QByteArray("later content\n"));
+        QCOMPARE(s.calls().size(), 1);
+    }
+    void powerPercentageOptionPlansAndVerifiesAnExactInstance() {
+        ShellDesk desk; desk.powerWidget();
+        const QString selector = desk.selector("omarchy.power"); QVERIFY(!selector.isEmpty());
+        auto snapshot = desk.api({"bar", "status"}).value("data").toObject().value("bar").toObject();
+        auto widget = snapshot.value("widgets").toArray().last().toObject();
+        QCOMPARE(widget.value("options").toObject().value("showPercentage").toObject().value("value"), QJsonValue(false));
+        QVERIFY(widget.value("options").toObject().value("showPercentage").toObject().value("inherited").toBool());
+        const QByteArray before = readAll(desk.config());
+        const auto plan = desk.api({"widget", "option", selector, "showPercentage", "true", "--dry-run"});
+        QVERIFY(plan.value("ok").toBool()); QCOMPARE(plan.value("outcome").toString(), QString("planned"));
+        QVERIFY(plan.value("data").toObject().value("details").toObject().value("valueBefore").isNull());
+        QCOMPARE(readAll(desk.config()), before);
+        const auto applied = desk.api({"widget", "option", selector, "showPercentage", "true"});
+        QVERIFY(applied.value("ok").toBool()); QVERIFY(applied.value("verified").toBool());
+        const auto entry = desk.object().value("bar").toObject().value("layout").toObject().value("right").toArray().last().toObject();
+        QCOMPARE(entry.value("showPercentage"), QJsonValue(true)); QCOMPARE(entry.value("customOption").toString(), QString("preserve"));
+        QCOMPARE(desk.object().value("custom").toObject().value("keep"), QJsonValue(true));
+        const int calls = desk.s.calls().filter("omarchy bar set").size();
+        const auto stale = desk.api({"widget", "option", selector, "showPercentage", "false"});
+        QCOMPARE(stale.value("error").toObject().value("code").toString(), QString("stale_target"));
+        QCOMPARE(desk.s.calls().filter("omarchy bar set").size(), calls);
+        const auto operation = CliApi::execute(desk.s.env, {"describe", "battery.percentage"}).body.value("data").toObject();
+        QVERIFY(operation.value("nativeOperations").toArray().contains("widgets.option"));
+    }
+    void powerPercentageOptionRefusesCustomAndUnavailableTargets_data() {
+        QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("code");
+        for (const auto &mode : {"bare", "custom", "shadow-power"}) QTest::newRow(mode) << QString(mode) << QString("unsupported_configuration");
+        QTest::newRow("plugin-down") << QString("plugin-down") << QString("read_unavailable");
+    }
+    void powerPercentageOptionRefusesCustomAndUnavailableTargets() {
+        QFETCH(QString, mode); QFETCH(QString, code);
+        ShellDesk desk;
+        desk.powerWidget(mode == "bare" ? QJsonValue("omarchy.power") : mode == "custom" ? QJsonValue(QJsonObject{{"id", "omarchy.power"}, {"showPercentage", "yes"}}) : QJsonValue(QJsonObject{{"id", "omarchy.power"}}));
+        const QString selector = desk.selector("omarchy.power");
+        if (mode == "shadow-power" || mode == "plugin-down") desk.mode(mode);
+        const QByteArray before = readAll(desk.config());
+        const auto result = desk.api({"widget", "option", selector, "showPercentage", "true"});
+        QVERIFY(!result.value("ok").toBool()); QCOMPARE(result.value("error").toObject().value("code").toString(), code);
+        QCOMPARE(readAll(desk.config()), before); QVERIFY(desk.s.calls().filter("omarchy bar set").isEmpty());
+    }
+    void powerPercentageOptionRequiresReadbackOfThePreservedLayout_data() {
+        QTest::addColumn<QString>("mode");
+        for (const auto &mode : {"noop", "lose-options", "change-bar", "memory-only", "disk-only"}) QTest::newRow(mode) << QString(mode);
+    }
+    void powerPercentageOptionRequiresReadbackOfThePreservedLayout() {
+        QFETCH(QString, mode);
+        ShellDesk desk; desk.powerWidget(); const QString selector = desk.selector("omarchy.power"); desk.mode(mode);
+        const auto result = desk.api({"widget", "option", selector, "showPercentage", "true"});
+        QVERIFY(!result.value("ok").toBool()); QVERIFY(!result.value("verified").toBool());
+        QCOMPARE(result.value("outcome").toString(), QString("partial"));
+        ChangeCoordinator history(desk.s.env); QVERIFY(!history.history().first().undoable());
+        QVERIFY(!history.history().first().files.isEmpty());
+    }
+    void powerPercentageOptionRejectsInvalidValuesBeforeProbing() {
+        ShellDesk desk;
+        const QString selector = desk.selector("omarchy.clock"); const auto count = desk.s.calls().size();
+        for (const auto &value : {"1", "TRUE", "yes", "{\"enabled\":true}"}) {
+            const auto result = desk.api({"widget", "option", selector, "showPercentage", value});
+            QCOMPARE(result.value("error").toObject().value("code").toString(), QString("invalid_value"));
+        }
+        QCOMPARE(desk.s.calls().size(), count);
+    }
+    void cliApiResetUndoAndHistoryShareGuardedEngine() {
+        Sandbox s;
+        s.omarchy("exit 0");
+        const QString file = s.env.configHome + "/omarchy/shell.json";
+        writeFile(file, "{\"idle\":{\"lock\":300}}\n");
+        auto api = [&](QStringList args) { return CliApi::execute(s.env, args + QStringList{"--api-version", "1"}); };
+        auto applied = api({"apply", "power.idle.lock", "600"});
+        QCOMPARE(applied.exitCode, 0);
+        const QString id = applied.body.value("data").toObject().value("id").toString();
+        QVERIFY(!id.isEmpty());
+        const auto history = api({"history"});
+        QCOMPARE(history.exitCode, 0);
+        QVERIFY(!history.body.value("data").toArray().isEmpty());
+        QCOMPARE(api({"undo", id}).exitCode, 0);
+        AppCore core(s.env);
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("300"));
+        QCOMPARE(api({"undo", id}).body.value("error").toObject().value("code").toString(), QString("undo_unavailable"));
+        QCOMPARE(api({"apply", "power.idle.lock", "600"}).exitCode, 0);
+        QCOMPARE(api({"reset", "power.idle.lock"}).exitCode, 0);
+        QVERIFY(!QJsonDocument::fromJson(readAll(file)).object().value("idle").toObject().contains("lock"));
+        QCOMPARE(api({"reset", "native.displays"}).exitCode, 1);
+        QCOMPARE(api({"reset", "power.idle.lock", "--dry-run"}).body.value("error").toObject().value("code").toString(), QString("invalid_arguments"));
+        Env strict = s.env; strict.enforceCompat = true;
+        s.minimalHyprland();
+        s.command("hyprctl", "echo '{\"version\":\"9.99\"}'");
+        const auto refused = CliApi::execute(strict, {"reset", "appearance.border", "--api-version", "1"});
+        QCOMPARE(refused.exitCode, 1);
+        QVERIFY(refused.body.value("data").toObject().value("message").toString().contains("changed since"));
+        QVERIFY(!QFileInfo::exists(s.env.configHome + "/hypr/omarchy-control.lua"));
+    }
+    void cliApiReadsLiveChoicesAndTheRequestedDisplay() {
+        Sandbox s;
+        s.minimalHyprland();
+        s.omarchy("case \"$*\" in 'font current') echo 'Font A';; 'font list') printf 'Font A\\nFont B\\n';; 'brightness display --monitor DP-1') echo 44;; esac");
+        const auto font = CliApi::execute(s.env, {"--api-version", "1", "get", "appearance.font"});
+        QCOMPARE(font.exitCode, 0);
+        QCOMPARE(font.body.value("data").toObject().value("value").toString(), QString("Font A"));
+        QCOMPARE(font.body.value("data").toObject().value("choices").toArray().size(), 2);
+        const auto description = CliApi::execute(s.env, {"describe", "appearance.font", "--live"});
+        QCOMPARE(description.exitCode, 0);
+        QCOMPARE(description.body.value("data").toObject().value("liveChoices").toArray().size(), 2);
+        const auto display = CliApi::execute(s.env, {"--api-version", "1", "get", "displays.brightness@DP-1"});
+        QCOMPARE(display.exitCode, 0);
+        QCOMPARE(display.body.value("data").toObject().value("id").toString(), QString("displays.brightness@DP-1"));
+        QCOMPARE(display.body.value("data").toObject().value("value").toString(), QString("44"));
+        QVERIFY(s.calls().contains("omarchy brightness display --monitor DP-1"));
+        const auto target = CliApi::execute(s.env, {"describe", "displays.brightness@DP-1"}).body.value("data").toObject();
+        QCOMPARE(target.value("target").toObject().value("id").toString(), QString("DP-1"));
+        const auto numeric = CliApi::execute(s.env, {"--api-version", "1", "plan", "input.sensitivity", "-1e-2"});
+        QCOMPARE(numeric.exitCode, 0);
+    }
+    void cliApiPlanApplyAndReadUseTheSharedEngine() {
+        Sandbox s;
+        s.omarchy("exit 0");
+        const QString file = s.env.configHome + "/omarchy/shell.json";
+        writeFile(file, "{\"idle\":{\"lock\":300}}\n");
+        const auto plan = CliApi::execute(s.env, {"--api-version", "1", "plan", "power.idle.lock", "600"});
+        QCOMPARE(plan.exitCode, 0);
+        QCOMPARE(plan.body.value("outcome").toString(), QString("planned"));
+        QVERIFY(!plan.body.value("verified").toBool());
+        QCOMPARE(readAll(file), QByteArray("{\"idle\":{\"lock\":300}}\n"));
+        ChangeCoordinator coordinator(s.env);
+        QVERIFY(coordinator.history().isEmpty());
+        const auto applied = CliApi::execute(s.env, {"--api-version", "1", "apply", "power.idle.lock", "600"});
+        QCOMPARE(applied.exitCode, 0);
+        QVERIFY(applied.body.value("verified").toBool());
+        QCOMPARE(applied.body.value("outcome").toString(), QString("committed"));
+        QVERIFY(!applied.body.value("data").toObject().value("id").toString().isEmpty());
+        AppCore core(s.env);
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+        QCOMPARE(coordinator.history().size(), 1);
+        const auto bad = CliApi::execute(s.env, {"--api-version", "1", "apply", "power.idle.lock", "nonsense"});
+        QCOMPARE(bad.exitCode, 1);
+        QCOMPARE(bad.body.value("error").toObject().value("code").toString(), QString("invalid_value"));
+        QCOMPARE(readSetting(core.engine, "power.idle.lock").value, QString("600"));
+        QCOMPARE(coordinator.history().size(), 1);
+    }
+    void cliApiRejectsBadSyntaxBeforeAnyProbe_data() {
+        QTest::addColumn<QStringList>("args");
+        QTest::addColumn<QString>("code");
+        QTest::newRow("missing-version") << QStringList{"apply", "power.idle.lock", "600", "--api-version"} << QString("invalid_arguments");
+        QTest::newRow("new-version") << QStringList{"apply", "power.idle.lock", "600", "--api-version", "2"} << QString("unsupported_api_version");
+        QTest::newRow("typo") << QStringList{"apply", "power.idle.lock", "600", "--yess"} << QString("invalid_arguments");
+        QTest::newRow("extra-value") << QStringList{"apply", "power.idle.lock", "600", "700"} << QString("invalid_arguments");
+        QTest::newRow("missing-value") << QStringList{"apply", "power.idle.lock"} << QString("invalid_arguments");
+        QTest::newRow("repeated-flag") << QStringList{"apply", "power.idle.lock", "600", "--yes", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("wrong-flag") << QStringList{"catalog", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("unsupported-family") << QStringList{"profile", "apply", "some-plan"} << QString("unsupported_api_operation");
+        QTest::newRow("unknown") << QStringList{"typo"} << QString("unknown_command");
+        QTest::newRow("unknown-id") << QStringList{"apply", "no.such.id", "1"} << QString("unknown_id");
+        QTest::newRow("page") << QStringList{"apply", "native.audio.output", "x"} << QString("not_a_setting");
+        QTest::newRow("wrong-target") << QStringList{"get", "displays.brightness@../../bad"} << QString("unknown_id");
+        QTest::newRow("audio-status-dry-run") << QStringList{"audio", "status", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("audio-extra") << QStringList{"audio", "output", "default", "x", "extra"} << QString("invalid_arguments");
+        QTest::newRow("audio-number") << QStringList{"audio", "input", "volume", "mic", "1.5"} << QString("invalid_value");
+        QTest::newRow("audio-yes") << QStringList{"audio", "input", "mute", "mic", "true", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("bt-address") << QStringList{"bluetooth", "connect", "AA:BB;exit"} << QString("invalid_value");
+        QTest::newRow("bt-power") << QStringList{"bluetooth", "power", "on"} << QString("invalid_value");
+        QTest::newRow("service-scope") << QStringList{"services", "global", "status"} << QString("invalid_arguments");
+        QTest::newRow("service-status-dry") << QStringList{"services", "user", "status", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("service-action") << QStringList{"services", "user", "mask", "agent.service"} << QString("invalid_arguments");
+        QTest::newRow("service-option-target") << QStringList{"services", "user", "start", "--", "--bad.service"} << QString("invalid_value");
+        QTest::newRow("service-template") << QStringList{"services", "user", "start", "agent@.service"} << QString("invalid_value");
+        QTest::newRow("startup-extra") << QStringList{"startup", "list", "extra"} << QString("invalid_arguments");
+        QTest::newRow("startup-path") << QStringList{"startup", "enable", "../bad.desktop"} << QString("invalid_value");
+        QTest::newRow("startup-yes") << QStringList{"startup", "enable", "agent.desktop", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("apps-list-dry") << QStringList{"apps", "list", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("apps-id") << QStringList{"apps", "launch", "../evil.desktop"} << QString("invalid_value");
+        QTest::newRow("apps-yes") << QStringList{"apps", "launch", "a.desktop", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("mime-number") << QStringList{"mime", "set", "text/plain", "../evil.desktop"} << QString("invalid_value");
+        QTest::newRow("mime-key") << QStringList{"mime", "set", "text/plain\nx=x", "a.desktop"} << QString("invalid_value");
+        QTest::newRow("mime-read-dry") << QStringList{"mime", "get", "text/plain", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("system-scope") << QStringList{"system", "unknown"} << QString("invalid_arguments");
+        QTest::newRow("system-dry") << QStringList{"system", "status", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("system-yes") << QStringList{"system", "status", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("diagnostics-action") << QStringList{"diagnostics", "upload"} << QString("invalid_arguments");
+        QTest::newRow("diagnostics-extra") << QStringList{"diagnostics", "export", "/tmp/report"} << QString("invalid_arguments");
+        QTest::newRow("diagnostics-yes") << QStringList{"diagnostics", "export", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("shortcut-list-extra") << QStringList{"shortcut", "list", "extra"} << QString("invalid_arguments");
+        QTest::newRow("shortcut-check-missing") << QStringList{"shortcut", "check"} << QString("invalid_arguments");
+        QTest::newRow("shortcut-read-dry") << QStringList{"shortcut", "list", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("shortcut-read-yes") << QStringList{"shortcut", "check", "SUPER + F", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("shortcut-invalid-add") << QStringList{"shortcut", "add", "F", "Files", "files"} << QString("invalid_value");
+        QTest::newRow("rule-types-extra") << QStringList{"rule", "types", "extra"} << QString("invalid_arguments");
+        QTest::newRow("rule-validate-missing") << QStringList{"rule", "validate", "firefox"} << QString("invalid_arguments");
+        QTest::newRow("rule-validate-dry") << QStringList{"rule", "validate", "firefox", "float", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("rule-unguarded-remove") << QStringList{"rule", "remove", "0"} << QString("invalid_value");
+        QTest::newRow("shortcut-replace-read") << QStringList{"shortcut", "list", "--replace"} << QString("invalid_arguments");
+        QTest::newRow("rule-replace") << QStringList{"rule", "add", "x", "float", "--replace"} << QString("invalid_arguments");
+        QTest::newRow("shortcut-command-control") << QStringList{"shortcut", "add", "SUPER + F", "Files", "files\nother"} << QString("invalid_value");
+        QTest::newRow("shortcut-numeric-code") << QStringList{"shortcut", "add", "SUPER + 42", "Files", "files"} << QString("invalid_value");
+        QTest::newRow("plugin-read-dry") << QStringList{"plugin", "list", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("plugin-path") << QStringList{"plugin", "enable", "../evil"} << QString("invalid_value");
+        QTest::newRow("plugin-yes") << QStringList{"plugin", "disable", "omarchy.clock", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("plugin-clone-id") << QStringList{"plugin", "clone", "../clock"} << QString("invalid_value");
+        QTest::newRow("bar-read-dry") << QStringList{"bar", "status", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("dock-path") << QStringList{"dock", "pin", "../evil.desktop"} << QString("invalid_value");
+        QTest::newRow("widget-fraction") << QStringList{"widget", "move", "left:0@" + QString(64,'a'), "right", "1.5"} << QString("invalid_value");
+        QTest::newRow("widget-unguarded") << QStringList{"widget", "move", "omarchy.clock", "right", "1"} << QString("invalid_value");
+        QTest::newRow("widget-negative") << QStringList{"widget", "move", "left:0@" + QString(64,'a'), "right", "-1"} << QString("invalid_value");
+        QTest::newRow("icons-missing-id") << QStringList{"icons", "samples"} << QString("invalid_arguments");
+        QTest::newRow("icons-extra") << QStringList{"icons", "samples", "Pack", "extra"} << QString("invalid_arguments");
+        QTest::newRow("icons-path") << QStringList{"icons", "search", "../Pack"} << QString("invalid_value");
+        QTest::newRow("icons-query-control") << QStringList{"icons", "search", "Pack", "bad\nquery"} << QString("invalid_value");
+        QTest::newRow("icons-query-bound") << QStringList{"icons", "search", "Pack", QString(513, 'x')} << QString("invalid_value");
+        QTest::newRow("icons-dry") << QStringList{"icons", "samples", "Pack", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("icons-yes") << QStringList{"icons", "search", "Pack", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-zero") << QStringList{"icons", "search", "Pack", "--limit", "0"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-overflow") << QStringList{"icons", "search", "Pack", "--limit", "9999999999999999999999"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-large") << QStringList{"icons", "search", "Pack", "--limit", "301"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-fraction") << QStringList{"icons", "search", "Pack", "--limit", "1.5"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-negative") << QStringList{"icons", "search", "Pack", "--limit", "-1"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-missing") << QStringList{"icons", "search", "Pack", "--limit"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-repeated") << QStringList{"icons", "search", "Pack", "--limit", "2", "--limit", "3"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-wrong-action") << QStringList{"icons", "samples", "Pack", "--limit", "2"} << QString("invalid_arguments");
+        QTest::newRow("icons-limit-wrong-family") << QStringList{"catalog", "--limit", "2"} << QString("invalid_arguments");
+        QTest::newRow("icons-legacy-mutation") << QStringList{"icons", "import", "/tmp/pack", "--yes"} << QString("unsupported_api_operation");
+        QTest::newRow("network-missing") << QStringList{"network"} << QString("invalid_arguments");
+        QTest::newRow("network-action") << QStringList{"network", "activate"} << QString("invalid_arguments");
+        QTest::newRow("network-extra") << QStringList{"network", "devices", "wlan0"} << QString("invalid_arguments");
+        QTest::newRow("network-dry") << QStringList{"network", "status", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("network-yes") << QStringList{"network", "status", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("network-limit") << QStringList{"network", "wifi", "--limit", "3"} << QString("invalid_arguments");
+        QTest::newRow("scan-extra") << QStringList{"network", "rescan", "wlan0", "wlan1"} << QString("invalid_arguments");
+        QTest::newRow("scan-path") << QStringList{"network", "rescan", "../x"} << QString("invalid_value");
+        QTest::newRow("scan-option-device") << QStringList{"network", "rescan", "--", "--help"} << QString("invalid_value");
+        QTest::newRow("scan-control") << QStringList{"network", "rescan", "wlan\n0"} << QString("invalid_value");
+        QTest::newRow("scan-long-name") << QStringList{"network", "rescan", QString(16,'a')} << QString("invalid_value");
+        QTest::newRow("scan-yes") << QStringList{"network", "rescan", "--yes"} << QString("invalid_arguments");
+        QTest::newRow("radio-missing") << QStringList{"network", "radio"} << QString("invalid_arguments");
+        QTest::newRow("radio-extra") << QStringList{"network", "radio", "true", "false"} << QString("invalid_arguments");
+        QTest::newRow("radio-not-bool") << QStringList{"network", "radio", "on"} << QString("invalid_value");
+        QTest::newRow("radio-empty") << QStringList{"network", "radio", ""} << QString("invalid_value");
+        QTest::newRow("radio-upper") << QStringList{"network", "radio", "TRUE"} << QString("invalid_value");
+        QTest::newRow("activate-uuid") << QStringList{"network", "activate", "bad", "wlan0"} << QString("invalid_value");
+        QTest::newRow("activate-interface") << QStringList{"network", "activate", "11111111-1111-1111-1111-111111111111", "../dev"} << QString("invalid_value");
+        QTest::newRow("disconnect-missing") << QStringList{"network", "disconnect"} << QString("invalid_arguments");
+        QTest::newRow("disconnect-dash") << QStringList{"network", "disconnect", "--", "-bad"} << QString("invalid_value");
+        QTest::newRow("preview-missing") << QStringList{"network", "preview"} << QString("invalid_arguments");
+        QTest::newRow("preview-keep-missing") << QStringList{"network", "preview", "keep"} << QString("invalid_arguments");
+        QTest::newRow("preview-bad-token") << QStringList{"network", "preview", "revert", "../x"} << QString("invalid_value");
+        QTest::newRow("preview-status-dry") << QStringList{"network", "preview", "status", "--dry-run"} << QString("invalid_arguments");
+        QTest::newRow("preview-status-yes") << QStringList{"network", "preview", "status", "--yes"} << QString("invalid_arguments");
+    }
+    void cliApiRejectsBadSyntaxBeforeAnyProbe() {
+        QFETCH(QStringList, args);
+        QFETCH(QString, code);
+        Sandbox s;
+        s.omarchy("exit 0");
+        const auto reply = CliApi::execute(s.env, args);
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), code);
+        QVERIFY(!reply.body.value("verified").toBool());
+        QVERIFY(s.calls().isEmpty());
+    }
+    void cliApiHonorsOwnershipConfirmationAndCompatibility() {
+        Sandbox s;
+        s.minimalHyprland();
+        s.omarchy("case \"$*\" in 'font list') echo Test;; 'font current') echo Test;; esac");
+        const QString module = s.env.configHome + "/hypr/omarchy-control.lua";
+        const auto confirm = CliApi::execute(s.env, {"--api-version", "1", "apply", "input.repeat_rate", "33"});
+        QCOMPARE(confirm.exitCode, 1);
+        QCOMPARE(confirm.body.value("error").toObject().value("code").toString(), QString("confirmation_required"));
+        QVERIFY(!QFileInfo::exists(module));
+        writeFile(module, "-- personal Lua\n");
+        const auto owned = CliApi::execute(s.env, {"--api-version", "1", "apply", "input.repeat_rate", "33", "--yes"});
+        QCOMPARE(owned.exitCode, 1);
+        QCOMPARE(owned.body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QCOMPARE(readAll(module), QByteArray("-- personal Lua\n"));
+        Env strict = s.env;
+        strict.enforceCompat = true;
+        s.command("omarchy-font-set", "exit 0 # changed since review");
+        const auto compatibility = CliApi::execute(strict, {"--api-version", "1", "apply", "appearance.font", "Test", "--yes"});
+        QCOMPARE(compatibility.exitCode, 1);
+        QCOMPARE(compatibility.body.value("error").toObject().value("code").toString(), QString("compatibility_blocked"));
+        QVERIFY(s.calls().filter("omarchy font set").isEmpty());
+    }
+    void cliApiHelpAndFailedVerificationNeverClaimAChange() {
+        Sandbox s;
+        s.minimalHyprland();
+        s.omarchy("case \"$*\" in 'hyprland corners') echo sharp;; esac");
+        const auto help = CliApi::execute(s.env, {"--api-version", "1", "apply", "appearance.corners", "rounded", "--help"});
+        QCOMPARE(help.exitCode, 0);
+        QVERIFY(s.calls().isEmpty());
+        const auto reply = CliApi::execute(s.env, {"--api-version", "1", "apply", "appearance.corners", "rounded"});
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(!reply.body.value("verified").toBool());
+        // The fake setter returned successfully but kept reporting the old value.
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("change_not_confirmed"));
+    }
+    void cliApiProcessOutputAndLegacyJsonStaySeparate() {
+        Sandbox s;
+        QProcess child;
+        child.start(QCoreApplication::applicationFilePath(), {"--cli-sandbox", s.dir.path(), "apply", "power.idle.lock", "600", "--api-version", "1", "--yess"});
+        QVERIFY(child.waitForFinished(10000));
+        QCOMPARE(child.exitCode(), 1);
+        QJsonParseError error;
+        const QJsonDocument response = QJsonDocument::fromJson(child.readAllStandardOutput(), &error);
+        QCOMPARE(error.error, QJsonParseError::NoError);
+        QCOMPARE(response.object().value("error").toObject().value("code").toString(), QString("invalid_arguments"));
+        QVERIFY(child.readAllStandardError().isEmpty());
+        child.start(QCoreApplication::applicationFilePath(), {"--cli-sandbox", s.dir.path(), "catalog", "--json"});
+        QVERIFY(child.waitForFinished(10000));
+        QCOMPARE(child.exitCode(), 0);
+        const QJsonDocument legacy = QJsonDocument::fromJson(child.readAllStandardOutput(), &error);
+        QCOMPARE(error.error, QJsonParseError::NoError);
+        QVERIFY(legacy.isArray());
+        QCOMPARE(legacy.array().size(), Catalog().entries().size());
+    }
+    void cliShortcutInputDoesNotDiscardTokens_data() {
+        QTest::addColumn<QString>("keys");
+        for (const QString &keys : QStringList{"HYPER + SUPER + F", "SUPER + SUPER + F", "SUPER ++ F", "+ SUPER + F", "SUPER + F +", "SUPER + CTRL", "SUPER + F\n", "F"})
+            QTest::newRow(qPrintable(keys)) << keys;
+    }
+    void cliShortcutInputDoesNotDiscardTokens() {
+        QFETCH(QString, keys);
+        Sandbox s;
+        const auto reply = CliApi::execute(s.env, {"shortcut", "check", keys});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("invalid_value"));
+        QVERIFY(s.calls().isEmpty());
+    }
+    void cliShortcutsExposeEveryReportedBindingAndOwnership() {
+        Sandbox s;
+        s.minimalHyprland();
+        const QByteArray bindings = R"([{"modmask":64,"key":"F","description":"Files","dispatcher":"exec","arg":"files","submap":""},{"modmask":64,"key":"F","description":"","dispatcher":"resizeactive","arg":"20 0","submap":"resize","release":true},{"modmask":66,"key":"F","description":"Caps variant"},{"modmask":64,"key":"","keycode":41,"description":"By code"},{"modmask":4,"key":"","catch_all":true,"description":"Catch all"}])";
+        writeFile(s.dir.path() + "/hypr-binds", bindings);
+        HyprModule module(s.env);
+        module.setBinds(QJsonArray{QJsonObject{{"keys", "SUPER + Y"}, {"description", "Mine"}, {"command", "app"}}});
+        QVERIFY(module.save());
+        const auto before = readAll(module.path());
+        const auto reply = CliApi::execute(s.env, {"shortcut", "check", "super+f"});
+        QCOMPARE(reply.exitCode, 0);
+        const auto data = reply.body.value("data").toObject();
+        QCOMPARE(data.value("effective").toObject().value("binds").toArray(), QJsonDocument::fromJson(bindings).array());
+        QCOMPARE(data.value("owned").toObject().value("binds").toArray().first().toObject().value("command").toString(), QString("app"));
+        const auto check = data.value("check").toObject();
+        QCOMPARE(check.value("keys").toString(), QString("SUPER + F"));
+        QCOMPARE(check.value("collisionState").toString(), QString("conflict"));
+        QCOMPARE(check.value("matches").toArray().size(), 2);
+        QVERIFY(check.value("matches").toArray().at(1).toObject().value("release").toBool());
+        QCOMPARE(check.value("matches").toArray().at(1).toObject().value("submap").toString(), QString("resize"));
+        QCOMPARE(check.value("conflicts").toArray().at(1).toString(), QString("resizeactive 20 0"));
+        QCOMPARE(check.value("unresolved").toArray().size(), 1);
+        QCOMPARE(CliApi::execute(s.env, {"shortcut", "check", "SUPER + Y"}).body.value("data").toObject().value("check").toObject().value("collisionState").toString(), QString("unknown"));
+        const auto catchAll = CliApi::execute(s.env, {"shortcut", "check", "CTRL + X"});
+        QCOMPARE(catchAll.body.value("data").toObject().value("check").toObject().value("matches").toArray().first().toObject().value("matchKind").toString(), QString("catch-all"));
+        QCOMPARE(readAll(module.path()), before);
+        QVERIFY(!QFile::exists(s.env.appStateDir + "/history.jsonl"));
+        for (const auto &call : s.calls()) QCOMPARE(call, QString("hyprctl -j binds"));
+    }
+    void cliShortcutsDoNotTreatUnreadableSourcesAsEmpty_data() {
+        QTest::addColumn<QByteArray>("body");
+        QTest::newRow("failed") << QByteArray("echo '[]'; exit 1");
+        QTest::newRow("malformed") << QByteArray("echo '{}'");
+        QTest::newRow("bad-row") << QByteArray("echo '[{}]'");
+        QTest::newRow("bad-mask") << QByteArray("echo '[{\"modmask\":64.5,\"key\":\"F\"}]'");
+        QTest::newRow("bad-flag") << QByteArray("echo '[{\"modmask\":64,\"key\":\"F\",\"catch_all\":\"false\"}]'");
+        QTest::newRow("truncated") << QByteArray("printf '[]'; head -c 4200000 /dev/zero");
+        QTest::newRow("timeout") << QByteArray("sleep 10");
+    }
+    void cliShortcutsDoNotTreatUnreadableSourcesAsEmpty() {
+        QFETCH(QByteArray, body);
+        Sandbox s;
+        s.command("hyprctl", body);
+        const auto reply = CliApi::execute(s.env, {"shortcut", "check", "SUPER + F"});
+        QCOMPARE(reply.exitCode, 1);
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(!data.value("complete").toBool());
+        QVERIFY(data.value("effective").toObject().value("binds").isNull());
+        QCOMPARE(data.value("check").toObject().value("collisionState").toString(), QString("unavailable"));
+        QVERIFY(!QFile::exists(s.env.appStateDir + "/history.jsonl"));
+    }
+    void cliOwnedShortcutAndRuleReadsReportConflictsAndInaccessibleParents() {
+        Sandbox s;
+        s.minimalHyprland();
+        HyprModule module(s.env);
+        const auto absent = CliApi::execute(s.env, {"shortcut", "list"});
+        QCOMPARE(absent.exitCode, 0);
+        QCOMPARE(absent.body.value("data").toObject().value("owned").toObject().value("status").toString(), QString("absent"));
+        writeFile(module.path(), "-- hand-written Lua; never execute\nos.execute('unsafe')\n");
+        auto read = CliApi::execute(s.env, {"shortcut", "list"});
+        QCOMPARE(read.exitCode, 1);
+        QCOMPARE(read.body.value("data").toObject().value("owned").toObject().value("status").toString(), QString("ownership_conflict"));
+        QVERIFY(read.body.value("data").toObject().value("owned").toObject().value("binds").isNull());
+        read = CliApi::execute(s.env, {"rule", "list", "--api-version", "1"});
+        QCOMPARE(read.exitCode, 1);
+        QCOMPARE(read.body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QVERIFY(QFile::remove(module.path()));
+        QVERIFY(QFile::setPermissions(QFileInfo(module.path()).absolutePath(), {}));
+        const auto unavailable = CliApi::execute(s.env, {"rule", "list", "--api-version", "1"});
+        QVERIFY(QFile::setPermissions(QFileInfo(module.path()).absolutePath(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        QCOMPARE(unavailable.exitCode, 1);
+        QCOMPARE(unavailable.body.value("error").toObject().value("code").toString(), QString("unavailable"));
+        QVERIFY(unavailable.body.value("data").toObject().value("rules").isNull());
+    }
+    void cliRuleValidationIsPureAndUsesDiscoverableConstraints() {
+        Sandbox s;
+        const auto types = CliApi::execute(s.env, {"rule", "types"});
+        QCOMPARE(types.exitCode, 0);
+        const auto actions = types.body.value("data").toObject().value("actions").toArray();
+        QCOMPARE(actions.size(), 5);
+        for (const auto &item : actions) {
+            const auto schema = item.toObject();
+            const auto examples = schema.value("examples").toArray();
+            const QString value = examples.isEmpty() ? QString() : examples.first().toString();
+            const auto reply = CliApi::execute(s.env, {"rule", "validate", " firefox ", schema.value("action").toString(), value});
+            QCOMPARE(reply.exitCode, 0);
+            QCOMPARE(reply.body.value("outcome").toString(), QString("validated"));
+            QVERIFY(!reply.body.value("verified").toBool());
+            QCOMPARE(reply.body.value("data").toObject().value("rule").toObject().value("match").toString(), QString("firefox"));
+        }
+        const auto invalid = CliApi::execute(s.env, {"rule", "validate", "x", "float", "ignored"});
+        QCOMPARE(invalid.exitCode, 1);
+        QVERIFY(!invalid.body.value("data").toObject().value("valid").toBool());
+        QCOMPARE(CliApi::execute(s.env, {"rule", "validate", "(", "float"}).exitCode, 1);
+        QVERIFY(s.calls().isEmpty());
+        QVERIFY(!QFile::exists(s.env.configHome + "/hypr/omarchy-control.lua"));
+        QVERIFY(!QFile::exists(s.env.appStateDir + "/history.jsonl"));
+    }
+    void cliOwnedModuleReadsAreBoundedAndRejectDanglingLinks() {
+        Sandbox s;
+        HyprModule module(s.env);
+        const QStringList args{"rule", "list", "--api-version", "1"};
+        const auto absent = CliApi::execute(s.env, args);
+        QCOMPARE(absent.exitCode, 0);
+        QVERIFY(absent.body.value("data").toObject().value("rules").toArray().isEmpty());
+        writeFile(module.path(), QByteArray(4 * 1024 * 1024 + 1, 'x'));
+        auto reply = CliApi::execute(s.env, args);
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("unavailable"));
+        QCOMPARE(QFileInfo(module.path()).size(), qint64(4 * 1024 * 1024 + 1));
+        QVERIFY(QFile::remove(module.path()));
+        QVERIFY(::symlink("missing-module.lua", qPrintable(module.path())) == 0);
+        reply = CliApi::execute(s.env, args);
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(reply.body.value("data").toObject().value("rules").isNull());
+        QVERIFY(QFile::remove(module.path()));
+        QVERIFY(module.save());
+        QVERIFY(QFile::setPermissions(module.path(), {}));
+        reply = CliApi::execute(s.env, args);
+        QVERIFY(QFile::setPermissions(module.path(), QFile::ReadOwner | QFile::WriteOwner));
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(s.calls().isEmpty());
+        QVERIFY(!QFile::exists(s.env.appStateDir + "/history.jsonl"));
+    }
+    void cliShortcutAndRuleRoutingPreservesLegacyInterfaces() {
+        QVERIFY(CliApi::requested({"shortcut", "check", "SUPER + F"}));
+        QVERIFY(CliApi::requested({"--bad", "shortcut", "list"}));
+        QVERIFY(CliApi::requested({"rule", "types"}));
+        QVERIFY(CliApi::requested({"rule", "validate", "x", "float"}));
+        QVERIFY(!CliApi::requested({"shortcut", "add", "SUPER + F", "Files", "files"}));
+        QVERIFY(!CliApi::requested({"rule", "list", "--json"}));
+        QVERIFY(CliApi::requested({"rule", "list", "--api-version", "1"}));
+        Sandbox s;
+        s.minimalHyprland();
+        HyprModule module(s.env);
+        module.setRules(QJsonArray{QJsonObject{{"match", "firefox"}, {"action", "float"}, {"value", ""}}});
+        QVERIFY(module.save());
+        const auto before = readAll(module.path());
+        for (const QString &index : QStringList{"garbage", "-1", "1.5", "2147483648", " 0", "+0"})
+            QCOMPARE(Cli::run(s.env, {"rule", "remove", index, "--json"}), 1);
+        QCOMPARE(Cli::run(s.env, {"rule", "remove", "0", "extra"}), 1);
+        QCOMPARE(readAll(module.path()), before);
+        QVERIFY(s.calls().isEmpty());
+        QProcess child;
+        child.start(QCoreApplication::applicationFilePath(), {"--cli-sandbox", s.dir.path(), "rule", "list", "--json"});
+        QVERIFY(child.waitForFinished(10000));
+        QCOMPARE(child.exitCode(), 0);
+        const auto legacy = QJsonDocument::fromJson(child.readAllStandardOutput());
+        QVERIFY(legacy.isArray());
+        QCOMPARE(legacy.array(), module.rules());
+        const auto versioned = CliApi::execute(s.env, {"rule", "list", "--api-version", "1"});
+        QCOMPARE(versioned.body.value("operation").toString(), QString("rules.inspect"));
+        QCOMPARE(versioned.body.value("data").toObject().value("rules").toArray().first().toObject().value("index").toInt(-1), 0);
+    }
+    void shortcutAddRefreshesCollisionsAndRefusesFailedDiscovery() {
+        Sandbox s;
+        s.minimalHyprland();
+        CommandRunner runner(s.env);
+        ChangeCoordinator coordinator(s.env);
+        ShortcutsProvider provider(&runner, &coordinator);
+        QSignalSpy messages(&provider, &ShortcutsProvider::message);
+        writeFile(s.dir.path() + "/hypr-binds", R"([{"modmask":64,"key":"F","description":"Fresh conflict"}])");
+        provider.addBinding("SUPER + F", "Mine", "files", false);
+        QTRY_COMPARE_WITH_TIMEOUT(messages.count(), 1, 5000);
+        QVERIFY(messages.first().at(1).toBool());
+        s.command("hyprctl", "echo '[]'; exit 1");
+        provider.addBinding("SUPER + F", "Mine", "files", true);
+        QTRY_COMPARE_WITH_TIMEOUT(messages.count(), 2, 5000);
+        QVERIFY(messages.last().at(1).toBool());
+        QVERIFY(coordinator.history().isEmpty());
+        QVERIFY(!QFile::exists(s.env.configHome + "/hypr/omarchy-control.lua"));
+    }
+    void cliRuleActionsPlanCommitAndRemoveAnExactDuplicate() {
+        HyprDesk desk;
+        const QString module = desk.s.env.configHome + "/hypr/omarchy-control.lua";
+        auto reply = CliApi::execute(desk.s.env, {"rule", "add", "firefox", "workspace", "3", "--dry-run"});
+        QCOMPARE(reply.exitCode, 0);
+        QCOMPARE(reply.body.value("outcome").toString(), QString("planned"));
+        QCOMPARE(reply.body.value("data").toObject().value("details").toObject().value("verificationScope").toString(), QString("owned-file-and-reload"));
+        QVERIFY(!QFile::exists(module));
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        for (int i = 0; i < 2; ++i) {
+            reply = CliApi::execute(desk.s.env, {"rule", "add", "firefox", "workspace", "3"});
+            QCOMPARE(reply.exitCode, 0);
+            QVERIFY(reply.body.value("verified").toBool());
+            QCOMPARE(reply.body.value("data").toObject().value("transaction").toObject().value("recovery").toString(), QString("no-undo"));
+        }
+        const QString selector = desk.selector("rule");
+        QVERIFY(selector.contains('@'));
+        reply = CliApi::execute(desk.s.env, {"rule", "remove", selector});
+        QCOMPARE(reply.exitCode, 0);
+        HyprModule owned(desk.s.env); QVERIFY(owned.load()); QCOMPARE(owned.rules().size(), 1);
+        const auto before = readAll(module);
+        reply = CliApi::execute(desk.s.env, {"rule", "remove", selector});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("stale_target"));
+        QCOMPARE(readAll(module), before);
+        QCOMPARE(ChangeCoordinator(desk.s.env).history().size(), 3);
+    }
+    void cliShortcutActionsRequireExplicitReplacementAndAcknowledgeConsequences() {
+        HyprDesk desk;
+        desk.stock(QJsonArray{QJsonObject{{"modmask", 64}, {"key", "SPACE"}, {"description", "Launcher"}, {"dispatcher", "__lua"}, {"arg", "22"}, {"submap", ""}}});
+        QStringList args{"shortcut", "add", "SUPER + SPACE", "Mine", "my-app"};
+        QCOMPARE(CliApi::execute(desk.s.env, args).body.value("error").toObject().value("code").toString(), QString("conflict"));
+        args << "--replace";
+        auto reply = CliApi::execute(desk.s.env, args + QStringList{"--dry-run"});
+        QCOMPARE(reply.exitCode, 0);
+        QVERIFY(!reply.body.value("data").toObject().value("confirmText").toString().isEmpty());
+        QCOMPARE(CliApi::execute(desk.s.env, args).body.value("error").toObject().value("code").toString(), QString("confirmation_required"));
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        reply = CliApi::execute(desk.s.env, args + QStringList{"--yes"});
+        QCOMPARE(reply.exitCode, 0);
+        const auto plan = reply.body.value("data").toObject().value("plan").toObject();
+        QVERIFY(!plan.value("details").toObject().value("liveCommandKnown").toBool());
+        QCOMPARE(plan.value("details").toObject().value("record").toObject().value("command").toString(), QString("my-app"));
+        const QString selector = desk.selector("shortcut");
+        QCOMPARE(CliApi::execute(desk.s.env, {"shortcut", "remove", selector}).body.value("error").toObject().value("code").toString(), QString("confirmation_required"));
+        reply = CliApi::execute(desk.s.env, {"shortcut", "remove", selector, "--yes"});
+        QCOMPARE(reply.exitCode, 0);
+        const auto live = QJsonDocument::fromJson(readAll(desk.s.env.home + "/live.json")).array();
+        QCOMPARE(live.first().toObject().value("description").toString(), QString("Launcher"));
+    }
+    void cliShortcutMutationRefusesUnresolvableReplacement_data() {
+        QTest::addColumn<QJsonObject>("binding");
+        QTest::newRow("keycode") << QJsonObject{{"modmask", 64}, {"key", ""}, {"keycode", 41}};
+        QTest::newRow("submap") << QJsonObject{{"modmask", 64}, {"key", "F"}, {"submap", "resize"}};
+        QTest::newRow("catch-all") << QJsonObject{{"modmask", 64}, {"key", ""}, {"catch_all", true}};
+    }
+    void cliShortcutMutationRefusesUnresolvableReplacement() {
+        QFETCH(QJsonObject, binding);
+        HyprDesk desk; desk.stock(QJsonArray{binding});
+        const auto reply = CliApi::execute(desk.s.env, {"shortcut", "add", "SUPER + F", "Mine", "app", "--replace", "--yes"});
+        QCOMPARE(reply.exitCode, 1);
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("unsupported_configuration"));
+        QVERIFY(!QFile::exists(desk.s.env.home + "/reloads"));
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void cliHyprMutationsDoNotTurnUnverifiedChangesIntoSuccess_data() {
+        QTest::addColumn<QString>("mode"); QTest::addColumn<QString>("family"); QTest::addColumn<QString>("phase");
+        QTest::newRow("no-effect") << "no-effect" << "shortcut" << "rolled-back";
+        QTest::newRow("wrong-dispatcher") << "wrong-command" << "shortcut" << "rolled-back";
+        QTest::newRow("new-errors") << "new-error" << "rule" << "rolled-back";
+        QTest::newRow("unreadable-post-errors") << "post-bad-errors" << "rule" << "partial";
+        QTest::newRow("failed-recovery") << "recovery-fail" << "shortcut" << "partial";
+        QTest::newRow("concurrent-edit") << "edit-after-reload" << "rule" << "partial";
+    }
+    void cliHyprMutationsDoNotTurnUnverifiedChangesIntoSuccess() {
+        QFETCH(QString, mode); QFETCH(QString, family); QFETCH(QString, phase);
+        HyprDesk desk; desk.mode(mode);
+        if (mode == QLatin1String("recovery-fail")) desk.mode("no-effect");
+        const QString main = desk.s.env.configHome + "/hypr/hyprland.lua";
+        const QByteArray before = readAll(main);
+        const auto reply = CliApi::execute(desk.s.env, family == QLatin1String("rule") ? QStringList{"rule", "add", "firefox", "float"}
+            : QStringList{"shortcut", "add", "SUPER + Y", "Mine", "app"});
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(!reply.body.value("verified").toBool());
+        QCOMPARE(reply.body.value("outcome").toString(), phase);
+        QCOMPARE(readAll(main), before);
+        const QString path = desk.s.env.configHome + "/hypr/omarchy-control.lua";
+        if (mode == QLatin1String("edit-after-reload")) QVERIFY(readAll(path).contains("concurrent external edit"));
+        else QVERIFY(!QFile::exists(path));
+        QCOMPARE(ChangeCoordinator(desk.s.env).history().size(), 1);
+    }
+    void cliHyprPlansRejectUnavailableCompatibilityAndOwnership() {
+        HyprDesk desk;
+        desk.mode("bad-errors");
+        auto reply = CliApi::execute(desk.s.env, {"rule", "add", "firefox", "float", "--dry-run"});
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        QVERIFY(!QFile::exists(desk.s.env.home + "/reloads"));
+        QFile::remove(desk.s.env.home + "/bad-errors");
+        desk.mode("new-version"); desk.s.env.enforceCompat = true;
+        reply = CliApi::execute(desk.s.env, {"rule", "add", "firefox", "float", "--dry-run"});
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("compatibility_blocked"));
+        QFile::remove(desk.s.env.home + "/new-version");
+        const QString module = desk.s.env.configHome + "/hypr/omarchy-control.lua";
+        const QString elsewhere = desk.s.env.home + "/elsewhere.lua"; writeFile(elsewhere, "keep me");
+        QVERIFY(QFile::link(elsewhere, module));
+        reply = CliApi::execute(desk.s.env, {"rule", "add", "firefox", "float"});
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QCOMPARE(readAll(elsewhere), QByteArray("keep me"));
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void hyprQueuedPlansRecheckFilesAndCollisionsBeforeCapture() {
+        for (bool collision : {false, true}) {
+            HyprDesk desk;
+            ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+            ShortcutsProvider provider(&runner, &coordinator);
+            bool planned = false; ProviderPlan plan;
+            provider.planAdd("SUPER + F", "Mine", "app", false, [&](const ProviderPlan &value) { plan = value; planned = true; });
+            QTRY_VERIFY_WITH_TIMEOUT(planned, 5000); QVERIFY(plan.ok);
+            ChangeCoordinator::Done release;
+            ChangeCoordinator::Request hold;
+            hold.settingId = "test-hold"; hold.apply = [&](auto done) { release = done; };
+            coordinator.submit(hold, {}); QVERIFY(release);
+            QSignalSpy finished(&provider, &ShortcutsProvider::operationFinished);
+            provider.applyPlan(plan);
+            QString path = desk.s.env.configHome + "/hypr/omarchy-control.lua";
+            if (collision) desk.stock(QJsonArray{QJsonObject{{"modmask", 64}, {"key", "F"}, {"description", "New collision"}}});
+            else writeFile(path, "-- a concurrent owner\n");
+            release(true, {});
+            QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+            QVERIFY(coordinator.history().first().phase == QLatin1String("failed"));
+            QVERIFY(!QFile::exists(desk.s.env.home + "/reloads"));
+            if (collision) QVERIFY(!QFile::exists(path));
+            else QCOMPARE(readAll(path), QByteArray("-- a concurrent owner\n"));
+        }
+    }
+    void hyprPreflightFailureAndRestoreLeaseStartNoMutation() {
+        HyprDesk desk;
+        ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+        WindowRulesProvider provider(&runner, &coordinator);
+        ProviderPlan plan; bool ready = false;
+        provider.planAdd("firefox", "float", "", [&](const ProviderPlan &value) { plan = value; ready = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(ready, 5000); QVERIFY(plan.ok);
+        desk.mode("bad-errors");
+        QSignalSpy finished(&provider, &WindowRulesProvider::operationFinished);
+        provider.applyPlan(plan); QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+        QVERIFY(!QFile::exists(desk.s.env.home + "/reloads"));
+        QVERIFY(!QFile::exists(desk.s.env.configHome + "/hypr/omarchy-control.lua"));
+        QFile::remove(desk.s.env.home + "/bad-errors");
+        ChangeCoordinator restore(desk.s.env); QVERIFY(restore.acquireLease("test-restore"));
+        const auto blocked = CliApi::execute(desk.s.env, {"rule", "add", "firefox", "float"});
+        QCOMPARE(blocked.exitCode, 1);
+        QVERIFY(!QFile::exists(desk.s.env.home + "/reloads"));
+    }
+    void guiRemovalSelectorsCannotFollowAReplacedRow() {
+        HyprDesk desk;
+        ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env);
+        WindowRulesProvider rules(&runner, &coordinator); ShortcutsProvider shortcuts(&runner, &coordinator);
+        HyprModule module(desk.s.env);
+        module.setRules(QJsonArray{QJsonObject{{"match", "firefox"}, {"action", "float"}}});
+        module.setBinds(QJsonArray{QJsonObject{{"keys", "SUPER + F"}, {"description", "Old"}, {"command", "old"}}});
+        QVERIFY(module.save());
+        const QString selectedRule = rules.selectableRules().first().toMap().value("selector").toString();
+        const QString selectedBind = shortcuts.ownedBinds().first().toMap().value("selector").toString();
+        module.setRules(QJsonArray{QJsonObject{{"match", "calculator"}, {"action", "tile"}}});
+        module.setBinds(QJsonArray{QJsonObject{{"keys", "SUPER + F"}, {"description", "New"}, {"command", "new"}}});
+        QVERIFY(module.save()); const auto edited = readAll(module.path());
+        QSignalSpy ruleMessages(&rules, &WindowRulesProvider::message), bindMessages(&shortcuts, &ShortcutsProvider::message);
+        rules.removeRule(selectedRule); shortcuts.removeBinding(selectedBind);
+        QCOMPARE(ruleMessages.count(), 1); QVERIFY(ruleMessages.first().at(1).toBool());
+        QCOMPARE(bindMessages.count(), 1); QVERIFY(bindMessages.first().at(1).toBool());
+        QCOMPARE(readAll(module.path()), edited);
+        QVERIFY(coordinator.history().isEmpty()); QVERIFY(desk.s.calls().isEmpty());
+    }
+    void cliShellInspectionKeepsLivePersistedAndHintStatesSeparate() {
+        ShellDesk desk;
+        auto reply = desk.api({"plugin", "status"});
+        QVERIFY(reply.value("ok").toBool());
+        auto data = reply.value("data").toObject();
+        QCOMPARE(data.value("dock").toObject().value("pins").toArray(), (QJsonArray{"a", "gone"}));
+        const auto widgets = data.value("bar").toObject().value("widgets").toArray();
+        QCOMPARE(widgets.at(1).toObject().value("entry").toObject().value("format").toString(), QString("first"));
+        QCOMPARE(widgets.at(2).toObject().value("entry").toObject().value("format").toString(), QString("second"));
+        QVERIFY(widgets.at(1).toObject().value("selector") != widgets.at(2).toObject().value("selector"));
+        desk.mode("live-down");
+        QVERIFY(desk.api({"plugin", "list"}).value("ok").toBool());
+        reply = desk.api({"bar", "status"}); QVERIFY(!reply.value("ok").toBool());
+        auto bar = reply.value("data").toObject().value("bar").toObject();
+        QVERIFY(bar.value("layout").isNull());
+        QCOMPARE(bar.value("persisted").toObject().value("status").toString(), QString("ok"));
+        desk.mode("plugin-down");
+        writeFile(desk.s.env.configHome + "/omarchy/plugins/hint/manifest.json", R"({"id":"local.hint","name":"Hint","kinds":["panel"]})");
+        const auto plugins = desk.api({"plugin", "list"}).value("data").toObject().value("plugins").toObject();
+        QVERIFY(plugins.value("items").isNull());
+        QVERIFY(plugins.value("manifestHints").toArray().first().toObject().value("unknownState").toBool());
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void cliShellRegistryRejectsUnavailableOrAmbiguousData_data() {
+        QTest::addColumn<QString>("mode");
+        for (const QString &mode : QStringList{"plugin-down", "bad-registry", "duplicate-registry", "truncated-registry"}) QTest::newRow(qPrintable(mode)) << mode;
+    }
+    void cliShellRegistryRejectsUnavailableOrAmbiguousData() {
+        QFETCH(QString, mode); ShellDesk desk; desk.mode(mode);
+        const auto reply = desk.api({"plugin", "list"});
+        QVERIFY(!reply.value("ok").toBool());
+        QVERIFY(reply.value("data").toObject().value("plugins").toObject().value("items").isNull());
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+    }
+    void cliShellWritesPlanAndVerify_data() {
+        QTest::addColumn<QString>("action");
+        for (const QString &action : QStringList{"disable", "bar-enable", "move", "pin", "unpin"}) QTest::newRow(qPrintable(action)) << action;
+    }
+    void cliShellWritesPlanAndVerify() {
+        QFETCH(QString, action); ShellDesk desk;
+        QStringList args;
+        if (action == QLatin1String("disable")) args = {"plugin", "disable", "omarchy.service"};
+        else if (action == QLatin1String("bar-enable")) args = {"plugin", "enable", "local.alt-bar"};
+        else if (action == QLatin1String("move")) args = {"widget", "move", desk.selector("omarchy.clock", 1), "right", "0"};
+        else args = {"dock", action, action == QLatin1String("pin") ? "b.desktop" : "gone"};
+        const auto before = readAll(desk.config());
+        auto reply = desk.api(args + QStringList{"--dry-run"});
+        QVERIFY2(reply.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(reply).toJson(QJsonDocument::Compact))));
+        QCOMPARE(reply.value("outcome").toString(), QString("planned"));
+        QCOMPARE(readAll(desk.config()), before); QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        reply = desk.api(args); QVERIFY2(reply.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(reply).toJson(QJsonDocument::Compact))));
+        QVERIFY(reply.value("verified").toBool()); QCOMPARE(reply.value("outcome").toString(), QString("committed"));
+        const auto after = desk.object(); QVERIFY(after.value("custom").toObject().value("keep").toBool());
+        if (action == QLatin1String("move")) {
+            const auto layout = after.value("bar").toObject().value("layout").toObject();
+            QCOMPARE(layout.value("right").toArray().first().toObject().value("format").toString(), QString("second"));
+            QCOMPARE(layout.value("left").toArray().at(1).toObject().value("format").toString(), QString("first"));
+        }
+        if (action == QLatin1String("pin")) QCOMPARE(after.value("dock").toObject().value("pinned").toArray(), (QJsonArray{"a", "gone", "b"}));
+        if (action == QLatin1String("unpin")) QCOMPARE(after.value("dock").toObject().value("pinned").toArray(), (QJsonArray{"a"}));
+        const auto history = ChangeCoordinator(desk.s.env).history(); QCOMPARE(history.size(), 1); QVERIFY(!history.first().undoable());
+        QVERIFY(history.first().files.contains(desk.config()));
+    }
+    void cliShellUnverifiedWritersReportPartialAndPreserveBackups_data() {
+        QTest::addColumn<QString>("mode");
+        for (const QString &mode : QStringList{"noop", "false-registry", "memory-only", "disk-only", "lose-options", "concurrent-edit", "fail-after-write"}) QTest::newRow(qPrintable(mode)) << mode;
+    }
+    void cliShellUnverifiedWritersReportPartialAndPreserveBackups() {
+        QFETCH(QString, mode); ShellDesk desk;
+        QStringList args = mode == QLatin1String("lose-options") ? QStringList{"widget", "move", desk.selector("omarchy.clock", 1), "right", "0"}
+            : QStringList{"plugin", "disable", "omarchy.service"};
+        desk.mode(mode); const auto before = readAll(desk.config());
+        const auto reply = desk.api(args);
+        QVERIFY(!reply.value("ok").toBool()); QVERIFY(!reply.value("verified").toBool());
+        QCOMPARE(reply.value("outcome").toString(), QString("partial"));
+        const auto tx = ChangeCoordinator(desk.s.env).history().first();
+        const QString backup = tx.files.value(desk.config()).toObject().value("backup").toString();
+        QCOMPARE(readAll(backup), before);
+        if (mode == QLatin1String("concurrent-edit")) QCOMPARE(desk.object().value("external-choice").toString(), QString("keep"));
+        if (mode == QLatin1String("disk-only") || mode == QLatin1String("fail-after-write")) QVERIFY(desk.object().value("disabledPlugins").toArray().contains("omarchy.service"));
+    }
+    void cliShellDiscoveryAndPlansKeepBadFilesAndDefaultPinsExplicit() {
+        ShellDesk desk;
+        const auto original = readAll(desk.config());
+        writeFile(desk.config(), "{ not JSON }");
+        auto reply = desk.api({"dock", "status"}); QVERIFY(!reply.value("ok").toBool());
+        QVERIFY(reply.value("data").toObject().value("dock").toObject().value("pins").isNull());
+        QVERIFY(!desk.api({"plugin", "disable", "omarchy.service"}).value("ok").toBool());
+        QCOMPARE(readAll(desk.config()), QByteArray("{ not JSON }"));
+        writeFile(desk.config(), "");
+        reply = desk.api({"dock", "status"}); QVERIFY(reply.value("ok").toBool());
+        QCOMPARE(reply.value("data").toObject().value("dock").toObject().value("pins").toArray(), (QJsonArray{"a", "gone"}));
+        writeFile(desk.config(), "{\"version\":1}");
+        QCOMPARE(desk.api({"dock", "pin", "b"}).value("error").toObject().value("code").toString(), QString("unsupported_configuration"));
+        writeFile(desk.config(), original); desk.mode("plugin-down"); desk.mode("live-down");
+        QVERIFY(desk.api({"dock", "status"}).value("ok").toBool());
+        QVERIFY(desk.api({"dock", "unpin", "gone"}).value("ok").toBool());
+    }
+    void cliShellMovesRefuseStaleSelectorsAndTrayClones() {
+        ShellDesk desk;
+        const QString stale = desk.selector("omarchy.clock");
+        auto changed = desk.object(); auto bar = changed.value("bar").toObject(); bar["id"] = "local.alt-bar"; changed["bar"] = bar;
+        const auto edited = QJsonDocument(changed).toJson(); writeFile(desk.config(), edited); writeFile(desk.s.env.home + "/live-shell.json", edited);
+        QCOMPARE(desk.api({"widget", "move", stale, "right", "0"}).value("error").toObject().value("code").toString(), QString("stale_target"));
+        QVERIFY(!desk.api({"widget", "move", desk.selector("local.tray"), "tray", "0"}).value("ok").toBool());
+        QCOMPARE(desk.api({"plugin", "disable", "omarchy.bar"}).value("error").toObject().value("code").toString(), QString("unsupported_operation"));
+        QCOMPARE(desk.api({"widget", "move", desk.selector("omarchy.clock"), "right", "999"}).value("error").toObject().value("code").toString(), QString("invalid_value"));
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed")); QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void shellQueuedPlansRefuseChangedStateAndRestoreLeases() {
+        ShellDesk desk; ChangeCoordinator coordinator(desk.s.env); CommandRunner runner(desk.s.env); PluginsProvider provider(&runner, &coordinator);
+        ProviderPlan plan; bool ready = false;
+        provider.planEnabled("omarchy.service", false, [&](const ProviderPlan &value) { plan = value; ready = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(ready, 5000); QVERIFY(plan.ok);
+        ChangeCoordinator::Done release; ChangeCoordinator::Request hold; hold.settingId = "hold"; hold.apply = [&](auto done) { release = done; };
+        coordinator.submit(hold, {}); QVERIFY(release);
+        QSignalSpy finished(&provider, &PluginsProvider::operationFinished); provider.applyPlan(plan);
+        auto updated = desk.object(); updated["changed-outside"] = true; const auto edited = QJsonDocument(updated).toJson();
+        writeFile(desk.config(), edited); writeFile(desk.s.env.home + "/live-shell.json", edited); release(true, {});
+        QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+        QCOMPARE(coordinator.history().first().phase, QString("failed")); QCOMPARE(readAll(desk.config()), edited);
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+        ChangeCoordinator restore(desk.s.env); QVERIFY(restore.acquireLease("test-restore"));
+        QVERIFY(!desk.api({"dock", "pin", "b"}).value("ok").toBool());
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+    }
+    void cliShellPreservesLegacyRoutingAndRejectsIndexCoercion() {
+        QVERIFY(!CliApi::requested({"plugin", "disable", "omarchy.service"}));
+        QVERIFY(!CliApi::requested({"widget", "move", "a", "right", "0", "left", "0"}));
+        QVERIFY(CliApi::requested({"widget", "move", "a", "right", "0", "--dry-run"}));
+        QVERIFY(CliApi::requested({"plugin", "list"})); QVERIFY(CliApi::requested({"bar", "status"})); QVERIFY(CliApi::requested({"dock", "status"}));
+        ShellDesk desk;
+        QCOMPARE(Cli::run(desk.s.env, {"widget", "move", "omarchy.clock", "right", "bad", "left", "1", "--json"}), 1);
+        QVERIFY(desk.s.calls().isEmpty());
+    }
+    void cliShellDiscoveryRetainsReportedIdsOutsideTheWriterGrammar() {
+        ShellDesk desk; desk.mode("unicode-registry");
+        const auto reply = desk.api({"plugin", "list"});
+        QVERIFY(reply.value("ok").toBool());
+        bool found = false;
+        for (const auto &row : reply.value("data").toObject().value("plugins").toObject().value("items").toArray())
+            found |= row.toObject().value("id").toString() == QString::fromUtf8("local.функция");
+        QVERIFY(found);
+        QCOMPARE(desk.api({"plugin", "enable", QString::fromUtf8("local.функция")}).value("error").toObject().value("code").toString(), QString("invalid_value"));
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+    }
+    void cliShellMutationsRespectAppMaskingOwnershipAndCompatibility() {
+        ShellDesk desk;
+        writeFile(desk.s.env.dataHome + "/applications/b.desktop", "[Desktop Entry]\nHidden=true\n");
+        QCOMPARE(desk.api({"dock", "pin", "b"}).value("error").toObject().value("code").toString(), QString("unknown_target"));
+        const auto before = readAll(desk.config());
+        const QString link = desk.s.env.home + "/linked-config";
+        QVERIFY(::link(QFile::encodeName(desk.config()).constData(), QFile::encodeName(link).constData()) == 0);
+        QCOMPARE(desk.api({"dock", "unpin", "gone"}).value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QVERIFY(QFile::remove(link));
+        desk.s.command("omarchy-dock", "# deliberately changed fixture\nexit 0"); desk.s.env.enforceCompat = true;
+        QCOMPARE(desk.api({"dock", "unpin", "gone"}).value("error").toObject().value("code").toString(), QString("compatibility_blocked"));
+        QCOMPARE(readAll(desk.config()), before); QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void cliDevicesDiscoverActualTargetsAndCapabilities() {
+        DeviceDesk desk;
+        desk.mode("slow-route");
+        const auto audio = CliApi::execute(desk.s.env, {"audio", "status"});
+        QCOMPARE(audio.exitCode, 0);
+        const auto state = audio.body.value("data").toObject();
+        QCOMPARE(state.value("outputs").toArray().size(), 3);
+        QCOMPARE(state.value("inputs").toArray().size(), 2);
+        QCOMPARE(state.value("streams").toArray().size(), 1);
+        QCOMPARE(state.value("effectiveOutput").toString(), QString("speakers"));
+        QVERIFY(state.value("outputRoutingKnown").toBool());
+        const auto bluetooth = CliApi::execute(desk.s.env, {"bluetooth", "status"});
+        QCOMPARE(bluetooth.exitCode, 0);
+        QCOMPARE(bluetooth.body.value("data").toObject().value("devices").toArray().size(), 1);
+        QVERIFY(bluetooth.body.value("data").toObject().value("powered").toBool());
+        QVERIFY(!bluetooth.body.value("data").toObject().value("allRadiosPowered").toBool());
+        desk.set("radio", false);
+        desk.set("otherRadio", true);
+        QVERIFY(CliApi::execute(desk.s.env, {"bluetooth", "status"}).body.value("data").toObject().value("powered").toBool());
+        const auto schema = CliApi::execute(desk.s.env, {"describe", "audio.setVolume"}).body.value("data").toObject();
+        QCOMPARE(schema.value("classification").toString(), QString("api-cli"));
+        QCOMPARE(schema.value("parameters").toArray().last().toObject().value("maximum").toInt(), 150);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+    }
+    void cliAudioChangesArePlannedJournaledAndVerified_data() {
+        QTest::addColumn<QStringList>("args");
+        QTest::addColumn<QString>("key");
+        QTest::addColumn<QJsonValue>("value");
+        QTest::newRow("output") << QStringList{"audio", "output", "default", "phones"} << QString("defaultOut") << QJsonValue("phones");
+        QTest::newRow("input") << QStringList{"audio", "input", "default", "mic2"} << QString("defaultIn") << QJsonValue("mic2");
+        QTest::newRow("dsp-volume") << QStringList{"audio", "output", "volume", "dsp", "55"} << QString("speakersVolume") << QJsonValue(55);
+        QTest::newRow("mic-volume") << QStringList{"audio", "input", "volume", "mic", "25"} << QString("micVolume") << QJsonValue(25);
+        QTest::newRow("dsp-mute") << QStringList{"audio", "output", "mute", "dsp", "true"} << QString("speakersMute") << QJsonValue(true);
+        QTest::newRow("mic-mute") << QStringList{"audio", "input", "mute", "mic", "true"} << QString("micMute") << QJsonValue(true);
+        QTest::newRow("stream") << QStringList{"audio", "stream", "move", "7@700", "phones"} << QString("streamSink") << QJsonValue(12);
+    }
+    void cliAudioChangesArePlannedJournaledAndVerified() {
+        QFETCH(QStringList, args);
+        QFETCH(QString, key);
+        QFETCH(QJsonValue, value);
+        DeviceDesk desk;
+        const auto before = desk.data();
+        auto planned = CliApi::execute(desk.s.env, args + QStringList{"--dry-run"});
+        QCOMPARE(planned.exitCode, 0);
+        QCOMPARE(planned.body.value("outcome").toString(), QString("planned"));
+        QVERIFY(!planned.body.value("verified").toBool());
+        QCOMPARE(desk.data(), before);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        const auto changed = CliApi::execute(desk.s.env, args);
+        QVERIFY2(changed.exitCode == 0, qPrintable(QJsonDocument(changed.body).toJson()));
+        QVERIFY(changed.body.value("verified").toBool());
+        QCOMPARE(desk.data().value(key), value);
+        QCOMPARE(desk.data().value("dspVolume").toInt(), 100);
+        const auto history = ChangeCoordinator(desk.s.env).history();
+        QCOMPARE(history.size(), 1);
+        QCOMPARE(history.first().phase, QString("committed"));
+        QCOMPARE(history.first().recovery, QString("no-undo"));
+    }
+    void cliAudioRejectsFalseSuccessAndStaleTargets_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::addColumn<QStringList>("args");
+        QTest::addColumn<QString>("code");
+        QTest::newRow("ignored-write") << QString("noop") << QStringList{"audio", "input", "volume", "mic", "20"} << QString("change_not_confirmed");
+        QTest::newRow("readback-fails") << QString("fail-after") << QStringList{"audio", "input", "mute", "mic", "true"} << QString("change_not_confirmed");
+        QTest::newRow("recycled-stream") << QString("recycle-stream") << QStringList{"audio", "stream", "move", "7@700", "phones"} << QString("change_not_confirmed");
+        QTest::newRow("recycled-device") << QString("recycle-device") << QStringList{"audio", "output", "volume", "dsp", "20"} << QString("change_not_confirmed");
+        QTest::newRow("malformed") << QString("malformed") << QStringList{"audio", "status"} << QString("read_unavailable");
+        QTest::newRow("gone") << QString() << QStringList{"audio", "input", "mute", "gone", "true"} << QString("stale_target");
+        QTest::newRow("bad-range") << QString() << QStringList{"audio", "input", "volume", "mic", "151"} << QString("invalid_value");
+        QTest::newRow("bad-number") << QString() << QStringList{"audio", "input", "volume", "mic", "1.5"} << QString("invalid_value");
+    }
+    void cliAudioRejectsFalseSuccessAndStaleTargets() {
+        QFETCH(QString, mode);
+        QFETCH(QStringList, args);
+        QFETCH(QString, code);
+        DeviceDesk desk;
+        if (!mode.isEmpty()) desk.mode(mode);
+        const auto response = CliApi::execute(desk.s.env, args);
+        QCOMPARE(response.exitCode, 1);
+        QCOMPARE(response.body.value("error").toObject().value("code").toString(), code);
+        QVERIFY(!response.body.value("verified").toBool());
+        if (mode.startsWith("recycle"))
+            QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+        if (mode == QLatin1String("fail-after"))
+            QVERIFY(desk.data().value("micMute").toBool()); // failure is not proof of no change
+    }
+    void cliBluetoothChangesRequireReadableState_data() {
+        QTest::addColumn<QString>("action");
+        QTest::addColumn<QString>("target");
+        QTest::addColumn<QString>("key");
+        QTest::addColumn<bool>("value");
+        QTest::newRow("on") << QString("power") << QString("true") << QString("radio") << true;
+        QTest::newRow("off") << QString("power") << QString("false") << QString("radio") << false;
+        QTest::newRow("connect") << QString("connect") << QString("aa:bb:cc:dd:ee:01") << QString("connected") << true;
+        QTest::newRow("disconnect") << QString("disconnect") << QString("AA:BB:CC:DD:EE:01") << QString("connected") << false;
+        QTest::newRow("forget") << QString("forget") << QString("AA:BB:CC:DD:EE:01") << QString("known") << false;
+    }
+    void cliBluetoothChangesRequireReadableState() {
+        QFETCH(QString, action);
+        QFETCH(QString, target);
+        QFETCH(QString, key);
+        QFETCH(bool, value);
+        DeviceDesk desk;
+        desk.set("connected", action == QLatin1String("disconnect") || action == QLatin1String("forget"));
+        desk.set("radio", action != QLatin1String("power") || target != QLatin1String("true"));
+        const QStringList args{"bluetooth", action, target};
+        const auto before = desk.data();
+        const auto plan = CliApi::execute(desk.s.env, args + QStringList{"--dry-run"});
+        QCOMPARE(plan.exitCode, 0);
+        QCOMPARE(desk.data(), before);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        if (!plan.body.value("data").toObject().value("confirmText").toString().isEmpty()) {
+            const auto refusal = CliApi::execute(desk.s.env, args);
+            QCOMPARE(refusal.body.value("error").toObject().value("code").toString(), QString("confirmation_required"));
+            QCOMPARE(desk.data(), before);
+        }
+        const auto response = CliApi::execute(desk.s.env, args + QStringList{"--yes"});
+        QVERIFY2(response.exitCode == 0, qPrintable(QJsonDocument(response.body).toJson()));
+        QVERIFY(response.body.value("verified").toBool());
+        QCOMPARE(desk.data().value(key).toBool(), value);
+        if (action == QLatin1String("power"))
+            QCOMPARE(desk.data().value("otherRadio").toBool(), value);
+        QCOMPARE(ChangeCoordinator(desk.s.env).history().size(), 1);
+    }
+    void cliBluetoothDoesNotConfuseFailedReadsWithOffOrRemoved_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::addColumn<QString>("action");
+        QTest::addColumn<QString>("target");
+        QTest::newRow("info-error") << QString("info-after-fails") << QString("disconnect") << QString("AA:BB:CC:DD:EE:01");
+        QTest::newRow("empty-info") << QString("empty-info-after") << QString("disconnect") << QString("AA:BB:CC:DD:EE:01");
+        QTest::newRow("list-error") << QString("list-after-fails") << QString("forget") << QString("AA:BB:CC:DD:EE:01");
+        QTest::newRow("radio-error") << QString("radio-after-fails") << QString("power") << QString("false");
+        QTest::newRow("only-one-radio-on") << QString("partial-power-on") << QString("power") << QString("true");
+    }
+    void cliBluetoothDoesNotConfuseFailedReadsWithOffOrRemoved() {
+        QFETCH(QString, mode);
+        QFETCH(QString, action);
+        QFETCH(QString, target);
+        DeviceDesk desk;
+        desk.set("connected", true);
+        desk.mode(mode);
+        const auto response = CliApi::execute(desk.s.env, {"bluetooth", action, target, "--yes"});
+        QCOMPARE(response.exitCode, 1);
+        QVERIFY(!response.body.value("verified").toBool());
+        QCOMPARE(response.body.value("error").toObject().value("code").toString(), QString("change_not_confirmed"));
+        QCOMPARE(ChangeCoordinator(desk.s.env).history().first().phase, QString("partial"));
+    }
+    void cliDevicesPreservePairingCompatibilityAndRestoreBoundaries() {
+        DeviceDesk desk;
+        const auto pair = CliApi::execute(desk.s.env, {"bluetooth", "pair", "AA:BB:CC:DD:EE:01"});
+        QCOMPARE(pair.body.value("error").toObject().value("code").toString(), QString("interaction_required"));
+        QVERIFY(desk.s.calls().isEmpty());
+        desk.set("paired", false);
+        QCOMPARE(CliApi::execute(desk.s.env, {"bluetooth", "connect", "AA:BB:CC:DD:EE:01"}).body.value("error").toObject().value("code").toString(), QString("interaction_required"));
+        desk.mode("radio-read-fails");
+        QCOMPARE(CliApi::execute(desk.s.env, {"bluetooth", "status"}).exitCode, 1);
+        desk.s.command("omarchy-audio-output-sink", "exit 0 # modified helper");
+        Env strict = desk.s.env;
+        strict.enforceCompat = true;
+        QCOMPARE(CliApi::execute(strict, {"audio", "output", "volume", "dsp", "20"}).body.value("error").toObject().value("code").toString(), QString("compatibility_blocked"));
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+        ChangeCoordinator restore(desk.s.env);
+        QVERIFY(restore.acquireLease("test-restore"));
+        const auto blocked = CliApi::execute(desk.s.env, {"audio", "input", "volume", "mic", "20"});
+        QCOMPARE(blocked.exitCode, 1);
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+    }
+    void cliServicesScopesFailIndependently() {
+        ServiceDesk desk;
+        desk.mode("system-unavailable");
+        const auto user = CliApi::execute(desk.s.env, {"services", "user", "status"});
+        QCOMPARE(user.exitCode, 0);
+        QCOMPARE(user.body.value("data").toObject().value("services").toArray().size(), 1);
+        QVERIFY(!desk.s.calls().join('\n').contains("--system"));
+        QCOMPARE(CliApi::execute(desk.s.env, {"services", "system", "status"}).exitCode, 1);
+        desk.mode("files-error");
+        QCOMPARE(CliApi::execute(desk.s.env, {"services", "user", "status"}).exitCode, 1);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        QFile::remove(desk.s.env.home + "/files-error");
+        desk.mode("malformed-list");
+        QCOMPARE(CliApi::execute(desk.s.env, {"services", "user", "status"}).exitCode, 1);
+        CommandRunner runner(desk.s.env);
+        ChangeCoordinator coordinator(desk.s.env);
+        ServicesProvider provider(&runner, &coordinator);
+        QSignalSpy refreshed(&provider, &ServicesProvider::refreshed);
+        provider.refresh();
+        QTRY_COMPARE_WITH_TIMEOUT(refreshed.size(), 1, 5000);
+        QCOMPARE(provider.status(), QString("unavailable"));
+    }
+    void cliServicesActionsAreScopedPlannedAndVerified_data() {
+        QTest::addColumn<QString>("scope");
+        QTest::addColumn<QString>("action");
+        for (const QString &scope : {QStringLiteral("user"), QStringLiteral("system")})
+            for (const QString &action : {QStringLiteral("start"), QStringLiteral("stop"), QStringLiteral("restart"), QStringLiteral("enable"), QStringLiteral("disable")})
+                QTest::newRow(qPrintable(scope + "-" + action)) << scope << action;
+    }
+    void cliServicesActionsAreScopedPlannedAndVerified() {
+        QFETCH(QString, scope);
+        QFETCH(QString, action);
+        ServiceDesk desk;
+        if (action == QLatin1String("stop") || action == QLatin1String("restart"))
+            desk.set(scope, "ActiveState", "active");
+        if (action == QLatin1String("disable"))
+            desk.set(scope, "UnitFileState", "enabled");
+        const auto before = desk.data();
+        const QStringList args{"services", scope, action, "agent.service"};
+        const auto planned = CliApi::execute(desk.s.env, args + QStringList{"--dry-run"});
+        QVERIFY2(planned.exitCode == 0, qPrintable(QJsonDocument(planned.body).toJson()));
+        QCOMPARE(desk.data(), before);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        if (!planned.body.value("data").toObject().value("confirmText").toString().isEmpty()) {
+            QCOMPARE(CliApi::execute(desk.s.env, args).body.value("error").toObject().value("code").toString(), QString("confirmation_required"));
+            QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+        }
+        const auto changed = CliApi::execute(desk.s.env, args + QStringList{"--yes"});
+        QVERIFY2(changed.exitCode == 0, qPrintable(QJsonDocument(changed.body).toJson()));
+        QVERIFY(changed.body.value("verified").toBool());
+        const auto history = ChangeCoordinator(desk.s.env).history();
+        QCOMPARE(history.size(), 1);
+        QCOMPARE(history.first().settingId, "services." + scope + ".agent.service");
+        QVERIFY(!history.first().undoable());
+        const bool enabled = action == QLatin1String("enable") || action == QLatin1String("disable");
+        const QString expected = enabled ? (action == QLatin1String("enable") ? "enabled" : "disabled")
+            : action == QLatin1String("stop") ? "inactive" : "active";
+        QCOMPARE(history.first().after, expected);
+        QCOMPARE(desk.data().value(scope).toObject().value(enabled ? "UnitFileState" : "ActiveState").toString(), expected);
+        const QString other = scope == QLatin1String("user") ? "system" : "user";
+        QCOMPARE(desk.data().value(other), before.value(other));
+        QVERIFY(desk.s.calls().join('\n').contains("systemctl --" + scope + " " + action + " agent.service --no-ask-password"));
+    }
+    void cliServicesRejectOldSuccessAndUnverifiedChanges_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::addColumn<QString>("action");
+        QTest::addColumn<QString>("type");
+        QTest::addColumn<QString>("active");
+        QTest::newRow("old-oneshot-success") << QString("noop") << QString("start") << QString("oneshot") << QString("inactive");
+        QTest::newRow("ignored-restart") << QString("noop") << QString("restart") << QString("simple") << QString("active");
+        QTest::newRow("ignored-enable") << QString("noop") << QString("enable") << QString("simple") << QString("inactive");
+        QTest::newRow("ignored-stop") << QString("noop") << QString("stop") << QString("simple") << QString("active");
+        QTest::newRow("unreadable-after") << QString("read-after-fails") << QString("start") << QString("simple") << QString("inactive");
+        QTest::newRow("empty-after") << QString("empty-after") << QString("stop") << QString("simple") << QString("active");
+        QTest::newRow("still-activating") << QString("activating-after") << QString("start") << QString("simple") << QString("inactive");
+        QTest::newRow("replaced-unit") << QString("identity-after") << QString("start") << QString("simple") << QString("inactive");
+    }
+    void cliServicesRejectOldSuccessAndUnverifiedChanges() {
+        QFETCH(QString, mode); QFETCH(QString, action); QFETCH(QString, type); QFETCH(QString, active);
+        ServiceDesk desk;
+        desk.set("user", "Type", type);
+        desk.set("user", "ActiveState", active);
+        desk.mode(mode);
+        const auto changed = CliApi::execute(desk.s.env, {"services", "user", action, "agent.service"});
+        QCOMPARE(changed.exitCode, 1);
+        QVERIFY(!changed.body.value("verified").toBool());
+        QCOMPARE(changed.body.value("outcome").toString(), QString("partial"));
+        QCOMPARE(changed.body.value("error").toObject().value("code").toString(), QString("change_not_confirmed"));
+    }
+    void cliServicesHandleOneShotsAuthorizationAndPreconditions() {
+        ServiceDesk desk;
+        desk.set("user", "Type", "oneshot");
+        const auto oneShot = CliApi::execute(desk.s.env, {"services", "user", "start", "agent.service"});
+        QCOMPARE(oneShot.exitCode, 0);
+        QCOMPARE(oneShot.body.value("data").toObject().value("transaction").toObject().value("after").toString(), QString("completed-oneshot"));
+        desk.mode("authorization-denied");
+        const auto denied = CliApi::execute(desk.s.env, {"services", "system", "start", "agent.service"});
+        QCOMPARE(denied.exitCode, 1);
+        QVERIFY(!denied.body.value("verified").toBool());
+        QVERIFY(desk.s.calls().join('\n').contains("--no-ask-password"));
+        QFile::remove(desk.s.env.home + "/authorization-denied");
+        desk.set("user", "UnitFileState", "static");
+        QCOMPARE(CliApi::execute(desk.s.env, {"services", "user", "enable", "agent.service"}).body.value("error").toObject().value("code").toString(), QString("unsupported_configuration"));
+        QCOMPARE(CliApi::execute(desk.s.env, {"services", "user", "start", "missing.service"}).body.value("error").toObject().value("code").toString(), QString("stale_target"));
+        ServiceDesk stale;
+        stale.mode("stale-before-write");
+        QCOMPARE(CliApi::execute(stale.s.env, {"services", "user", "start", "agent.service"}).exitCode, 1);
+        QVERIFY(!QFile::exists(stale.s.env.home + "/changed"));
+        ServiceDesk broken;
+        broken.mode("missing-field");
+        QCOMPARE(CliApi::execute(broken.s.env, {"services", "user", "start", "agent.service"}).body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        ChangeCoordinator holder(broken.s.env);
+        QVERIFY(holder.acquireLease("profile-restore"));
+        QFile::remove(broken.s.env.home + "/missing-field");
+        QCOMPARE(CliApi::execute(broken.s.env, {"services", "user", "start", "agent.service"}).exitCode, 1);
+        QVERIFY(!QFile::exists(broken.s.env.home + "/changed"));
+    }
+    void cliStartupEditsOnlyThePreferenceAndUserOverride() {
+        Sandbox s;
+        const QString system = s.env.sys("/etc/xdg/autostart/agent.desktop");
+        const QByteArray contents = "[Desktop Entry]\r\nName=Agent\r\nExec=agent\r\nOnlyShowIn=GNOME;\r\nTryExec=agent\r\nX-GNOME-Autostart-enabled=false\r\nHidden=true\r\n[Desktop Action Debug]\r\nHidden=true\r\nX-GNOME-Autostart-enabled=false\r\nExec=agent --debug\r\n";
+        writeFile(system, contents);
+        const auto listed = CliApi::execute(s.env, {"startup", "list"});
+        QCOMPARE(listed.exitCode, 0);
+        QCOMPARE(listed.body.value("data").toObject().value("apps").toArray().size(), 1);
+        QVERIFY(s.calls().isEmpty()); // Startup discovery does not require systemd.
+        const auto planned = CliApi::execute(s.env, {"startup", "enable", "agent.desktop", "--dry-run"});
+        QCOMPARE(planned.exitCode, 0);
+        QCOMPARE(planned.body.value("data").toObject().value("details").toObject().value("verificationScope").toString(), QString("startup-preference-only"));
+        const QString user = s.env.configHome + "/autostart/agent.desktop";
+        QVERIFY(!QFile::exists(user));
+        QVERIFY(ChangeCoordinator(s.env).history().isEmpty());
+        const auto enabled = CliApi::execute(s.env, {"startup", "enable", "agent.desktop"});
+        QCOMPARE(enabled.exitCode, 0);
+        QVERIFY(enabled.body.value("verified").toBool());
+        QCOMPARE(readAll(system), contents);
+        const auto edited = readAll(user);
+        QVERIFY(edited.contains("Hidden=false\r\n"));
+        QVERIFY(edited.contains("X-GNOME-Autostart-enabled=true\r\n"));
+        QVERIFY(edited.contains("OnlyShowIn=GNOME;\r\nTryExec=agent\r\n"));
+        QVERIFY(edited.contains("[Desktop Action Debug]\r\nHidden=true\r\nX-GNOME-Autostart-enabled=false\r\nExec=agent --debug\r\n"));
+        QCOMPARE(CliApi::execute(s.env, {"startup", "disable", "agent.desktop"}).exitCode, 0);
+        QVERIFY(!ServicesProvider::readStartup(s.env).first().toMap().value("enabled").toBool());
+        QVERIFY(!ChangeCoordinator(s.env).history().first().undoable());
+    }
+    void cliStartupHonorsXdgPrecedenceWithoutInheritingMissingKeys() {
+        Sandbox s;
+        const QString low = s.env.home + "/low", high = s.env.home + "/high", custom = s.env.home + "/custom";
+        s.env.process.insert("XDG_CONFIG_HOME", custom);
+        s.env.process.insert("XDG_CONFIG_DIRS", high + ":relative:" + low);
+        writeFile(low + "/autostart/agent.desktop", "[Desktop Entry]\nName=Low\nExec=low\n");
+        writeFile(high + "/autostart/agent.desktop", "[Desktop Entry]\nName=High\nExec=high\n");
+        writeFile(custom + "/autostart/agent.desktop", "[Desktop Entry]\nHidden=true\n");
+        const auto list = CliApi::execute(s.env, {"startup", "list"});
+        const auto row = list.body.value("data").toObject().value("apps").toArray().first().toObject();
+        QCOMPARE(row.value("path").toString(), custom + "/autostart/agent.desktop");
+        QVERIFY(row.value("exec").toString().isEmpty());
+        QCOMPARE(row.value("source").toString(), QString("override"));
+        QCOMPARE(CliApi::execute(s.env, {"startup", "enable", "agent.desktop"}).exitCode, 0);
+        QVERIFY(readAll(custom + "/autostart/agent.desktop").contains("Hidden=false"));
+        QVERIFY(!QFile::exists(s.env.configHome + "/autostart/agent.desktop"));
+        QCOMPARE(readAll(high + "/autostart/agent.desktop"), QByteArray("[Desktop Entry]\nName=High\nExec=high\n"));
+    }
+    void cliStartupRefusesUnreadableAmbiguousAndLinkedOverrides() {
+        Sandbox s;
+        const QString system = s.env.sys("/etc/xdg/autostart/agent.desktop"), user = s.env.configHome + "/autostart/agent.desktop";
+        writeFile(system, "[Desktop Entry]\nName=Agent\nExec=agent\n");
+        writeFile(user, "[Desktop Entry]\nHidden=true\n");
+        QVERIFY(QFile::setPermissions(user, {}));
+        QCOMPARE(CliApi::execute(s.env, {"startup", "enable", "agent.desktop"}).body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        QVERIFY(QFile::setPermissions(user, QFile::ReadOwner | QFile::WriteOwner));
+        writeFile(user, "[Desktop Entry]\nHidden=true\nHidden=false\n");
+        QCOMPARE(CliApi::execute(s.env, {"startup", "enable", "agent.desktop"}).body.value("error").toObject().value("code").toString(), QString("unsupported_configuration"));
+        QFile::remove(user);
+        QVERIFY(QFile::link(system, user));
+        QCOMPARE(CliApi::execute(s.env, {"startup", "disable", "agent.desktop"}).body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QVERIFY(!readAll(system).contains("Hidden="));
+        QVERIFY(ChangeCoordinator(s.env).history().isEmpty());
+        QFile::remove(user);
+        QVERIFY(QDir(QFileInfo(user).absolutePath()).removeRecursively());
+        QVERIFY(QFile::link(QFileInfo(system).absolutePath(), QFileInfo(user).absolutePath()));
+        QCOMPARE(CliApi::execute(s.env, {"startup", "disable", "agent.desktop"}).body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        const QString configLink = s.env.home + "/system-config-link";
+        QVERIFY(QFile::link(s.env.sys("/etc/xdg"), configLink));
+        s.env.process.insert("XDG_CONFIG_HOME", configLink);
+        QCOMPARE(CliApi::execute(s.env, {"startup", "disable", "agent.desktop"}).body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QVERIFY(!readAll(system).contains("Hidden="));
+    }
+    void startupPreservesAnEditQueuedBeforeApply() {
+        Sandbox s;
+        const QString user = s.env.configHome + "/autostart/agent.desktop";
+        writeFile(user, "[Desktop Entry]\nName=Agent\nExec=agent\n");
+        ChangeCoordinator coordinator(s.env);
+        CommandRunner runner(s.env);
+        ServicesProvider provider(&runner, &coordinator);
+        ChangeCoordinator::Done release;
+        ChangeCoordinator::Request blocking;
+        blocking.settingId = "test.block";
+        blocking.apply = [&](ChangeCoordinator::Done done) { release = done; };
+        coordinator.submit(std::move(blocking), [](const Transaction &) {});
+        QVERIFY(bool(release));
+        QSignalSpy finished(&provider, &ServicesProvider::operationFinished);
+        provider.setStartupEnabled("agent.desktop", false);
+        const QByteArray edit = "[Desktop Entry]\nName=Changed elsewhere\nExec=agent\n";
+        writeFile(user, edit);
+        release(true, {});
+        QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 5000);
+        QCOMPARE(readAll(user), edit);
+        QCOMPARE(coordinator.history().first().phase, QString("failed"));
+    }
+    void cliAppsDiscoveryUsesXdgPrecedenceAndDesktopIds() {
+        MimeDesk desk;
+        desk.app("tools/viewer.desktop");
+        desk.app("masked.desktop");
+        writeFile(desk.s.env.dataHome + "/applications/masked.desktop", "[Desktop Entry]\nHidden=true\n");
+        desk.app("a.desktop", "Comment=User version\n", true);
+        const auto listing = CliApi::execute(desk.s.env, {"apps", "list"});
+        QCOMPARE(listing.exitCode, 0);
+        const auto apps = listing.body.value("data").toObject().value("apps").toArray();
+        auto find = [&](const QString &id) { for (const auto &row : apps) if (row.toObject().value("id").toString() == id) return row.toObject(); return QJsonObject{}; };
+        QCOMPARE(find("a.desktop").value("comment").toString(), QString("User version"));
+        QCOMPARE(find("tools-viewer.desktop").value("path").toString(), desk.s.env.dataDirs.last() + "/applications/tools/viewer.desktop");
+        QVERIFY(find("masked.desktop").value("deleted").toBool());
+        QVERIFY(!find("masked.desktop").value("available").toBool());
+        QVERIFY(desk.s.calls().isEmpty());
+        desk.app("tools-viewer.desktop"); // ambiguous IDs in one data root
+        const auto launch = CliApi::execute(desk.s.env, {"apps", "launch", "tools-viewer.desktop"});
+        QCOMPARE(launch.body.value("error").toObject().value("code").toString(), QString("unavailable"));
+        const QString userFile = desk.s.env.dataHome + "/applications/a.desktop";
+        QVERIFY(QFile::setPermissions(userFile, {}));
+        QCOMPARE(CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "a.desktop"}).exitCode, 1);
+        QVERIFY(QFile::setPermissions(userFile, QFile::ReadOwner | QFile::WriteOwner));
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void cliAppLaunchReportsOnlyAHandoffAndPreservesLegacyRouting() {
+        MimeDesk desk;
+        QVERIFY(!CliApi::requested({"apps", "launcher", "list", "--json"}));
+        QVERIFY(CliApi::requested({"apps", "list"}));
+        QVERIFY(CliApi::requested({"apps", "launcher", "list", "--api-version", "1"}));
+        QCOMPARE(CliApi::execute(desk.s.env, {"apps", "launcher", "set", "a.desktop", "--api-version", "1"}).body.value("error").toObject().value("code").toString(), QString("unsupported_api_operation"));
+        QCOMPARE(CliApi::execute(desk.s.env, {"apps", "launch", "missing.desktop"}).exitCode, 1);
+        const auto plan = CliApi::execute(desk.s.env, {"apps", "launch", "b.desktop", "--dry-run"});
+        QCOMPARE(plan.exitCode, 0);
+        QVERIFY(desk.s.calls().isEmpty());
+        const auto launch = CliApi::execute(desk.s.env, {"apps", "launch", "b.desktop"});
+        QCOMPARE(launch.exitCode, 0);
+        QCOMPARE(launch.body.value("outcome").toString(), QString("launched"));
+        QVERIFY(!launch.body.value("verified").toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(desk.s.calls().join('\n').contains("gtk-launch b"), 3000);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+    }
+    void cliMimeDiscoverySeparatesFailedAndUnresolvedReads() {
+        MimeDesk desk;
+        const auto list = CliApi::execute(desk.s.env, {"mime", "list"});
+        QCOMPARE(list.exitCode, 0);
+        QCOMPARE(list.body.value("data").toObject().value("associations").toArray().size(), 7);
+        const auto read = CliApi::execute(desk.s.env, {"mime", "get", "application/x-custom"});
+        QCOMPARE(read.exitCode, 0);
+        QCOMPARE(read.body.value("data").toObject().value("candidates").toArray().size(), 2);
+        QVERIFY(!read.body.value("data").toObject().value("candidatesComplete").toBool());
+        desk.mode("unknown-handler");
+        const auto unknown = CliApi::execute(desk.s.env, {"mime", "get", "text/plain"});
+        QCOMPARE(unknown.body.value("data").toObject().value("current").toString(), QString("missing.desktop"));
+        QVERIFY(!unknown.body.value("data").toObject().value("currentInstalled").toBool());
+        QFile::remove(desk.s.env.home + "/unknown-handler");
+        desk.mode("empty-query");
+        const auto empty = CliApi::execute(desk.s.env, {"mime", "get", "text/plain"});
+        QCOMPARE(empty.exitCode, 0);
+        QCOMPARE(empty.body.value("data").toObject().value("status").toString(), QString("unresolved"));
+        QVERIFY(!empty.body.value("verified").toBool());
+        QFile::remove(desk.s.env.home + "/empty-query");
+        desk.mode("query-fails");
+        const auto failed = CliApi::execute(desk.s.env, {"mime", "get", "text/plain"});
+        QCOMPARE(failed.exitCode, 1);
+        QVERIFY(failed.body.value("data").toObject().value("current").toString().isEmpty());
+        QCOMPARE(CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "b.desktop"}).exitCode, 1);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        QFile::remove(desk.s.env.home + "/query-fails"); desk.mode("multiple-results");
+        QCOMPARE(CliApi::execute(desk.s.env, {"mime", "get", "text/plain"}).exitCode, 1);
+    }
+    void cliMimePlansAndChangesOneKeyInTheEffectiveUserFile_data() {
+        QTest::addColumn<bool>("desktopSpecific");
+        QTest::newRow("generic") << false;
+        QTest::newRow("desktop-specific") << true;
+    }
+    void cliMimePlansAndChangesOneKeyInTheEffectiveUserFile() {
+        QFETCH(bool, desktopSpecific);
+        MimeDesk desk;
+        const QString file = desktopSpecific ? desk.s.env.configHome + "/hyprland-mimeapps.list" : desk.generic();
+        const QByteArray before = "# preserve\r\n[Default Applications]\r\ntext/plain=a.desktop;\r\napplication/pdf=a.desktop;\r\n[Added Associations]\r\ntext/plain=a.desktop;b.desktop;\r\n";
+        writeFile(file, before);
+        const auto genericBefore = readAll(desk.generic());
+        const auto plan = CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "b.desktop", "--dry-run"});
+        QCOMPARE(plan.exitCode, 0);
+        QCOMPARE(plan.body.value("data").toObject().value("details").toObject().value("file").toString(), file);
+        QCOMPARE(readAll(file), before);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        const auto changed = CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "b.desktop"});
+        QVERIFY2(changed.exitCode == 0, qPrintable(QJsonDocument(changed.body).toJson()));
+        QVERIFY(changed.body.value("verified").toBool());
+        auto expected = before; expected.replace("text/plain=a.desktop;\r\n", "text/plain=b.desktop;a.desktop;\r\n");
+        QCOMPARE(readAll(file), expected);
+        if (desktopSpecific) QCOMPARE(readAll(desk.generic()), genericBefore);
+        QCOMPARE(ChangeCoordinator(desk.s.env).history().size(), 1);
+        QVERIFY(!ChangeCoordinator(desk.s.env).history().first().undoable());
+        const auto custom = CliApi::execute(desk.s.env, {"mime", "set", "application/x-custom", "b.desktop"});
+        QCOMPARE(custom.exitCode, 0);
+    }
+    void cliMimeRefusesFalseSuccessAndRestoresTheUserFile_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::newRow("failed-read-with-matching-output") << QString("fail-after-write");
+        QTest::newRow("ignored-default") << QString("ignore-write");
+        QTest::newRow("empty-read") << QString("empty-query");
+    }
+    void cliMimeRefusesFalseSuccessAndRestoresTheUserFile() {
+        QFETCH(QString, mode);
+        MimeDesk desk;
+        const auto before = readAll(desk.generic());
+        desk.mode(mode);
+        const auto changed = CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "b.desktop"});
+        QCOMPARE(changed.exitCode, 1);
+        QVERIFY(!changed.body.value("verified").toBool());
+        QCOMPARE(changed.body.value("outcome").toString(), QString("rolled-back"));
+        QCOMPARE(readAll(desk.generic()), before);
+    }
+    void cliMimeRefusesUnavailableAppsLinksConflictsAndRestoreLeases() {
+        MimeDesk desk;
+        const auto before = readAll(desk.generic());
+        desk.mode("app-replaced");
+        QCOMPARE(CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "b.desktop"}).exitCode, 1);
+        QCOMPARE(readAll(desk.generic()), before);
+        MimeDesk linked;
+        const QString target = linked.s.env.home + "/original.list";
+        writeFile(target, readAll(linked.generic())); QFile::remove(linked.generic());
+        QVERIFY(QFile::link(target, linked.generic()));
+        QCOMPARE(CliApi::execute(linked.s.env, {"mime", "set", "text/plain", "b.desktop"}).body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        MimeDesk ambiguous;
+        writeFile(ambiguous.generic(), "[Default Applications]\ntext/plain=a.desktop;\ntext/plain=b.desktop;\n");
+        QCOMPARE(CliApi::execute(ambiguous.s.env, {"mime", "set", "text/plain", "b.desktop"}).body.value("error").toObject().value("code").toString(), QString("unsupported_configuration"));
+        MimeDesk restore;
+        ChangeCoordinator holder(restore.s.env);
+        QVERIFY(holder.acquireLease("restore"));
+        const auto refused = CliApi::execute(restore.s.env, {"mime", "set", "text/plain", "b.desktop"});
+        QCOMPARE(refused.exitCode, 1);
+        QCOMPARE(readAll(restore.generic()), before);
+    }
+    void cliMimeChangesAreRecognizedByTheRealXdgQuery_data() {
+        QTest::addColumn<bool>("desktopSpecific");
+        QTest::newRow("generic") << false;
+        QTest::newRow("desktop-specific") << true;
+    }
+    void cliMimeChangesAreRecognizedByTheRealXdgQuery() {
+        QFETCH(bool, desktopSpecific);
+        MimeDesk desk;
+        const QString real = QStandardPaths::findExecutable("xdg-mime");
+        QVERIFY2(!real.isEmpty(), "The integration check needs xdg-utils installed.");
+        QFile::remove(desk.s.bin("xdg-mime"));
+        QVERIFY(QFile::link(real, desk.s.bin("xdg-mime")));
+        QVERIFY(QFile::link(QStandardPaths::findExecutable("realpath"), desk.s.bin("realpath")));
+        for (const QString &id : {QStringLiteral("a.desktop"), QStringLiteral("b.desktop")})
+            writeFile(desk.s.env.dataDirs.last() + "/applications/" + id,
+                      ("[Desktop Entry]\nType=Application\nName=" + id + "\nExec=" + QStandardPaths::findExecutable("true") + "\nMimeType=text/plain;\n").toUtf8());
+        desk.s.env.process.insert("DE", "generic");
+        if (desktopSpecific)
+            writeFile(desk.s.env.configHome + "/hyprland-mimeapps.list", "[Default Applications]\ntext/plain=a.desktop;\n");
+        const auto before = CliApi::execute(desk.s.env, {"mime", "get", "text/plain"});
+        QVERIFY2(before.exitCode == 0, qPrintable(QJsonDocument(before.body).toJson()));
+        QCOMPARE(before.body.value("data").toObject().value("current").toString(), QString("a.desktop"));
+        const auto changed = CliApi::execute(desk.s.env, {"mime", "set", "text/plain", "b.desktop"});
+        QVERIFY2(changed.exitCode == 0, qPrintable(QJsonDocument(changed.body).toJson()));
+        QVERIFY(changed.body.value("verified").toBool());
+    }
+    void cliSystemFactsCompleteAndScopedReads() {
+        FactsDesk desk;
+        desk.battery("BAT0", "75", "Charging", "0"); desk.battery("BAT1", "25", "Discharging", "12");
+        const QString hooks = desk.s.env.configHome + "/omarchy/hooks";
+        writeFile(hooks + "/theme-set.d/10-test", "#!/bin/sh\ntouch \"$HOME/hook-ran\"\n");
+        QVERIFY(QFile::setPermissions(hooks + "/theme-set.d/10-test", QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        writeFile(hooks + "/post-update.sample", "# inert\n");
+        writeFile(hooks + "/notes", "not executable\n");
+        const auto read = CliApi::execute(desk.s.env, {"system", "status"});
+        QVERIFY2(read.exitCode == 0, qPrintable(QJsonDocument(read.body).toJson()));
+        QVERIFY(read.body.value("verified").toBool());
+        const auto data = read.body.value("data").toObject();
+        QCOMPARE(data.value("machine").toObject().value("omarchy").toString(), QString("4.5.0"));
+        QCOMPARE(data.value("battery").toObject().value("percent").toInt(), 75);
+        QCOMPARE(data.value("battery").toObject().value("devices").toArray().size(), 2);
+        QCOMPARE(data.value("battery").toObject().value("cycles").toInt(), 0);
+        QCOMPARE(data.value("storage").toArray().size(), 2);
+        QCOMPARE(data.value("hooks").toArray().size(), 3);
+        QVERIFY(!QFile::exists(desk.s.env.home + "/hook-ran"));
+        FactsDesk scoped;
+        scoped.s.command("df", "exit 2");
+        const auto battery = CliApi::execute(scoped.s.env, {"system", "battery"});
+        QCOMPARE(battery.exitCode, 0);
+        QVERIFY(battery.body.value("data").toObject().value("battery").toObject().value("presenceKnown").toBool());
+        QVERIFY(!battery.body.value("data").toObject().value("battery").toObject().value("present").toBool());
+        QVERIFY(scoped.s.calls().isEmpty());
+        QCOMPARE(CliApi::execute(scoped.s.env, {"system", "storage"}).exitCode, 1);
+        QVERIFY(ChangeCoordinator(scoped.s.env).history().isEmpty());
+    }
+    void cliSystemFactsDistinguishUnknownFromAbsence() {
+        FactsDesk desk;
+        desk.battery("BAT0", "101", "", "bad");
+        auto read = CliApi::execute(desk.s.env, {"system", "battery"});
+        QCOMPARE(read.exitCode, 0);
+        QVERIFY(!read.body.value("verified").toBool());
+        QCOMPARE(read.body.value("data").toObject().value("battery").toObject().value("percent").toInt(), -1);
+        const QString batteryRoot = desk.s.env.sys("/sys/class/power_supply");
+        QVERIFY(QDir(batteryRoot).removeRecursively());
+        read = CliApi::execute(desk.s.env, {"system", "battery"});
+        QCOMPARE(read.exitCode, 1);
+        QVERIFY(!read.body.value("data").toObject().value("battery").toObject().value("presenceKnown").toBool());
+        QVERIFY(!read.body.value("data").toObject().value("battery").toObject().contains("present"));
+        desk.s.omarchy("echo 9.9.9; exit 2");
+        desk.s.command("hyprctl", "case \"$*\" in *devices*) echo '{\"mice\":[{\"name\":\"touchpad\"}],\"touch\":[{}]}';; *) echo '{\"version\":\"9.9.9\"}';; esac; exit 2");
+        read = CliApi::execute(desk.s.env, {"system", "machine"});
+        QCOMPARE(read.exitCode, 0);
+        QVERIFY(!read.body.value("verified").toBool());
+        QVERIFY(read.body.value("data").toObject().value("machine").toObject().value("omarchy").toString().isEmpty());
+        QVERIFY(read.body.value("data").toObject().value("machine").toObject().value("hyprland").toString().isEmpty());
+        AppCore core(desk.s.env);
+        core.capabilities.scanServicesBlocking();
+        QVERIFY(core.capabilities.versions().value("hyprland").toString().isEmpty());
+        QVERIFY(!core.capabilities.has("touchpad"));
+        QVERIFY(!core.capabilities.has("touchscreen"));
+        const QString hooks = desk.s.env.configHome + "/omarchy/hooks";
+        writeFile(hooks + "/entry", "# none\n");
+        QVERIFY(QFile::setPermissions(hooks, {}));
+        QCOMPARE(CliApi::execute(desk.s.env, {"system", "hooks"}).exitCode, 1);
+        QVERIFY(QFile::setPermissions(hooks, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        QVERIFY(QFile::setPermissions(desk.s.env.configHome, {}));
+        QCOMPARE(CliApi::execute(desk.s.env, {"system", "hooks"}).exitCode, 1);
+        QVERIFY(QFile::setPermissions(desk.s.env.configHome, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+    }
+    void cliSystemStoragePreservesUnknownAndPartialRows() {
+        FactsDesk desk;
+        desk.s.command("df", "printf 'Filesystem Type 1B-blocks Used Avail Use%% Mounted on\\n/dev/a ext4 100 95 -5 106%% /my  disk\\n//nas/share cifs - - - - /mnt/nas\\nmalformed-row\\n'");
+        const auto read = CliApi::execute(desk.s.env, {"system", "storage"});
+        QCOMPARE(read.exitCode, 0);
+        QVERIFY(!read.body.value("verified").toBool());
+        const auto rows = read.body.value("data").toObject().value("storage").toArray();
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows[0].toObject().value("mount").toString(), QString("/my  disk"));
+        QCOMPARE(rows[0].toObject().value("available").toInt(), -5);
+        QVERIFY(rows[1].toObject().value("size").isNull());
+        QVERIFY(!rows[1].toObject().value("known").toBool());
+        desk.s.command("df", "echo not-a-table");
+        QCOMPARE(CliApi::execute(desk.s.env, {"system", "storage"}).exitCode, 1);
+        desk.s.command("df", "printf 'Filesystem Type 1B-blocks Used Avail Use%% Mounted on\\n/dev/a ext4 100 1 99 1%% /\\n'; exit 2");
+        const auto failed = CliApi::execute(desk.s.env, {"system", "storage"});
+        QCOMPARE(failed.exitCode, 1);
+        QVERIFY(failed.body.value("data").toObject().value("storage").toArray().isEmpty());
+    }
+    void diagnosticsRedactsQuotedCredentialsAndPrivateKeys() {
+        const QString report = SystemProvider::buildDiagnostics(
+            "{\"api_key\": \"two secret words\"}\nsecret='single quoted secret'\nAuthorization: Bearer bearer-content\nwifi-sec.psk \"wifi secret words\"\n-----BEGIN PRIVATE KEY-----\nFAKE-PRIVATE-CONTENT\n-----END PRIVATE KEY-----", {}, {}, {});
+        for (const QString &secret : {QStringLiteral("two secret words"), QStringLiteral("single quoted secret"), QStringLiteral("bearer-content"), QStringLiteral("wifi secret words"), QStringLiteral("FAKE-PRIVATE-CONTENT")})
+            QVERIFY2(!report.contains(secret), qPrintable(report));
+    }
+    void cliDiagnosticsExportIsAwaitedPrivateAndUnique() {
+        FactsDesk desk;
+        desk.mode("slow");
+        const QString helperHash = FileOps::fingerprint(desk.s.bin("omarchy-debug"));
+        const auto plan = CliApi::execute(desk.s.env, {"diagnostics", "export", "--dry-run"});
+        QCOMPARE(plan.exitCode, 0);
+        QVERIFY(!QFileInfo::exists(desk.exports()));
+        QVERIFY(desk.s.calls().isEmpty());
+        const auto exported = CliApi::execute(desk.s.env, {"diagnostics", "export"});
+        QVERIFY2(exported.exitCode == 0, qPrintable(QJsonDocument(exported.body).toJson()));
+        QCOMPARE(exported.body.value("outcome").toString(), QString("exported"));
+        QVERIFY(exported.body.value("verified").toBool());
+        const auto data = exported.body.value("data").toObject();
+        const QString path = data.value("path").toString();
+        const auto report = readAll(path);
+        QVERIFY(report.contains("4.5.0"));
+        QVERIFY(report.contains("0.56.2"));
+        QVERIFY(!report.contains("two secret words"));
+        QVERIFY(!report.contains("hidden-token"));
+        QCOMPARE(FileOps::fingerprint(path), data.value("sha256").toString());
+        QVERIFY(!(QFileInfo(path).permissions() & (QFile::ReadGroup | QFile::WriteGroup | QFile::ReadOther | QFile::WriteOther)));
+        QVERIFY(!(QFileInfo(desk.exports()).permissions() & (QFile::ReadGroup | QFile::ExeGroup | QFile::ReadOther | QFile::ExeOther)));
+        const auto again = CliApi::execute(desk.s.env, {"diagnostics", "export"});
+        QCOMPARE(again.exitCode, 0);
+        QVERIFY(again.body.value("data").toObject().value("path").toString() != path);
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        QVERIFY(desk.s.calls().join('\n').contains("omarchy debug --no-sudo --print"));
+        QVERIFY(!QFileInfo::exists(desk.s.env.home + "/public-log-used"));
+        QCOMPARE(FileOps::fingerprint(desk.s.bin("omarchy-debug")), helperHash);
+        QVERIFY(QDir(desk.exports()).entryList({"collect-*"}, QDir::Dirs | QDir::NoDotAndDotDot).isEmpty());
+    }
+    void cliDiagnosticsIncompleteCollectionIsNotSuccess_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::newRow("failed") << QString("fail");
+        QTest::newRow("empty") << QString("empty");
+        QTest::newRow("truncated") << QString("truncated");
+        QTest::newRow("stderr-truncated") << QString("stderr-truncated");
+        QTest::newRow("raw-limit") << QString("raw-limit");
+    }
+    void cliDiagnosticsIncompleteCollectionIsNotSuccess() {
+        QFETCH(QString, mode);
+        FactsDesk desk; desk.mode(mode);
+        const auto exported = CliApi::execute(desk.s.env, {"diagnostics", "export"});
+        QCOMPARE(exported.exitCode, 1);
+        QCOMPARE(exported.body.value("outcome").toString(), QString("partial"));
+        QCOMPARE(exported.body.value("error").toObject().value("code").toString(), QString("diagnostics_incomplete"));
+        const auto data = exported.body.value("data").toObject();
+        QVERIFY(data.value("reportSaved").toBool());
+        QVERIFY(!data.value("complete").toBool());
+        QVERIFY(readAll(data.value("path").toString()).contains("Collection status: incomplete"));
+        QVERIFY(!readAll(data.value("path").toString()).contains("hidden-token"));
+    }
+    void cliDiagnosticsTimeoutProducesAnIncompleteReport() {
+        FactsDesk desk; desk.mode("timeout");
+        const auto exported = CliApi::execute(desk.s.env, {"diagnostics", "export"});
+        QCOMPARE(exported.exitCode, 1);
+        QCOMPARE(exported.body.value("outcome").toString(), QString("partial"));
+        QCOMPARE(exported.body.value("data").toObject().value("backend").toObject().value("failure").toInt(), int(CommandResult::Timeout));
+        QVERIFY(exported.body.value("data").toObject().value("reportSaved").toBool());
+    }
+    void diagnosticsRefusesOwnershipConflictsAndCleansCancelledWork() {
+        FactsDesk changed;
+        changed.s.env.enforceCompat = true;
+        QCOMPARE(CliApi::execute(changed.s.env, {"diagnostics", "export"}).body.value("error").toObject().value("code").toString(), QString("compatibility_blocked"));
+        QVERIFY(!QFileInfo::exists(changed.exports()));
+        FactsDesk unknown;
+        unknown.s.command("omarchy-debug", "echo unsupported");
+        QCOMPARE(CliApi::execute(unknown.s.env, {"diagnostics", "export"}).body.value("error").toObject().value("code").toString(), QString("unsupported_configuration"));
+        QVERIFY(!QFileInfo::exists(unknown.exports()));
+        FactsDesk desk;
+        writeFile(desk.exports(), "not a directory");
+        const auto failed = CliApi::execute(desk.s.env, {"diagnostics", "export"});
+        QCOMPARE(failed.exitCode, 1);
+        QCOMPARE(failed.body.value("error").toObject().value("code").toString(), QString("ownership_conflict"));
+        QCOMPARE(readAll(desk.exports()), QByteArray("not a directory"));
+        QFile::remove(desk.exports());
+        const QString elsewhere = desk.s.env.home + "/elsewhere";
+        QDir().mkpath(elsewhere); QVERIFY(QFile::link(elsewhere, desk.exports()));
+        QCOMPARE(CliApi::execute(desk.s.env, {"diagnostics", "export"}).exitCode, 1);
+        QVERIFY(QDir(elsewhere).entryList(QDir::Files).isEmpty());
+        QFile::remove(desk.exports());
+        desk.mode("slow");
+        AppCore core(desk.s.env);
+        auto provider = std::make_unique<SystemProvider>(&core.catalog, &core.runner, &core.capabilities, &core.coordinator);
+        int completed = 0;
+        const QString pending = provider->collectDiagnostics([&](const QJsonObject &) { ++completed; });
+        QVERIFY(!pending.isEmpty());
+        QJsonObject busy;
+        provider->collectDiagnostics([&](const QJsonObject &result) { busy = result; });
+        QCOMPARE(busy.value("code").toString(), QString("configuration_conflict"));
+        provider.reset();
+        QTRY_VERIFY_WITH_TIMEOUT(core.runner.activeCount() == 0, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(pending), 5000);
+        QCOMPARE(completed, 0);
+    }
+    void cliAudioCannotGuessAnUnreadableDspRoute() {
+        DeviceDesk desk;
+        desk.s.omarchy("exit 1");
+        const auto snapshot = CliApi::execute(desk.s.env, {"audio", "status"});
+        QCOMPARE(snapshot.exitCode, 0);
+        QVERIFY(!snapshot.body.value("data").toObject().value("outputRoutingKnown").toBool());
+        const auto output = CliApi::execute(desk.s.env, {"audio", "output", "volume", "dsp", "20"});
+        QCOMPARE(output.body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+        // Input volume does not depend on resolving an output processing chain.
+        const auto input = CliApi::execute(desk.s.env, {"audio", "input", "volume", "mic", "20"});
+        QCOMPARE(input.exitCode, 0);
+        QCOMPARE(desk.data().value("micVolume").toInt(), 20);
+    }
+    void cliAudioStreamSelectorsDoNotFollowAReusedIndex() {
+        DeviceDesk desk;
+        desk.mode("recycle-stream");
+        const auto snapshot = CliApi::execute(desk.s.env, {"audio", "status"});
+        const QString selector = snapshot.body.value("data").toObject().value("streams").toArray().first().toObject().value("selector").toString();
+        QCOMPARE(selector, QString("7@700"));
+        const auto moved = CliApi::execute(desk.s.env, {"audio", "stream", "move", selector, "phones"});
+        QCOMPARE(moved.body.value("error").toObject().value("code").toString(), QString("stale_target"));
+        QVERIFY(ChangeCoordinator(desk.s.env).history().isEmpty());
+        QVERIFY(!QFile::exists(desk.s.env.home + "/changed"));
+    }
     void cliApplyThenUndoRoundTrips() {
         Sandbox s;
         s.omarchy("exit 0");
@@ -4922,6 +8108,406 @@ esac
         const QByteArray skill = readAll(s.env.home + "/.claude/skills/omarchy-control/SKILL.md");
         QVERIFY(skill.startsWith("---\nname: omarchy-control"));
     }
+    void skillReadsAndPlansDoNotCreateRegistrationFiles() {
+        Sandbox s;
+        for (const QString &action : {QStringLiteral("status"), QStringLiteral("plan")}) {
+            const auto response = CliApi::execute(s.env, {"skill", action});
+            QCOMPARE(response.exitCode, 0);
+            QVERIFY(!response.body.value("verified").toBool());
+            QVERIFY(!response.body.value("data").toObject().value("harnessDiscoveryVerified").toBool());
+        }
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install", "--dry-run"}).exitCode, 0);
+        QVERIFY(!QFileInfo::exists(s.env.appStateDir));
+        QVERIFY(!QFileInfo::exists(s.env.dataHome));
+        QVERIFY(!QFileInfo::exists(s.env.home + "/.claude"));
+        QVERIFY(s.calls().isEmpty());
+    }
+    void skillBridgeKeepsStockGuidesAndRestoresTheOriginalRelativeLink() {
+        Sandbox s;
+        const QString stock = s.env.omarchyPath + "/default/agents/skills/omarchy";
+        const QByteArray text = "---\nname: omarchy\ndescription: Stock fixture\n---\nRead [guide](plugins.md).\n";
+        writeFile(stock + "/SKILL.md", text);
+        writeFile(stock + "/plugins.md", "stock guide");
+        const QString root = s.env.home + "/.claude/skills";
+        QDir().mkpath(root);
+        const QString relative = QDir(root).relativeFilePath(stock);
+        QVERIFY(::symlink(QFile::encodeName(relative).constData(), QFile::encodeName(root + "/omarchy").constData()) == 0);
+        const auto installed = CliApi::execute(s.env, {"skill", "install"});
+        QCOMPARE(installed.exitCode, 0);
+        QVERIFY(installed.body.value("verified").toBool());
+        QVERIFY(installed.body.value("data").toObject().value("registrationComplete").toBool());
+        const QByteArray bridge = readAll(root + "/omarchy/SKILL.md");
+        QVERIFY(bridge.contains("omarchy-control commands"));
+        QVERIFY(bridge.contains(".upstream/SKILL.md"));
+        QCOMPARE(readAll(root + "/omarchy/.upstream/plugins.md"), QByteArray("stock guide"));
+        QCOMPARE(readAll(stock + "/SKILL.md"), text);
+        const QByteArray manifest = readAll(s.env.appStateDir + "/skill-integration/manifest.json");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 0);
+        QCOMPARE(readAll(s.env.appStateDir + "/skill-integration/manifest.json"), manifest);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 0);
+        QByteArray target(4096, '\0');
+        const ssize_t size = ::readlink(QFile::encodeName(root + "/omarchy").constData(), target.data(), target.size());
+        QVERIFY(size > 0);
+        target.resize(size);
+        QCOMPARE(target, QFile::encodeName(relative));
+        QVERIFY(!QFileInfo(root + "/omarchy-control").isSymbolicLink());
+        QCOMPARE(readAll(root + "/omarchy/SKILL.md"), text);
+        QVERIFY(s.calls().isEmpty());
+    }
+    void skillCustomDirectoriesAndUnrelatedLinksArePreserved() {
+        Sandbox s;
+        writeFile(s.env.omarchyPath + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nstock");
+        const QString root = s.env.home + "/.claude/skills";
+        writeFile(root + "/omarchy/SKILL.md", "custom stock skill");
+        const QString other = s.env.home + "/personal";
+        writeFile(other + "/SKILL.md", "custom companion");
+        QVERIFY(QFile::link(other, root + "/omarchy-control"));
+        const auto response = CliApi::execute(s.env, {"skill", "install"});
+        QCOMPARE(response.exitCode, 1);
+        QCOMPARE(response.body.value("error").toObject().value("code").toString(), QString("registration_conflict"));
+        QCOMPARE(readAll(root + "/omarchy/SKILL.md"), QByteArray("custom stock skill"));
+        QCOMPARE(QFileInfo(root + "/omarchy-control").symLinkTarget(), other);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 0);
+        QCOMPARE(readAll(other + "/SKILL.md"), QByteArray("custom companion"));
+    }
+    void skillEditedGeneratedFilesBlockRepairAndSurviveRemovalWithReferences() {
+        Sandbox s;
+        const QString stock = s.env.omarchyPath + "/default/agents/skills/omarchy";
+        writeFile(stock + "/SKILL.md", "---\nname: omarchy\n---\nstock");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString data = s.env.dataHome + "/omarchy-control/agent-skills";
+        writeFile(data + "/omarchy/SKILL.md", "user edited wrapper");
+        const auto repaired = CliApi::execute(s.env, {"skill", "reconcile"});
+        QCOMPARE(repaired.exitCode, 1);
+        QVERIFY(!repaired.body.value("data").toObject().value("registrationComplete").toBool());
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 1);
+        QCOMPARE(readAll(data + "/omarchy/SKILL.md"), QByteArray("user edited wrapper"));
+        QCOMPARE(readAll(data + "/omarchy/.upstream/SKILL.md"), readAll(stock + "/SKILL.md"));
+        QVERIFY(QFileInfo::exists(data + "/omarchy-control/SKILL.md"));
+    }
+    void skillEditedRegistrationRetainsFallbackPayload() {
+        Sandbox s;
+        writeFile(s.env.omarchyPath + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nstock");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString link = s.env.home + "/.claude/skills/omarchy";
+        QVERIFY(QFile::remove(link));
+        const QString custom = s.env.home + "/custom";
+        writeFile(custom + "/SKILL.md", "personal");
+        QVERIFY(QFile::link(custom, link));
+        const auto removed = CliApi::execute(s.env, {"skill", "remove"});
+        QCOMPARE(removed.exitCode, 1);
+        QCOMPARE(removed.body.value("outcome").toString(), QString("partial"));
+        QCOMPARE(QFileInfo(link).symLinkTarget(), custom);
+        QVERIFY(QFileInfo::exists(s.env.dataHome + "/omarchy-control/agent-skills/omarchy/.upstream/SKILL.md"));
+        QCOMPARE(readAll(custom + "/SKILL.md"), QByteArray("personal"));
+    }
+    void skillAliasesAreDeduplicatedAndHermesProfilesAreDiscovered() {
+        Sandbox s;
+        const QString root = s.env.home + "/.agents/skills";
+        QDir().mkpath(root);
+        QDir().mkpath(s.env.home + "/.claude");
+        QVERIFY(QFile::link(root, s.env.home + "/.claude/skills"));
+        QDir().mkpath(s.env.home + "/.hermes/profiles/work");
+        const auto response = CliApi::execute(s.env, {"skill", "install"});
+        QCOMPARE(response.exitCode, 0);
+        QCOMPARE(response.body.value("data").toObject().value("registrations").toArray().size(), 4);
+        QVERIFY(QFileInfo::exists(s.env.home + "/.hermes/profiles/work/skills/omarchy-control/SKILL.md"));
+        QCOMPARE(QFileInfo(s.env.home + "/.claude/skills").symLinkTarget(), root);
+    }
+    void skillDevelopmentRelinksReadCurrentUpstreamAndCanBeReconciled() {
+        Sandbox s;
+        const QString dev1 = s.env.home + "/dev/first";
+        const QString dev2 = s.env.home + "/dev/second";
+        writeFile(dev1 + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nfirst");
+        writeFile(dev2 + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nsecond");
+        const QString active = s.env.home + "/active-omarchy";
+        QVERIFY(QFile::link(dev1, active));
+        s.env.omarchyPath = active;
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString wrapper = s.env.home + "/.claude/skills/omarchy";
+        QVERIFY(readAll(wrapper + "/.upstream/SKILL.md").endsWith("first"));
+        QVERIFY(QFile::remove(active));
+        QVERIFY(QFile::link(dev2, active));
+        QVERIFY(readAll(wrapper + "/.upstream/SKILL.md").endsWith("second"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 0);
+        // Omarchy provisioning may restore the stock link between calls.
+        QVERIFY(QFile::remove(wrapper));
+        QVERIFY(QFile::link(active + "/default/agents/skills/omarchy", wrapper));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 0);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 0);
+        QVERIFY(readAll(wrapper + "/SKILL.md").endsWith("second"));
+    }
+    void skillOptOutSurvivesReconcileAndOptInIsExplicit() {
+        Sandbox s;
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "opt-out"}).exitCode, 0);
+        const QString skill = s.env.home + "/.claude/skills/omarchy-control/SKILL.md";
+        QVERIFY(!QFileInfo::exists(skill));
+        for (const QString &action : {QStringLiteral("install"), QStringLiteral("reconcile")}) {
+            const auto response = CliApi::execute(s.env, {"skill", action});
+            QCOMPARE(response.exitCode, 0);
+            QCOMPARE(response.body.value("outcome").toString(), QString("opted_out"));
+            QVERIFY(!QFileInfo::exists(skill));
+        }
+        QCOMPARE(CliApi::execute(s.env, {"skill", "opt-in"}).exitCode, 0);
+        QVERIFY(QFileInfo::exists(skill));
+    }
+    void skillInterruptedRegistrationAndRemovalHaveRecoverableIntent() {
+        Sandbox s;
+        const QString stock = s.env.omarchyPath + "/default/agents/skills/omarchy";
+        writeFile(stock + "/SKILL.md", "---\nname: omarchy\n---\nstock");
+        const QString root = s.env.home + "/.claude/skills";
+        QDir().mkpath(root);
+        QVERIFY(QFile::link(stock, root + "/omarchy"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString path = s.env.appStateDir + "/skill-integration/manifest.json";
+        auto doc = QJsonDocument::fromJson(readAll(path)).object();
+        auto entries = doc.value("entries").toObject();
+        auto entry = entries.value(root + "/omarchy").toObject();
+        entry["pending"] = entry.value("current");
+        entry["current"] = QJsonObject{{"type", "missing"}};
+        entries[root + "/omarchy"] = entry;
+        doc["entries"] = entries;
+        writeFile(path, QJsonDocument(doc).toJson());
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 0);
+        doc = QJsonDocument::fromJson(readAll(path)).object();
+        entries = doc.value("entries").toObject();
+        entry = entries.value(root + "/omarchy").toObject();
+        entry["pending"] = entry.value("original");
+        entries[root + "/omarchy"] = entry;
+        doc["entries"] = entries;
+        writeFile(path, QJsonDocument(doc).toJson());
+        QVERIFY(QFile::remove(root + "/omarchy"));
+        QVERIFY(QFile::link(stock, root + "/omarchy"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 0);
+        QCOMPARE(QFileInfo(root + "/omarchy").symLinkTarget(), stock);
+    }
+    void skillUpstreamIntegrationIsNotWrappedAgain() {
+        Sandbox s;
+        const QString stock = s.env.omarchyPath + "/default/agents/skills/omarchy";
+        writeFile(stock + "/SKILL.md", "---\nname: omarchy\n---\nConsult omarchy-control if installed.");
+        const QString root = s.env.home + "/.claude/skills";
+        QDir().mkpath(root);
+        QVERIFY(QFile::link(stock, root + "/omarchy"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        QCOMPARE(QFileInfo(root + "/omarchy").symLinkTarget(), stock);
+        const auto status = CliApi::execute(s.env, {"skill", "status"}).body.value("data").toObject();
+        QVERIFY(status.value("upstreamReferenceDetected").toBool());
+        QVERIFY(!status.value("registrationComplete").toBool());
+    }
+    void skillLockAndMalformedManifestNeverOverwriteRegistration() {
+        Sandbox s;
+        const QString state = s.env.appStateDir + "/skill-integration";
+        QDir().mkpath(state);
+        QLockFile lock(state + "/registration.lock");
+        QVERIFY(lock.tryLock());
+        auto response = CliApi::execute(s.env, {"skill", "install"});
+        QCOMPARE(response.body.value("error").toObject().value("code").toString(), QString("integration_busy"));
+        QVERIFY(!QFileInfo::exists(s.env.home + "/.claude"));
+        lock.unlock();
+        for (const QByteArray &bytes : {QByteArray("garbage"), QByteArray("{\"version\":2}")}) {
+            writeFile(state + "/manifest.json", bytes);
+            response = CliApi::execute(s.env, {"skill", "install"});
+            QCOMPARE(response.exitCode, 1);
+            QCOMPARE(readAll(state + "/manifest.json"), bytes);
+            QVERIFY(!QFileInfo::exists(s.env.home + "/.claude"));
+        }
+    }
+    void skillExplicitCustomHomeTargetsAndUnsafePaths() {
+        Sandbox s;
+        s.env.process.insert("CLAUDE_CONFIG_DIR", s.env.home + "/agent-home");
+        const QString root = s.env.home + "/agent-home/skills";
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install", "--target", root}).exitCode, 0);
+        QVERIFY(QFileInfo::exists(root + "/omarchy-control/SKILL.md"));
+        QVERIFY(!QFileInfo::exists(s.env.home + "/.claude"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "opt-out"}).exitCode, 0);
+        QVERIFY(!QFileInfo::exists(root + "/omarchy-control/SKILL.md"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "opt-in"}).exitCode, 0);
+        QVERIFY(QFileInfo::exists(root + "/omarchy-control/SKILL.md"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove", "--target", root}).exitCode, 0);
+        const QString outside = s.dir.path() + "/outside";
+        QDir().mkpath(outside);
+        QVERIFY(QFile::link(outside, s.env.home + "/outside-link"));
+        for (const QString &target : {outside, s.env.home + "/outside-link", s.env.home + "/../bad", QString("relative")}) {
+            const auto response = CliApi::execute(s.env, {"skill", "install", "--target", target});
+            QCOMPARE(response.exitCode, 1);
+            QVERIFY(!QFileInfo::exists(outside + "/omarchy-control"));
+        }
+    }
+    void skillLinkedDataAndHardlinkedPayloadAreRefused() {
+        Sandbox s;
+        const QString real = s.env.home + "/real-data";
+        QDir().mkpath(real);
+        QDir().mkpath(QFileInfo(s.env.dataHome).absolutePath());
+        QVERIFY(QFile::link(real, s.env.dataHome));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 1);
+        QVERIFY(!QFileInfo::exists(real + "/omarchy-control"));
+        QVERIFY(QFile::remove(s.env.dataHome));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString payload = s.env.dataHome + "/omarchy-control/agent-skills/omarchy-control/SKILL.md";
+        const QString other = s.env.home + "/other-copy";
+        QVERIFY(::link(QFile::encodeName(payload).constData(), QFile::encodeName(other).constData()) == 0);
+        const QByteArray bytes = readAll(other);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 1);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 1);
+        QCOMPARE(readAll(other), bytes);
+    }
+    void skillTargetRemovalIsScopedAndGeneratedUpgradesUseRecordedOwnership() {
+        Sandbox s;
+        const QString stock = s.env.omarchyPath + "/default/agents/skills/omarchy";
+        writeFile(stock + "/SKILL.md", "---\nname: omarchy\n---\nstock");
+        const QString first = s.env.home + "/first/skills", second = s.env.home + "/second/skills";
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install", "--target", first, "--target", second}).exitCode, 0);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove", "--target", first}).exitCode, 0);
+        QVERIFY(!QFileInfo::exists(first + "/omarchy-control/SKILL.md"));
+        QVERIFY(QFileInfo::exists(second + "/omarchy-control/SKILL.md"));
+        const QString payload = s.env.dataHome + "/omarchy-control/agent-skills/omarchy-control/SKILL.md";
+        const QString manifest = s.env.appStateDir + "/skill-integration/manifest.json";
+        const QByteArray old = "---\nname: omarchy-control\n---\nrecorded old bundle";
+        writeFile(payload, old);
+        auto doc = QJsonDocument::fromJson(readAll(manifest)).object();
+        auto entries = doc.value("entries").toObject();
+        auto entry = entries.value(payload).toObject();
+        entry["current"] = QJsonObject{{"type", "file"}, {"sha256", FileOps::fingerprintBytes(old)}};
+        entries[payload] = entry;
+        doc["entries"] = entries;
+        writeFile(manifest, QJsonDocument(doc).toJson());
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile", "--target", second}).exitCode, 0);
+        QCOMPARE(readAll(payload), readAll(":/data/skill.md"));
+        QVERIFY(!QFileInfo::exists(first + "/omarchy-control/SKILL.md"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove", "--target", second}).exitCode, 0);
+        QVERIFY(!QFileInfo::exists(payload));
+    }
+    void skillStateLinksAndDanglingCustomSkillsAreNeverFollowed() {
+        Sandbox s;
+        const QString external = s.env.home + "/elsewhere";
+        QDir().mkpath(external);
+        QDir().mkpath(s.env.appStateDir);
+        QVERIFY(QFile::link(external, s.env.appStateDir + "/skill-integration"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 1);
+        QVERIFY(!QFileInfo::exists(external + "/manifest.json"));
+        QVERIFY(QFile::remove(s.env.appStateDir + "/skill-integration"));
+        const QString root = s.env.home + "/.claude/skills";
+        QDir().mkpath(root);
+        const QString absent = s.env.home + "/missing";
+        QVERIFY(QFile::link(absent, root + "/omarchy-control"));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 1);
+        QCOMPARE(QFileInfo(root + "/omarchy-control").symLinkTarget(), absent);
+        QVERIFY(!QFileInfo::exists(absent));
+    }
+    void skillStatusExposesConflictingUpstreamReferences() {
+        Sandbox s;
+        writeFile(s.env.omarchyPath + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nstock");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString path = s.env.dataHome + "/omarchy-control/agent-skills/omarchy/.upstream";
+        QVERIFY(QFile::remove(path));
+        QVERIFY(QFile::link(s.env.home + "/personal-guides", path));
+        const auto status = CliApi::execute(s.env, {"skill", "status"});
+        QCOMPARE(status.exitCode, 0);
+        const auto data = status.body.value("data").toObject();
+        QVERIFY(data.value("hasConflicts").toBool());
+        QVERIFY(!data.value("registrationComplete").toBool());
+        bool reported = false;
+        for (const auto &value : data.value("artifacts").toArray()) {
+            const auto row = value.toObject();
+            if (row.value("path") == path) {
+                QVERIFY(!row.value("writable").toBool());
+                QCOMPARE(row.value("state").toObject().value("target").toString(), s.env.home + "/personal-guides");
+                reported = true;
+            }
+        }
+        QVERIFY(reported);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 1);
+        QCOMPARE(QFileInfo(path).symLinkTarget(), s.env.home + "/personal-guides");
+    }
+    void skillReconcileMigratesOwnedVisibleGuidesWithoutDuplicatingStockSkills() {
+        Sandbox s;
+        const QString stock = s.env.omarchyPath + "/default/agents/skills/omarchy";
+        writeFile(stock + "/SKILL.md", "---\nname: omarchy\n---\nstock");
+        writeFile(stock + "/plugins.md", "current guide");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString data = s.env.dataHome + "/omarchy-control/agent-skills/omarchy";
+        const QString oldPath = data + "/upstream", newPath = data + "/.upstream";
+        QVERIFY(QFile::rename(newPath, oldPath));
+        const QByteArray oldBody = readAll(data + "/SKILL.md").replace(".upstream/", "upstream/").replace("`.upstream`", "`upstream`");
+        writeFile(data + "/SKILL.md", oldBody);
+        const QString path = s.env.appStateDir + "/skill-integration/manifest.json";
+        auto manifest = QJsonDocument::fromJson(readAll(path)).object();
+        auto entries = manifest.value("entries").toObject();
+        entries[oldPath] = entries.take(newPath);
+        auto bodyEntry = entries.value(data + "/SKILL.md").toObject();
+        bodyEntry["current"] = QJsonObject{{"type", "file"}, {"sha256", FileOps::fingerprintBytes(oldBody)}};
+        entries[data + "/SKILL.md"] = bodyEntry;
+        manifest["entries"] = entries;
+        writeFile(path, QJsonDocument(manifest).toJson());
+        const QByteArray recorded = readAll(path);
+        const auto plan = CliApi::execute(s.env, {"skill", "plan"});
+        QCOMPARE(plan.exitCode, 0);
+        QVERIFY(!plan.body.value("data").toObject().value("registrationComplete").toBool());
+        QCOMPARE(readAll(path), recorded);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 0);
+        QVERIFY(!QFileInfo(oldPath).isSymbolicLink());
+        QCOMPARE(readAll(data + "/SKILL.md"), readAll(":/data/skill-bridge.md"));
+        QCOMPARE(readAll(newPath + "/plugins.md"), QByteArray("current guide"));
+        const auto migrated = QJsonDocument::fromJson(readAll(path)).object().value("entries").toObject();
+        QVERIFY(!migrated.contains(oldPath));
+        QVERIFY(migrated.contains(newPath));
+        QCOMPARE(CliApi::execute(s.env, {"skill", "remove"}).exitCode, 0);
+        QVERIFY(!QFileInfo(newPath).isSymbolicLink());
+    }
+    void skillVisibleGuideMigrationPreservesCustomReferences() {
+        Sandbox s;
+        writeFile(s.env.omarchyPath + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nstock");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString data = s.env.dataHome + "/omarchy-control/agent-skills/omarchy";
+        const QString custom = s.env.home + "/my-guides";
+        QVERIFY(QFile::link(custom, data + "/upstream"));
+        const QByteArray body = readAll(data + "/SKILL.md");
+        const auto status = CliApi::execute(s.env, {"skill", "status"});
+        QVERIFY(status.body.value("data").toObject().value("hasConflicts").toBool());
+        QCOMPARE(CliApi::execute(s.env, {"skill", "reconcile"}).exitCode, 1);
+        QCOMPARE(QFileInfo(data + "/upstream").symLinkTarget(), custom);
+        QCOMPARE(readAll(data + "/SKILL.md"), body);
+    }
+    void skillGuideMigrationIntentRemainsReadableAtTheTargetLimit() {
+        Sandbox s;
+        writeFile(s.env.omarchyPath + "/default/agents/skills/omarchy/SKILL.md", "---\nname: omarchy\n---\nstock");
+        QCOMPARE(CliApi::execute(s.env, {"skill", "install"}).exitCode, 0);
+        const QString data = s.env.dataHome + "/omarchy-control/agent-skills";
+        const QString path = s.env.appStateDir + "/skill-integration/manifest.json";
+        auto manifest = QJsonDocument::fromJson(readAll(path)).object();
+        auto entries = manifest.value("entries").toObject();
+        auto legacy = entries.value(data + "/omarchy/.upstream").toObject();
+        legacy["pending"] = QJsonObject{{"type", "missing"}};
+        entries[data + "/omarchy/upstream"] = legacy;
+        for (int i = 1; i < 32; ++i) {
+            const QString root = s.env.home + "/pending-target-" + QString::number(i);
+            for (const QString &name : {QStringLiteral("omarchy"), QStringLiteral("omarchy-control")})
+                entries[root + '/' + name] = QJsonObject{{"role", "registration"}, {"original", QJsonObject{{"type", "missing"}}},
+                    {"current", QJsonObject{{"type", "link"}, {"target", data + '/' + name}}}};
+        }
+        manifest["entries"] = entries;
+        const QByteArray recorded = QJsonDocument(manifest).toJson();
+        writeFile(path, recorded);
+        QCOMPARE(CliApi::execute(s.env, {"skill", "status"}).exitCode, 0);
+        QCOMPARE(readAll(path), recorded);
+    }
+    void skillGrammarRejectsUnsupportedOptions_data() {
+        QTest::addColumn<QStringList>("arguments");
+        for (const QStringList &args : {QStringList{"skill"}, {"skill", "nope"}, {"skill", "install", "extra"},
+             {"skill", "install", "--yes"}, {"skill", "status", "--dry-run"}, {"skill", "plan", "--dry-run"},
+             {"skill", "install", "--target"}, {"skill", "opt-out", "--target", "/tmp/skills"},
+             {"skill", "opt-in", "--dry-run"}, {"skill", "status", "--live"}, {"commands", "--target", "/tmp/skills"}})
+            QTest::newRow(args.join(' ').toUtf8().constData()) << args;
+    }
+    void skillGrammarRejectsUnsupportedOptions() {
+        QFETCH(QStringList, arguments);
+        Sandbox s;
+        const auto response = CliApi::execute(s.env, arguments);
+        QCOMPARE(response.exitCode, 1);
+        QCOMPARE(response.body.value("error").toObject().value("code").toString(), QString("invalid_arguments"));
+        QVERIFY(!QFileInfo::exists(s.env.appStateDir));
+    }
     void cliRulesAndShortcutsRespectValidation() {
         Sandbox s;
         s.minimalHyprland();
@@ -4949,7 +8535,7 @@ esac
         Sandbox s;
         fakeDesktop(s);
         s.omarchy(R"SH(case "$*" in "bluetooth power is-on") exit 0;; esac; exit 0)SH");
-        s.command("bluetoothctl", "exit 0");
+        s.bluetooth("exit 0");
         Backend backend(s.env);
         QCOMPARE(backend.bluetooth()->status(), QString("loading"));
         QVERIFY(!backend.bluetooth()->powered());
@@ -5151,6 +8737,132 @@ esac
         QCOMPARE(state.value("value").toString(), QString("theme"));
         QCOMPARE(state.value("display").toString(), QString("Follow theme"));
     }
+    void pluginLifecyclePlansVerifiesAndRecoversAcrossCliCalls() {
+        ShellDesk desk; desk.mode("lifecycle");
+        desk.s.env.process.insert("USER", "testuser");
+        const QString source = desk.s.env.omarchyPath + "/shell/plugins/clock";
+        writeFile(source + "/manifest.json", R"({"id":"omarchy.clock","name":"Clock","kinds":["bar-widget"],"entryPoints":{"barWidget":"Widget.qml"}})");
+        writeFile(source + "/Widget.qml", "import QtQuick\nItem {}\n");
+        desk.s.command("omarchy-plugin-catalog", "printf '%s' '" + QJsonDocument(QJsonArray{QJsonObject{{"id", "omarchy.clock"}, {"firstParty", true}, {"sourceDir", source}, {"manifestPath", source + "/manifest.json"}}}).toJson(QJsonDocument::Compact) + "'");
+        auto call = [&](QStringList args) { args << "--api-version" << "1"; return desk.api(args); };
+        auto plan = call({"plugin", "clone", "omarchy.clock", "--dry-run"});
+        QVERIFY2(plan.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(plan).toJson())));
+        const QString path = desk.s.env.configHome + "/omarchy/plugins/testuser.clock";
+        QVERIFY(!QFileInfo::exists(path));
+        QVERIFY(!call({"plugin", "clone", "omarchy.clock"}).value("ok").toBool());
+        auto changed = call({"plugin", "clone", "omarchy.clock", "--yes"});
+        QVERIFY2(changed.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(changed).toJson())));
+        QVERIFY(changed.value("verified").toBool());
+        const QString cloneToken = changed.value("data").toObject().value("transaction").toObject().value("extra").toObject().value("recoveryToken").toString();
+        QVERIFY(!cloneToken.isEmpty());
+        QVERIFY(!call({"plugin", "clone", "omarchy.clock", "--dry-run"}).value("ok").toBool());
+        auto removed = call({"plugin", "remove", "testuser.clock", "--yes"});
+        QVERIFY2(removed.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(removed).toJson())));
+        QVERIFY(!QFileInfo::exists(path));
+        const QString removeToken = removed.value("data").toObject().value("transaction").toObject().value("extra").toObject().value("recoveryToken").toString();
+        const auto recovered = call({"plugin", "recover", removeToken, "--yes"});
+        QVERIFY2(recovered.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(recovered).toJson())));
+        QVERIFY(QFileInfo::exists(path + "/Widget.qml"));
+        const auto original = call({"plugin", "recover", cloneToken, "--yes"});
+        QVERIFY2(original.value("ok").toBool(), qPrintable(QString::fromUtf8(QJsonDocument(original).toJson())));
+        QVERIFY(!QFileInfo::exists(path));
+        QVERIFY(desk.s.calls().contains("omarchy plugin remove testuser.clock --yes"));
+    }
+    void pluginTreesRecoverDirectoriesGitAndLinks_data() {
+        QTest::addColumn<QString>("kind");
+        QTest::newRow("directory") << "directory";
+        QTest::newRow("git") << "git";
+        QTest::newRow("link") << "link";
+        QTest::newRow("clone") << "clone";
+    }
+    void pluginTreesRecoverDirectoriesGitAndLinks() {
+        QFETCH(QString, kind);
+        Sandbox s;
+        const QString path = s.env.configHome + "/omarchy/plugins/local.test", config = s.env.configHome + "/omarchy/shell.json";
+        const QString outside = s.dir.path() + "/outside";
+        writeFile(outside + "/untouched", "preserve");
+        writeFile(config, "original config");
+        if (kind == "link") { QDir().mkpath(QFileInfo(path).absolutePath()); QVERIFY(QFile::link(outside, path)); }
+        else if (kind != "clone") {
+            writeFile(path + "/manifest.json", "original manifest");
+            writeFile(path + "/nested/file", "executable contents");
+            QFile::setPermissions(path + "/nested/file", QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+            QVERIFY(QFile::link("nested/file", path + "/relative-link"));
+            if (kind == "git") writeFile(path + "/.git/objects/object", "git object");
+        }
+        const QString token = "pr-" + QString(32, 'a'); QString error; QJsonObject receipt;
+        const auto before = PluginFiles::inspect(path);
+        QVERIFY2(PluginFiles::capture(s.env, token, "local.test", &receipt, &error), qPrintable(error));
+        if (kind == "link") QVERIFY(QFile::remove(path));
+        else if (kind != "clone") QVERIFY(QDir(path).removeRecursively());
+        else writeFile(path + "/manifest.json", "new clone");
+        writeFile(config, "changed config");
+        QVERIFY2(PluginFiles::finish(s.env, &receipt, true, &error), qPrintable(error));
+        receipt = PluginFiles::load(s.env, token, &error);
+        QVERIFY2(!receipt.isEmpty(), qPrintable(error));
+        writeFile(config, "later edit");
+        QVERIFY(!PluginFiles::canRecover(s.env, receipt, &error));
+        QCOMPARE(readAll(config), QByteArray("later edit"));
+        writeFile(config, "changed config");
+        QVERIFY2(PluginFiles::recover(s.env, &receipt, &error), qPrintable(error));
+        QCOMPARE(PluginFiles::inspect(path), before);
+        QCOMPARE(readAll(config), QByteArray("original config"));
+        QCOMPARE(readAll(outside + "/untouched"), QByteArray("preserve"));
+        QVERIFY2(PluginFiles::recover(s.env, &receipt, &error), qPrintable(error));
+        if (kind == "clone") QCOMPARE(readAll(QFileInfo(path).absolutePath() + "/.local.test.control-displaced-" + token + "/manifest.json"), QByteArray("new clone"));
+    }
+    void pluginRecoveryRejectsCorruptedSnapshotsAndSpecialFiles() {
+        Sandbox s; QString error; QJsonObject receipt;
+        const QString path = s.env.configHome + "/omarchy/plugins/local.test";
+        writeFile(path + "/manifest.json", "original");
+        const QString token = "pr-" + QString(32, 'b');
+        QVERIFY(PluginFiles::capture(s.env, token, "local.test", &receipt, &error));
+        writeFile(path + "/manifest.json", "changed");
+        QVERIFY(PluginFiles::finish(s.env, &receipt, true, &error));
+        auto snapshot = receipt.value("before").toObject(); auto entries = snapshot.value("entries").toArray();
+        auto malicious = entries.last().toObject(); malicious["path"] = "../outside"; entries.append(malicious);
+        snapshot["entries"] = entries; snapshot["fingerprint"] = FileOps::fingerprintBytes(QJsonDocument(entries).toJson(QJsonDocument::Compact)); receipt["before"] = snapshot;
+        QVERIFY(!PluginFiles::recover(s.env, &receipt, &error));
+        QCOMPARE(readAll(path + "/manifest.json"), QByteArray("changed"));
+        QVERIFY(!PluginFiles::load(s.env, "../../other", &error).contains("token"));
+        const QString fifo = path + "/fifo";
+        QVERIFY(::mkfifo(QFile::encodeName(fifo).constData(), 0600) == 0);
+        QVERIFY(PluginFiles::inspect(path, true, &error).isEmpty());
+    }
+    void cliSearchPinsPreserveOtherPreferencesAndShareTheGuiWriter() {
+        Sandbox s;
+        fakeDesktop(s);
+        const QString path = s.env.appConfigDir + "/preferences.json";
+        auto reply = CliApi::execute(s.env, {"preferences", "pins"});
+        QVERIFY(reply.body.value("ok").toBool());
+        QVERIFY(!QFileInfo::exists(s.env.appConfigDir));
+        reply = CliApi::execute(s.env, {"preferences", "pin", "appearance.theme", "--dry-run"});
+        QVERIFY(reply.body.value("ok").toBool());
+        QVERIFY(!QFileInfo::exists(s.env.appConfigDir));
+        writeFile(path, R"({"extra":{"keep":true},"pins":[]})");
+        Backend stale(s.env);
+        reply = CliApi::execute(s.env, {"preferences", "pin", "appearance.theme"});
+        QVERIFY(reply.body.value("ok").toBool());
+        stale.togglePin("appearance.icons");
+        QCOMPARE(stale.pins(), (QStringList{"appearance.theme", "appearance.icons"}));
+        QVERIFY(QJsonDocument::fromJson(readAll(path)).object().value("extra").toObject().value("keep").toBool());
+        reply = CliApi::execute(s.env, {"preferences", "pin", "appearance.theme"});
+        QCOMPARE(reply.body.value("outcome").toString(), QString("unchanged"));
+        QVERIFY(!CliApi::execute(s.env, {"preferences", "pin", "unknown.id"}).body.value("ok").toBool());
+        writeFile(path, R"({"pins":["old.removed.id"]})");
+        QVERIFY(CliApi::execute(s.env, {"preferences", "unpin", "old.removed.id"}).body.value("ok").toBool());
+        writeFile(path, "invalid");
+        const auto malformed = CliApi::execute(s.env, {"preferences", "pin", "appearance.theme"}).body;
+        QVERIFY(!malformed.value("ok").toBool());
+        QCOMPARE(malformed.value("outcome").toString(), QString("blocked"));
+        QCOMPARE(readAll(path), QByteArray("invalid"));
+        QFile::remove(path);
+        const QString outside = s.dir.path() + "/outside";
+        writeFile(outside, "{}");
+        QVERIFY(QFile::link(outside, path));
+        QVERIFY(!CliApi::execute(s.env, {"preferences", "pin", "appearance.theme"}).body.value("ok").toBool());
+        QCOMPARE(readAll(outside), QByteArray("{}"));
+    }
     void pinsPersist() {
         Sandbox s;
         fakeDesktop(s);
@@ -5217,7 +8929,7 @@ private:
         s.omarchy(kScript16);
         s.command("pactl", kScript17);
         s.command("nmcli", "exit 0");
-        s.command("bluetoothctl", "exit 0");
+        s.bluetooth("exit 0");
         s.command("systemctl", "echo '[]'");
         s.command("xdg-mime", "exit 0");
         s.command("df", "exit 0");
@@ -5284,12 +8996,13 @@ private slots:
 
     void aReorderThatDidNotHappenIsNotReportedAsDone() {
         Sandbox s;
-        const QByteArray before = "{\"bar\":{\"layout\":{\"left\":[\"a\",\"b\",\"c\"]}}}\n";
+        const QByteArray before = "{\"version\":1,\"bar\":{\"layout\":{\"left\":[\"a\",\"b\",\"c\"]}}}\n";
         const QString config = s.env.configHome + "/omarchy/shell.json";
         writeFile(config, before);
         // Exits cleanly and changes nothing. The widget is still in its section, which is
         // all the old check looked at.
         s.omarchy("exit 0");
+        s.command("omarchy-shell", "case \"$2\" in listShellConfig) cat \"$HOME/.config/omarchy/shell.json\";; esac");
         ChangeCoordinator coordinator(s.env);
         CommandRunner runner(s.env);
         PluginsProvider plugins(&runner, &coordinator);
@@ -5407,6 +9120,7 @@ private:
     static void desktopFixture(Sandbox &s) {
         fakeDesktop(s);
         s.omarchy(kFakeBar);
+        s.command("omarchy-shell", "case \"$2\" in listShellConfig) cat \"$HOME/.config/omarchy/shell.json\";; reloadConfig) echo ok;; esac");
         const QString state = s.env.home + "/bar-state/";
         writeFile(state + "left", "omarchy.menu omarchy.workspaces\n");
         writeFile(state + "centerBegin", "\n");
@@ -5415,7 +9129,7 @@ private:
         writeFile(state + "right", "omarchy.tray omarchy.network omarchy.audio omarchy.power mystery.thing\n");
         writeFile(state + "tray", "\n");
         writeFile(state + "pins", "firefox gone org.gnome.Nautilus\n");
-        writeFile(s.env.configHome + "/omarchy/shell.json", "{\"bar\":{\"id\":\"local.test-bar\",\"layout\":{\"left\":[\"omarchy.menu\",\"omarchy.workspaces\"],\"centerBegin\":[],\"center\":[{\"id\":\"omarchy.clock\"}],\"centerEnd\":[\"omarchy.weather\",\"omarchy.system-update\"],\"right\":[\"omarchy.tray\",\"omarchy.network\",\"omarchy.audio\",\"omarchy.power\",\"mystery.thing\"],\"tray\":[]}},\"dock\":{\"pinned\":[\"firefox\",\"gone\",\"org.gnome.Nautilus\"]}}\n");
+        writeFile(s.env.configHome + "/omarchy/shell.json", "{\"version\":1,\"bar\":{\"id\":\"local.test-bar\",\"layout\":{\"left\":[\"omarchy.menu\",\"omarchy.workspaces\"],\"centerBegin\":[],\"center\":[{\"id\":\"omarchy.clock\"}],\"centerEnd\":[\"omarchy.weather\",\"omarchy.system-update\"],\"right\":[\"omarchy.tray\",\"omarchy.network\",\"omarchy.audio\",\"omarchy.power\",\"mystery.thing\"],\"tray\":[]}},\"dock\":{\"pinned\":[\"firefox\",\"gone\",\"org.gnome.Nautilus\"]}}\n");
         const QString shared = s.env.dataDirs.last();
         addPack(shared + "/icons", "Yaru-blue", {"web-browser", "folder"});
         writeFile(shared + "/applications/firefox.desktop", "[Desktop Entry]\nName=Firefox\nIcon=web-browser\n");
@@ -5538,7 +9252,7 @@ case "$*" in
   "-f json list sink-inputs") echo '[{"index":1,"sink":151,"volume":{},"properties":{"application.name":"Browser","media.name":"Playback"}},{"index":2,"sink":999,"volume":{},"properties":{"application.name":"Browser","media.name":"Playback"}}]';;
   get-default-sink) echo spk;;
 esac)SH");
-        s.command("bluetoothctl", R"SH(
+        s.bluetooth(R"SH(
 case "$1" in
   devices) printf 'Device AA:BB:CC:DD:EE:03 Office Mouse\nDevice AA:BB:CC:DD:EE:04 Office Mouse\n';;
   info) printf 'Name: Office Mouse\nConnected: no\nPaired: yes\nIcon: input-mouse\n';;
@@ -5594,16 +9308,24 @@ esac)SH");
         writeFile(s.env.sys("/sys/class/net/wlan0/wireless/x"), "");
         s.command("nmcli", R"SH(
 case "$*" in
-  "-t -f WIFI,CONNECTIVITY general") echo "enabled:full";;
-  "-t -f DEVICE,TYPE,STATE,CONNECTION device") printf 'wlan0:wifi:connected:Home\ntailscale0:tun:connected (externally):tailscale0\nenp1s0:ethernet:unavailable:\n';;
-  "-t -f NAME,UUID,TYPE,ACTIVE connection show") printf 'Home:11111111-1111-1111-1111-111111111111:802-11-wireless:yes\nCafe:22222222-2222-2222-2222-222222222222:802-11-wireless:no\n';;
-  *"wifi list"*) printf '*:Home:57:WPA2\n :Cafe:40:WPA2\n :Airport:20:\n';;
+  *WIFI,CONNECTIVITY*general) echo "enabled:full";;
+  *DEVICE,TYPE,STATE,CONNECTION*device) printf 'wlan0:wifi:connected:Home\ntailscale0:tun:connected (externally):tailscale0\nenp1s0:ethernet:unavailable:\n';;
+  *NAME,UUID,TYPE,ACTIVE*"connection show") printf 'Home:11111111-1111-1111-1111-111111111111:802-11-wireless:yes\nCafe:22222222-2222-2222-2222-222222222222:802-11-wireless:no\n';;
+  *"wifi list"*) printf '*:Home:57:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlan0\n :Cafe:40:WPA2:02\\:00\\:00\\:00\\:00\\:02:wlan0\n :Airport:20::02\\:00\\:00\\:00\\:00\\:03:wlan0\n';;
 esac)SH");
         DesktopPage page(s);
         QVERIFY(QTest::qWaitForWindowActive(page.window, 3000));
         page.open("network");
         QTRY_COMPARE(page.named("connectionRow").size(), 3);
         QTRY_COMPARE(page.named("wifiNetwork").size(), 3);
+        QPointer<QQuickItem> originalNetwork = page.named("wifiNetwork").first();
+        auto *network = page.backend_()->property("network").value<NetworkProvider *>();
+        QVERIFY(network);
+        QSignalSpy refreshed(network, &NetworkProvider::refreshed);
+        network->refresh();
+        QTRY_COMPARE(refreshed.size(), 1);
+        QVERIFY(originalNetwork);
+        QCOMPARE(page.named("wifiNetwork").first(), originalNetwork.data());
         // Every catalog entry once, the band among them.
         QStringList rows = page.rowIds();
         QCOMPARE(rows.size(), 18);
@@ -5621,6 +9343,33 @@ esac)SH");
         QTRY_VERIFY(page.focusWithin(page.row("remove.sunshine")));
         QMetaObject::invokeMethod(page.named("sectionLink_Tools").first(), "clicked");
         QTRY_VERIFY(page.focusWithin(page.row("trigger.tests.network-speedtest")));
+    }
+
+    void theNetworkPageDoesNotPresentFailedReadsAsOffOrEmpty() {
+        Sandbox s;
+        desktopFixture(s);
+        writeFile(s.env.sys("/sys/class/net/wlan0/wireless/x"), "");
+        s.command("nmcli", R"SH(
+case "$*" in
+ *WIFI,CONNECTIVITY*) if [ -f "$HOME/general-broken" ]; then exit 8; fi; echo enabled:full;;
+ *) exit 8;;
+esac)SH");
+        DesktopPage page(s);
+        QVERIFY(QTest::qWaitForWindowActive(page.window, 3000));
+        page.open("network");
+        QTRY_VERIFY(!page.named("wifiReadMessage").isEmpty());
+        QTRY_COMPARE(page.named("wifiReadMessage").first()->property("text").toString(), QString("Wi-Fi networks could not be read. Try again."));
+        QTRY_COMPARE(page.named("connectionReadMessage").first()->property("text").toString(), QString("NetworkManager is not responding, so connections cannot be shown."));
+        QVERIFY(page.named("wifiNetwork").isEmpty());
+        const auto power = page.named("wifiPower").first();
+        QVERIFY(!power->property("unknown").toBool());
+        writeFile(s.env.home + "/general-broken", "1");
+        auto *network = page.backend_()->property("network").value<NetworkProvider *>();
+        QVERIFY(network);
+        network->refresh();
+        QTRY_VERIFY(power->property("unknown").toBool());
+        QTRY_VERIFY(!power->isEnabled());
+        QTRY_COMPARE(page.named("wifiReadMessage").first()->property("text").toString(), QString("NetworkManager is not responding, so networks cannot be shown."));
     }
 
     void thePowerPageRunsEachTileAndFollowsItsState() {
@@ -5796,7 +9545,7 @@ OUT)SH");
 *--user*list-units*) echo '[{"unit":"sync.service","active":"active","description":"Sync"},{"unit":"broken.service","active":"failed","description":"Broken"}]';;
 *--system*list-units*) echo '[{"unit":"NetworkManager.service","active":"active","description":"Network Manager"}]';;
 *list-unit-files*) echo '[]';;
-*show*) printf 'ActiveState=inactive\nResult=success\n';;
+*show*) for unit in "$@"; do :; done; printf 'Id=%s\nLoadState=loaded\nFragmentPath=/usr/lib/systemd/system/%s\nActiveState=active\nSubState=running\nUnitFileState=enabled\nType=simple\nResult=success\nExecMainStartTimestampMonotonic=10\n' "$unit" "$unit";;
 esac)SH");
         for (int i = 0; i < 14; ++i)
             writeFile(s.env.sys(QString("/etc/xdg/autostart/agent%1.desktop").arg(i, 2, 10, QChar('0'))),
@@ -5891,6 +9640,7 @@ esac)SH");
 
     void theAdvancedPageShowsHistoryDiagnosticsAndTools() {
         Sandbox s;
+        s.debugHelper();
         desktopFixture(s);
         s.command("omarchy-launch-floating-terminal-with-presentation", "exit 0");
         // Twelve records, every outcome among them, oldest first as the journal keeps them.
@@ -6327,6 +10077,195 @@ esac)SH");
     }
 
     // --- Icon packs ---
+
+    void cliIconSamplesExposeOwnInheritedAndMissingFilesWithoutRendering() {
+        Sandbox s;
+        IconDesk desk(s);
+        addPack(desk.system, "Parent", {"utilities-terminal"});
+        addPack(desk.system, "Child With Spaces", {"folder"}, "Parent");
+        addPack(desk.system, "hicolor", {"web-browser"});
+        const auto reply = CliApi::execute(s.env, {"icons", "samples", "Child With Spaces"});
+        QCOMPARE(reply.exitCode, 0);
+        QVERIFY(reply.body.value("verified").toBool());
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("complete").toBool());
+        const auto rows = data.value("samples").toArray();
+        QCOMPARE(rows.size(), 4);
+        QCOMPARE(rows[0].toObject().value("from").toString(), QString("Child With Spaces"));
+        QVERIFY(!rows[0].toObject().value("inherited").toBool());
+        QVERIFY(!rows[1].toObject().value("found").toBool());
+        QCOMPARE(rows[2].toObject().value("from").toString(), QString("Parent"));
+        QVERIFY(rows[2].toObject().value("inherited").toBool());
+        QCOMPARE(rows[3].toObject().value("from").toString(), QString("hicolor"));
+        QVERIFY(QFileInfo(rows[0].toObject().value("path").toString()).isFile());
+        QVERIFY(rows[0].toObject().value("fileUrl").toString().contains("%20"));
+        QCOMPARE(QUrl(rows[0].toObject().value("fileUrl").toString()).toLocalFile(), rows[0].toObject().value("path").toString());
+        QVERIFY(s.calls().isEmpty());
+        QVERIFY(!QFileInfo::exists(desk.policy()));
+    }
+
+    void cliIconSearchSharesPickerPrecedenceAndReportsResultTruncation() {
+        Sandbox s;
+        IconDesk desk(s);
+        addPack(desk.system, "Parent", {"alpha", "collision", "zulu"});
+        addPack(desk.system, "Child", {"ALPHA", "Beta", "collision"}, "Parent");
+        addPack(desk.system, "hicolor", {"omega"});
+        desk.themeAsks("Child");
+        auto reply = CliApi::execute(s.env, {"icons", "search", "Child", "--limit", "2"});
+        QCOMPARE(reply.exitCode, 0);
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(data.value("complete").toBool());
+        QVERIFY(data.value("truncated").toBool());
+        QCOMPARE(data.value("matches").toInt(), 6);
+        const auto rows = data.value("icons").toArray();
+        QCOMPARE(rows.size(), 2);
+        QCOMPARE(rows[0].toObject().value("name").toString(), QString("ALPHA"));
+        QCOMPARE(rows[1].toObject().value("name").toString(), QString("alpha"));
+        AppCore core(s.env);
+        QCOMPARE(QJsonArray::fromVariantList(core.launchers.packIcons("", 2)), rows);
+        reply = CliApi::execute(s.env, {"icons", "search", "Child", " CoLL "});
+        const auto match = reply.body.value("data").toObject().value("icons").toArray().first().toObject();
+        QCOMPARE(match.value("name").toString(), QString("collision"));
+        QCOMPARE(match.value("from").toString(), QString("Child"));
+        QVERIFY(match.value("path").toString().contains("/Child/"));
+        QVERIFY(!match.value("inherited").toBool());
+        QVERIFY(s.calls().isEmpty());
+    }
+
+    void cliIconReadsPreserveLegacyRoutingAndVersionedListFiltering() {
+        Sandbox s;
+        IconDesk desk(s);
+        addPack(desk.user, "Papirus", {"folder"});
+        addPack(desk.system, "Hidden", {"folder"}, {}, "Hidden=true\n");
+        writeFile(desk.system + "/Cursor/index.theme", "[Icon Theme]\nName=Cursor\n");
+        const auto reply = CliApi::execute(s.env, {"icons", "list", "--api-version", "1"});
+        QCOMPARE(reply.exitCode, 0);
+        const auto rows = reply.body.value("data").toObject().value("packs").toArray();
+        QCOMPARE(rows.size(), 3);
+        for (const auto &row : rows)
+            if (row.toObject().value("id") == QLatin1String("Papirus"))
+                QCOMPARE(row.toObject().value("locations").toArray().size(), 2);
+        QCOMPARE(CliApi::execute(s.env, {"icons", "samples", "Hidden"}).exitCode, 0);
+        QVERIFY(!CliApi::requested({"icons", "list", "--json"}));
+        QVERIFY(!CliApi::requested({"icons", "import", "/tmp/pack", "--yes"}));
+        QVERIFY(CliApi::requested({"icons", "list", "--api-version", "1"}));
+        QVERIFY(CliApi::requested({"icons", "search", "Papirus"}));
+        QVERIFY(CliApi::requested({"icons", "samples", "Papirus", "--bad"}));
+        QVERIFY(CliApi::requested({"icons", "--limit", "0", "search", "Papirus"}));
+        QVERIFY(!CliApi::requested({"icons", "import", "--", "--limit"}));
+        QProcess legacy;
+        legacy.start(QCoreApplication::applicationFilePath(), {"--cli-sandbox", s.dir.path(), "icons", "list", "--json"});
+        QVERIFY(legacy.waitForFinished(15000));
+        QCOMPARE(legacy.exitCode(), 0);
+        const auto old = QJsonDocument::fromJson(legacy.readAllStandardOutput()).object();
+        QVERIFY(!old.contains("apiVersion"));
+        QCOMPARE(old.value("packs").toArray(), rows);
+    }
+
+    void cliIconDiscoveryDoesNotTurnUnavailableSourcesIntoEmptySuccess_data() {
+        QTest::addColumn<QString>("mode");
+        for (const auto &mode : {"missing", "malformed", "oversized", "linked-index", "missing-parent", "unreadable-folder", "untraversable-root", "dangling-root", "dangling-icon"})
+            QTest::newRow(mode) << QString(mode);
+    }
+    void cliIconDiscoveryDoesNotTurnUnavailableSourcesIntoEmptySuccess() {
+        QFETCH(QString, mode);
+        Sandbox s;
+        IconDesk desk(s);
+        addPack(desk.system, "Test", {"folder"});
+        const QString index = desk.user + "/Test/index.theme";
+        QString repaired;
+        if (mode == "missing") QDir(desk.system + "/Test").removeRecursively();
+        if (mode == "malformed") writeFile(index, "broken descriptor");
+        if (mode == "oversized") writeFile(index, QByteArray(1024 * 1024 + 1, 'x'));
+        if (mode == "linked-index") { QDir().mkpath(QFileInfo(index).absolutePath()); QVERIFY(QFile::link(index + ".missing", index)); }
+        if (mode == "missing-parent") addPack(desk.user, "Test", {"folder"}, "NotInstalled");
+        if (mode == "unreadable-folder") {
+            if (::getuid() == 0) QSKIP("Permission check needs an unprivileged user");
+            repaired = desk.system + "/Test/scalable/apps";
+            QVERIFY(QFile::setPermissions(repaired, {}));
+        }
+        if (mode == "untraversable-root") {
+            if (::getuid() == 0) QSKIP("Permission check needs an unprivileged user");
+            repaired = desk.system;
+            QVERIFY(QFile::setPermissions(repaired, QFile::ReadOwner));
+        }
+        if (mode == "dangling-root") { QDir().mkpath(QFileInfo(desk.user).absolutePath()); QVERIFY(QFile::link(desk.user + ".missing", desk.user)); }
+        if (mode == "dangling-icon") QVERIFY(QFile::link(desk.system + "/missing.svg", desk.system + "/Test/scalable/apps/dangling.svg"));
+        const auto reply = CliApi::execute(s.env, {"icons", "search", "Test"});
+        if (!repaired.isEmpty()) QVERIFY(QFile::setPermissions(repaired, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(!reply.body.value("verified").toBool());
+        QCOMPARE(reply.body.value("error").toObject().value("code").toString(), QString("read_unavailable"));
+        QVERIFY(!reply.body.value("data").toObject().value("complete").toBool());
+        QVERIFY(s.calls().isEmpty());
+    }
+
+    void cliIconListAndSamplesReportInaccessibleSourcesAndSearchStaysWithinItsContexts() {
+        Sandbox s;
+        IconDesk desk(s);
+        addPack(desk.system, "Test", {"folder", "app"});
+        const auto index = desk.system + "/Test/index.theme";
+        writeFile(index, readAll(index) + "\n[unused]\nSize=48\nContext=Actions\n");
+        writeFile(desk.system + "/Test/scalable/apps/.hidden.svg", kSvg);
+        writeFile(desk.system + "/Test/scalable/apps/UPPER.SVG", kSvg);
+        QDir().mkpath(desk.system + "/Test/scalable/apps/not-a-file.svg");
+        auto reply = CliApi::execute(s.env, {"icons", "search", "Test", "absent"});
+        QCOMPARE(reply.exitCode, 0);
+        QCOMPARE(reply.body.value("data").toObject().value("matches").toInt(), 0);
+        reply = CliApi::execute(s.env, {"icons", "search", "Test"});
+        QCOMPARE(reply.exitCode, 0);
+        QCOMPARE(reply.body.value("data").toObject().value("matches").toInt(), 3);
+        if (::getuid() == 0) QSKIP("Permission check needs an unprivileged user");
+        QVERIFY(QFile::setPermissions(desk.system, QFile::ReadOwner));
+        const auto list = CliApi::execute(s.env, {"icons", "list", "--api-version", "1"});
+        const auto samples = CliApi::execute(s.env, {"icons", "samples", "Test"});
+        QVERIFY(QFile::setPermissions(desk.system, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner));
+        QCOMPARE(list.exitCode, 1);
+        QCOMPARE(samples.exitCode, 1);
+    }
+
+    void iconDiscoveryBoundsEnumerationAndInheritanceWithoutLosingReadDiagnostics() {
+        Sandbox s;
+        IconDesk desk(s);
+        QStringList diagnostics;
+        int remaining = 1;
+        const auto names = IconThemes::directoryNames(desk.system, &remaining, &diagnostics);
+        QCOMPARE(names.size(), 1);
+        QVERIFY(!diagnostics.isEmpty());
+        for (int i = 0; i < 15; ++i)
+            addPack(desk.system, "Chain" + QString::number(i), {"icon"}, i == 14 ? QString() : "Chain" + QString::number(i + 1));
+        const auto reply = CliApi::execute(s.env, {"icons", "samples", "Chain0"});
+        QCOMPARE(reply.exitCode, 1);
+        QVERIFY(!reply.body.value("data").toObject().value("diagnostics").toArray().isEmpty());
+    }
+
+    void iconSearchCountsEmptyDirectoryVisitsAgainstItsBudget() {
+        Sandbox s;
+        const QString root = s.env.dataHome + "/icons";
+        QStringList directories;
+        QByteArray groups;
+        for (int i = 0; i < 5000; ++i) {
+            const QString directory = "apps/empty" + QString::number(i);
+            directories << directory;
+            groups += "[" + directory.toUtf8() + "]\nSize=48\nContext=Applications\n";
+        }
+        const QByteArray contents = "[Icon Theme]\nName=Empty\nDirectories=" + directories.join(',').toUtf8() + "\n" + groups;
+        QVERIFY(contents.size() < 1024 * 1024);
+        writeFile(root + "/Empty/index.theme", contents);
+        QStringList parents;
+        for (int i = 0; i < 21; ++i) {
+            const QString id = "Parent" + QString::number(i);
+            parents << id;
+            QVERIFY(QFile::link(root + "/Empty", root + "/" + id));
+        }
+        writeFile(root + "/Root/index.theme", "[Icon Theme]\nName=Root\nInherits=" + parents.join(',').toUtf8() + "\n");
+        const auto reply = CliApi::execute(s.env, {"icons", "search", "Root", "--limit", "1"});
+        QCOMPARE(reply.exitCode, 1);
+        const auto data = reply.body.value("data").toObject();
+        QVERIFY(!data.value("complete").toBool());
+        QVERIFY(data.value("icons").toArray().isEmpty());
+        QVERIFY(!data.value("diagnostics").toArray().isEmpty());
+    }
 
     void iconPacksComeFromEveryRootWithHiddenAndCursorOnesLeftOut() {
         Sandbox s;
@@ -8194,7 +12133,7 @@ esac)SH");
             for (const QString &key : traits.activation)
                 QVERIFY2(ProfileTraits::describeActivation(key) != key, qPrintable(entry.id + ": " + key));
         }
-        QCOMPARE(portable, 40);
+        QCOMPARE(portable, 41);
     }
     void profileRoundTripsBetweenMachines() {
         QTemporaryDir store;
@@ -8583,6 +12522,39 @@ esac)SH");
         // A finished run has nothing left to resume.
         QVERIFY(resumeRun(core, run.id).state.isEmpty());
         QVERIFY(resumeRun(core, "../../etc/passwd").message.contains("not a restore id"));
+    }
+    void profileCancellationCrossesRunnerInstancesAndStopsBetweenOperations() {
+        ProfileMachine m;
+        QTemporaryDir store;
+        writeProfile(store.path(), {{"power.idle.lock", setTo("600")}, {"power.idle.screensaver", setTo("60")}});
+        AppCore core(m.s.env);
+        core.capabilities.scanServicesBlocking();
+        const auto plan = planProfile(core, store.path());
+        QCOMPARE(plan.count("ready"), 2);
+        bool requested = false, finished = false; ProfileRun result;
+        const auto connection = connect(&core.profileRunner, &ProfileRunner::itemChanged, this, [&](const ProfileRun &run, int index) {
+            if (requested || run.items[index].state != QLatin1String("running")) return;
+            const auto dry = CliApi::execute(m.s.env, {"profile", "cancel", run.id, "--dry-run"});
+            QVERIFY(dry.body.value("ok").toBool());
+            QVERIFY(!QFile::exists(ProfileStore::runsDir(m.s.env) + "/" + run.id + ".cancel"));
+            const auto cancel = CliApi::execute(m.s.env, {"profile", "cancel", run.id});
+            QVERIFY(cancel.body.value("ok").toBool());
+            QCOMPARE(cancel.body.value("outcome").toString(), QString("cancellation_requested"));
+            QVERIFY(!cancel.body.value("verified").toBool());
+            requested = true;
+        });
+        core.profileRunner.apply(plan, [&](const ProfileRun &run) { result = run; finished = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(finished, 15000);
+        disconnect(connection);
+        QVERIFY(requested);
+        QCOMPARE(result.state, QString("cancelled"));
+        int verified = 0, pending = 0;
+        for (const auto &item : result.items) { verified += item.state == "verified"; pending += item.state == "pending"; }
+        QCOMPARE(verified, 1); QCOMPARE(pending, 1);
+        QVERIFY(!CliApi::execute(m.s.env, {"profile", "cancel", result.id}).body.value("ok").toBool());
+        QCOMPARE(resumeRun(core, result.id).state, QString("completed"));
+        QVERIFY(!QFile::exists(ProfileStore::runsDir(m.s.env) + "/" + result.id + ".cancel"));
+        QVERIFY(!CliApi::execute(m.s.env, {"profile", "cancel", "../invalid"}).body.value("ok").toBool());
     }
     void profileLeaseExcludesOtherChanges() {
         ProfileMachine m;
@@ -10224,11 +14196,19 @@ esac)SH");
 };
 
 int main(int argc, char *argv[]) {
+    if (argc >= 4 && QString::fromLatin1(argv[1]) == QLatin1String("--cli-sandbox")) {
+        QCoreApplication app(argc, argv);
+        app.setApplicationVersion(APP_VERSION);
+        const QString root = app.arguments()[2];
+        Env env = Env::sandbox(root, root + "/bin"); env.process.insert("OC_TEST_ROOT", root);
+        return Cli::run(env, app.arguments().mid(3));
+    }
     // Re-entered by watchdogSurvivesTheWindowDying as the detached process.
     // The real entry point, as DisplayProvider starts it, inside a test's sandbox.
     if (argc == 3 && QString::fromLatin1(argv[1]) == QLatin1String("display-watchdog")) {
         QCoreApplication app(argc, argv);
         const QString root = qEnvironmentVariable("OC_TEST_ROOT");
+        if (root.isEmpty() || !QDir::isAbsolutePath(root)) return 2;
         return DisplayProvider::runWatchdog(Env::sandbox(root, root + "/bin"), QString::fromLocal8Bit(argv[2]));
     }
     if (argc == 4 && QString::fromLatin1(argv[1]) == QLatin1String("--watchdog")) {

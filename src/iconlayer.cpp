@@ -73,13 +73,37 @@ bool appContext(const IconPack::Directory &directory) {
 
 // Every app icon a pack has, name to file, nearest size first and SVG before PNG within a
 // folder, as a lookup would find them. Listing each folder once keeps a whole layer cheap.
-QHash<QString, QString> indexPack(const IconPack &pack) {
+QHash<QString, QString> indexPack(const IconPack &pack, QStringList *diagnostics = nullptr, int *remaining = nullptr) {
     QHash<QString, QString> index;
     for (const IconPack::Directory &directory : IconThemes::directoriesFor(pack, TargetSize)) {
         if (!appContext(directory))
             continue;
         for (const QString &location : pack.locations) {
             const QDir folder(location + "/" + directory.subdir);
+            if (remaining) {
+                // Empty or missing directories also cost a visit. Count them
+                // so a wide inheritance tree cannot evade the entry budget.
+                if (*remaining <= 0) return index;
+                --*remaining;
+                const auto files = IconThemes::directoryNames(folder.path(), remaining, diagnostics);
+                // Keep the same nearest-directory, location and SVG-first order
+                // as the layer builder, without silently dropping unreadable files.
+                for (const char *extension : {".svg", ".png"}) {
+                    for (const QString &file : files) {
+                        if (file.startsWith('.') || !file.endsWith(QLatin1String(extension), Qt::CaseInsensitive)) continue;
+                        const QFileInfo info(folder.filePath(file));
+                        if (info.isDir()) continue;
+                        if (!info.isFile() || !info.isReadable()) {
+                            if (diagnostics) diagnostics->append("Icon is not a readable regular file: " + info.filePath());
+                            continue;
+                        }
+                        const QString name = file.left(file.lastIndexOf('.'));
+                        if (!index.contains(name)) index.insert(name, info.filePath());
+                    }
+                }
+                if (*remaining <= 0) return index;
+                continue;
+            }
             if (!folder.exists())
                 continue;
             for (const char *pattern : {"*.svg", "*.png"}) {
@@ -333,13 +357,20 @@ QString stamp(const Env &env, const QString &pack) {
     return QString::fromLatin1(hash.result().toHex());
 }
 
-QHash<QString, QString> appIcons(const Env &env, const QString &pack) {
+QHash<QString, QString> appIcons(const Env &env, const QString &pack, QStringList *diagnostics, QHash<QString, QString> *origins) {
     QHash<QString, QString> all;
-    for (const IconPack &member : IconThemes::lookupChain(env, pack)) {
-        const QHash<QString, QString> index = indexPack(member);
+    int remaining = 100000;
+    for (const IconPack &member : IconThemes::lookupChain(env, pack, diagnostics)) {
+        const QHash<QString, QString> index = indexPack(member, diagnostics, &remaining);
         for (auto it = index.begin(); it != index.end(); ++it)
-            if (!all.contains(it.key()))
+            if (!all.contains(it.key())) {
                 all.insert(it.key(), it.value());
+                if (origins) origins->insert(it.key(), member.id);
+            }
+        if (remaining <= 0) {
+            if (diagnostics) diagnostics->append("Icon search reached its total directory-entry limit");
+            break;
+        }
     }
     return all;
 }

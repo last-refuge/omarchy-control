@@ -47,7 +47,9 @@ AppPanel {
             anchors.verticalCenter: parent.verticalCenter
             wrapMode: Text.Wrap
             secondary: true
-            text: qsTr("No disks found.")
+            readonly property var state: backend.system.factStates.storage || {}
+            text: state.status === "loading" ? qsTr("Reading storage…")
+                : state.status === "unavailable" ? qsTr("Storage could not be read.") : qsTr("No disks found.")
         }
     }
     Repeater {

@@ -44,7 +44,11 @@ QStringList searchRoots(const Env &env);
 bool isValidId(const QString &id);
 
 IconPack parseIndex(const QByteArray &contents, const QString &id, const QString &language = {});
-IconPack load(const Env &env, const QString &id, const QString &language = {});
+IconPack load(const Env &env, const QString &id, const QString &language = {}, QStringList *diagnostics = nullptr);
+
+// Bounded, single-directory enumeration. Missing optional folders are ordinary;
+// inaccessible folders, dangling links and exhaustion are explicit diagnostics.
+QStringList directoryNames(const QString &path, int *remaining, QStringList *diagnostics);
 
 // Every installed pack with icons, sorted by name. Hidden ones are left out unless
 // `alwaysInclude` names them. What could not be read lands in `diagnostics`.
@@ -53,10 +57,11 @@ QList<IconPack> discover(const Env &env, const QString &alwaysInclude = {}, QStr
 // The icon file for the first of `names` found in this pack, then what it inherits, then
 // hicolor. Only that chain is searched, so a preview can never show another pack's icons.
 // `fromTheme` says which pack it really came from.
-QString findIcon(const Env &env, const QString &id, const QStringList &names, int size, QString *fromTheme = nullptr);
+QString findIcon(const Env &env, const QString &id, const QStringList &names, int size, QString *fromTheme = nullptr,
+                 QStringList *diagnostics = nullptr);
 
 // The pack, what it inherits in order, then hicolor: the lookup order the spec gives.
-QList<IconPack> lookupChain(const Env &env, const QString &id);
+QList<IconPack> lookupChain(const Env &env, const QString &id, QStringList *diagnostics = nullptr);
 // A pack's folders, nearest to `size` first.
 QList<IconPack::Directory> directoriesFor(const IconPack &pack, int size);
 

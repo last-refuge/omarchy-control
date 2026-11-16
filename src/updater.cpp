@@ -39,6 +39,8 @@ QStringList checkCommand() {
 }
 
 Check interpret(const CommandResult &result, const QString &architecture) {
+    // Qt calls 64-bit ARM "arm64"; Arch names its packages "aarch64".
+    const QString packageArchitecture = architecture == "arm64" ? QStringLiteral("aarch64") : architecture;
     Check check;
     if (result.failure == CommandResult::NotFound) {
         check.error = QCoreApplication::translate("Updater", "%1 is not installed.").arg("curl");
@@ -76,7 +78,7 @@ Check interpret(const CommandResult &result, const QString &architecture) {
     // Only the expected file, from this project's own releases: the response decides
     // what gets downloaded, so it does not get to name anything else.
     const QRegularExpression packageName(QStringLiteral("^omarchy-control-%1-[0-9]+-%2\\.pkg\\.tar\\.zst$")
-                                             .arg(QRegularExpression::escape(release.version), QRegularExpression::escape(architecture)));
+                                             .arg(QRegularExpression::escape(release.version), QRegularExpression::escape(packageArchitecture)));
     for (const auto &value : json.value("assets").toArray()) {
         const QJsonObject asset = value.toObject();
         const QString name = asset.value("name").toString();

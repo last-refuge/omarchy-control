@@ -1,10 +1,12 @@
 #pragma once
 
 #include <QObject>
+#include <QJsonObject>
 #include <QVariantList>
 
 #include "changecoordinator.h"
 #include "commandrunner.h"
+#include "provideroperation.h"
 
 // Shell plugins, bar widget placement, and dock pins, through Omarchy's own
 // commands so clones, selected implementations, and per-widget options survive.
@@ -29,6 +31,16 @@ public:
     bool changing() const { return m_changes > 0; }
     QString status() const { return m_status; }
     QString activeBar() const { return m_activeBar; }
+    void inspect(const QString &scope, std::function<void(QJsonObject)> done);
+    void planEnabled(const QString &id, bool enabled, std::function<void(ProviderPlan)> done);
+    void planMove(const QString &selector, const QString &section, int index, std::function<void(ProviderPlan)> done);
+    void planOption(const QString &selector, const QString &key, bool value, std::function<void(ProviderPlan)> done);
+    void planPin(const QString &id, bool pinned, std::function<void(ProviderPlan)> done);
+    void planLifecycle(const QString &id, bool clone, std::function<void(ProviderPlan)> done);
+    void planRecovery(const QString &token, std::function<void(ProviderPlan)> done);
+    void applyPlan(const ProviderPlan &plan);
+    static bool isWidgetSelector(const QString &selector);
+    static QStringList sections();
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void setEnabled(const QString &id, bool enabled);
@@ -49,12 +61,17 @@ public:
 signals:
     void changed();
     void message(const QString &text, bool isError);
+    void operationFinished(const Transaction &transaction);
 
 private:
-    void runChange(const QString &label, const QString &after, const QStringList &argv, std::function<void(ChangeCoordinator::Done)> verify, const QString &success);
     void loadConfig();
-    void verifyMoved(const QString &id, const QString &section, int index, int attempts, ChangeCoordinator::Done done);
     void resolveDockApps();
+    void readState(const QString &scope, std::function<void(QJsonObject)> done);
+    void presentState(const QJsonObject &state);
+    ProviderPlan basePlan(const QJsonObject &state, const QString &operation, const QString &target) const;
+    ProviderPlan movePlan(const QJsonObject &state, const QString &selector, const QString &section, int index) const;
+    void executePlan(const ProviderPlan &plan, bool alreadyChanging);
+    void reject(const ProviderPlan &plan, bool alreadyChanging = false);
 
     CommandRunner *m_runner;
     ChangeCoordinator *m_coordinator;
@@ -66,4 +83,6 @@ private:
     int m_changes = 0;
     QString m_status = "loading";
     QString m_activeBar;
+    int m_readGeneration = 0;
+    QString m_viewFingerprint;
 };

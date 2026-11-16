@@ -68,6 +68,11 @@ public:
     QString backupPath(const QString &id) const;
     QString iconFolder() const;
 
+    // Read-only picker discovery, shared by the GUI's current-pack search and
+    // the CLI's explicit pack selection. Completeness concerns filesystem reads,
+    // not image decoding or whether another launcher renders the icon.
+    QVariantMap iconChoices(const QString &pack, const QString &query, int limit = 300) const;
+
     // For the window.
     Q_INVOKABLE void reload();
     Q_INVOKABLE void save(const QString &id, const QVariantMap &changes);

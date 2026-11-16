@@ -27,6 +27,7 @@ struct ReadResult {
 struct ChangePlan {
     bool ok = false;
     QString error;
+    QString errorCode = "invalid_value";
     QString normalized;
     QString confirmText;
     bool needsOwnership = false;

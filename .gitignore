@@ -7,3 +7,5 @@
 moc_*
 qrc_*
 .package-check/
+__pycache__/
+*.py[cod]

@@ -25,12 +25,12 @@ AppPanel {
 
     Connections {
         target: backend.system
-        function onMessage(text, error) {
+        function onDiagnosticsFinished(result) {
             if (!root.exporting)
                 return
             root.exporting = false
-            root.exportText = text
-            root.exportFailed = error
+            root.exportText = result.message
+            root.exportFailed = !result.ok
         }
     }
     Timer {

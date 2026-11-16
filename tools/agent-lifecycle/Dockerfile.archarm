@@ -1,0 +1,16 @@
+FROM scratch
+ADD rootfs.tar.gz /
+ENV container=docker LANG=C.UTF-8
+RUN rm -f /etc/systemd/system/default.target && \
+    ln -s /usr/lib/systemd/system/multi-user.target /etc/systemd/system/default.target && \
+    systemctl mask systemd-binfmt.service systemd-modules-load.service systemd-sysctl.service \
+      systemd-udevd.service systemd-udev-trigger.service getty.target && \
+    useradd -m -u 501 builder && \
+    printf '%s\n' 'Server = https://mirror.math.princeton.edu/pub/archlinuxarm/$arch/$repo' > /etc/pacman.d/mirrorlist && \
+    pacman-key --init && pacman-key --populate archlinuxarm && \
+    pacman -Syu --noconfirm --disable-sandbox --needed base-devel git python qt6-base qt6-declarative qt6-svg qt6-wayland libarchive dbus sudo && \
+    pacman -Scc --noconfirm
+RUN userdel -r alarm && pacman -S --noconfirm --disable-sandbox --needed hicolor-icon-theme desktop-file-utils
+COPY lab-init.sh /usr/local/sbin/oc-lab-init
+STOPSIGNAL SIGRTMIN+3
+ENTRYPOINT ["/bin/sh", "/usr/local/sbin/oc-lab-init"]

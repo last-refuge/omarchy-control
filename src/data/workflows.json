@@ -19,7 +19,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-launch-about"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -43,7 +45,9 @@
    "argv": [
     "omarchy-launch-screensaver",
     "force"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   },
   "group": "Session actions",
   "icon": "displays"
@@ -68,7 +72,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-system-lock"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Performs a consequential session or power action. This is a static handoff, not a reversible settings write; launch acceptance does not verify the resulting session state."
   },
   "group": "Session actions",
   "icon": "lock"
@@ -93,7 +99,9 @@
    "argv": [
     "systemctl",
     "suspend"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Performs a consequential session or power action. This is a static handoff, not a reversible settings write; launch acceptance does not verify the resulting session state."
   },
   "confirm": "confirm",
   "confirmText": "The computer will suspend now.",
@@ -120,7 +128,9 @@
    "argv": [
     "systemctl",
     "hibernate"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Performs a consequential session or power action. This is a static handoff, not a reversible settings write; launch acceptance does not verify the resulting session state."
   },
   "requiresHardware": [
    "hibernation"
@@ -151,7 +161,9 @@
    "argv": [
     "omarchy-system",
     "logout"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Performs a consequential session or power action. This is a static handoff, not a reversible settings write; launch acceptance does not verify the resulting session state."
   },
   "confirm": "confirm",
   "confirmText": "Open applications will close.",
@@ -179,7 +191,9 @@
    "argv": [
     "omarchy-system",
     "reboot"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Performs a consequential session or power action. This is a static handoff, not a reversible settings write; launch acceptance does not verify the resulting session state."
   },
   "confirm": "confirm",
   "confirmText": "Open applications will close.",
@@ -207,7 +221,9 @@
    "argv": [
     "omarchy-system",
     "shutdown"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Performs a consequential session or power action. This is a static handoff, not a reversible settings write; launch acceptance does not verify the resulting session state."
   },
   "confirm": "confirm",
   "confirmText": "Open applications will close.",
@@ -235,7 +251,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-menu-keybindings"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -363,7 +381,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-menu-tmux-keybindings"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -386,7 +406,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-menu-herdr-keybindings"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -409,7 +431,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-launch-discord-community"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -433,8 +457,13 @@
    "argv": [
     "omarchy-branding-about",
     "text"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Branding edits/transcodes user content or copies a default and opens a preview. The helper owns its editor/file-picker workflow; Control exposes the file location and static handoff, not an arbitrary text/image transformation API."
+  },
+  "files": [
+   "~/.config/omarchy/branding/about.txt"
+  ]
  },
  {
   "id": "appearance.branding.about.image",
@@ -457,8 +486,13 @@
    "argv": [
     "omarchy-branding-about",
     "image"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Branding edits/transcodes user content or copies a default and opens a preview. The helper owns its editor/file-picker workflow; Control exposes the file location and static handoff, not an arbitrary text/image transformation API."
+  },
+  "files": [
+   "~/.config/omarchy/branding/about.txt"
+  ]
  },
  {
   "id": "appearance.branding.about.default",
@@ -481,8 +515,13 @@
    "argv": [
     "omarchy-branding-about",
     "reset"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Branding edits/transcodes user content or copies a default and opens a preview. The helper owns its editor/file-picker workflow; Control exposes the file location and static handoff, not an arbitrary text/image transformation API."
+  },
+  "files": [
+   "~/.config/omarchy/branding/about.txt"
+  ]
  },
  {
   "id": "appearance.branding.screensaver.text",
@@ -505,8 +544,13 @@
    "argv": [
     "omarchy-branding-screensaver",
     "text"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Branding edits/transcodes user content or copies a default and opens a preview. The helper owns its editor/file-picker workflow; Control exposes the file location and static handoff, not an arbitrary text/image transformation API."
+  },
+  "files": [
+   "~/.config/omarchy/branding/screensaver.txt"
+  ]
  },
  {
   "id": "appearance.branding.screensaver.image",
@@ -529,8 +573,13 @@
    "argv": [
     "omarchy-branding-screensaver",
     "image"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Branding edits/transcodes user content or copies a default and opens a preview. The helper owns its editor/file-picker workflow; Control exposes the file location and static handoff, not an arbitrary text/image transformation API."
+  },
+  "files": [
+   "~/.config/omarchy/branding/screensaver.txt"
+  ]
  },
  {
   "id": "appearance.branding.screensaver.default",
@@ -553,8 +602,13 @@
    "argv": [
     "omarchy-branding-screensaver",
     "reset"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Branding edits/transcodes user content or copies a default and opens a preview. The helper owns its editor/file-picker workflow; Control exposes the file location and static handoff, not an arbitrary text/image transformation API."
+  },
+  "files": [
+   "~/.config/omarchy/branding/screensaver.txt"
+  ]
  },
  {
   "id": "trigger.emoji",
@@ -576,7 +630,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-menu-emoji"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -621,7 +677,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-capture-screenshot"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -645,7 +703,9 @@
    "argv": [
     "omarchy-capture-screenrecording",
     "--stop-recording"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -668,7 +728,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-capture-text"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -691,7 +753,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-capture-qr"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -714,7 +778,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-capture-screenrecording"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -738,7 +804,9 @@
    "argv": [
     "omarchy-capture-screenrecording",
     "--with-desktop-audio"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -763,7 +831,9 @@
     "omarchy-capture-screenrecording",
     "--with-desktop-audio",
     "--with-microphone-audio"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -786,7 +856,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-capture-screenrecording-with-webcam"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -809,7 +881,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-transcode"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -834,7 +908,12 @@
    "argv": [
     "omarchy-hyprland-monitor-internal",
     "toggle"
-   ]
+   ],
+   "nativeOperations": [
+    "display.layout"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   },
   "requiresHardware": [
    "internaldisplay",
@@ -866,7 +945,12 @@
    "argv": [
     "omarchy-hyprland-monitor-internal-mirror",
     "toggle"
-   ]
+   ],
+   "nativeOperations": [
+    "display.layout"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   },
   "requiresHardware": [
    "internaldisplay",
@@ -893,7 +977,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-toggle-hybrid-gpu"
+   "command": "omarchy-toggle-hybrid-gpu",
+   "automationStatus": "handoff",
+   "handoffReason": "Hardware recovery, GPU or boot/sleep configuration is a guided system workflow. Its prerequisite, privilege and recovery behavior is owned by the upstream helper; Control does not expose a native plan/write/readback adapter."
   },
   "requiresHardware": [
    "hybridgpu"
@@ -920,7 +1006,9 @@
    "argv": [
     "omarchy-reminder",
     "-i"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Desktop reminder tasks remain with omarchy-reminder. Its minutes/message and show --json/clear interfaces can be noninteractive; Control exposes static destinations, not a timer-management API or verified notification delivery."
   }
  },
  {
@@ -944,7 +1032,9 @@
    "argv": [
     "omarchy-reminder",
     "show"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Desktop reminder tasks remain with omarchy-reminder. Its minutes/message and show --json/clear interfaces can be noninteractive; Control exposes static destinations, not a timer-management API or verified notification delivery."
   }
  },
  {
@@ -968,7 +1058,9 @@
    "argv": [
     "omarchy-reminder",
     "clear"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Desktop reminder tasks remain with omarchy-reminder. Its minutes/message and show --json/clear interfaces can be noninteractive; Control exposes static destinations, not a timer-management API or verified notification delivery."
   }
  },
  {
@@ -992,7 +1084,9 @@
    "argv": [
     "omarchy-menu-share",
     "clipboard"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "group": "LocalSend",
   "icon": "clipboard"
@@ -1018,7 +1112,9 @@
    "argv": [
     "omarchy-menu-share",
     "file"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "group": "LocalSend",
   "icon": "file"
@@ -1044,7 +1140,9 @@
    "argv": [
     "omarchy-menu-share",
     "folder"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "group": "LocalSend",
   "icon": "folder"
@@ -1177,8 +1275,13 @@
    "kind": "exec",
    "argv": [
     "omarchy-setup-keyboard"
-   ]
-  }
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Typing setup coordinates keyboard/Fcitx configuration and, for input methods, package installation. The keyboard selector is interactive; the input helper also accepts preset names but may require sudo. Control does not replace this multi-file setup with a raw key edit."
+  },
+  "files": [
+   "~/.config/omarchy/keyboard-layouts"
+  ]
  },
  {
   "id": "setup.typing.input",
@@ -1200,7 +1303,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-setup-input"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Typing setup coordinates keyboard/Fcitx configuration and, for input methods, package installation. The keyboard selector is interactive; the input helper also accepts preset names but may require sudo. Control does not replace this multi-file setup with a raw key edit."
   }
  },
  {
@@ -1248,10 +1353,15 @@
    "argv": [
     "omarchy-default-agent",
     "amp"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Amp, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Amp, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.agy",
@@ -1274,10 +1384,15 @@
    "argv": [
     "omarchy-default-agent",
     "agy"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Antigravity, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Antigravity, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.claude",
@@ -1300,10 +1415,15 @@
    "argv": [
     "omarchy-default-agent",
     "claude"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Claude, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Claude, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.codex",
@@ -1326,10 +1446,15 @@
    "argv": [
     "omarchy-default-agent",
     "codex"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Codex, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Codex, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.commandcode",
@@ -1352,10 +1477,15 @@
    "argv": [
     "omarchy-default-agent",
     "commandcode"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Command Code, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Command Code, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.copilot",
@@ -1378,10 +1508,15 @@
    "argv": [
     "omarchy-default-agent",
     "copilot"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Copilot, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Copilot, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.crush",
@@ -1404,10 +1539,15 @@
    "argv": [
     "omarchy-default-agent",
     "crush"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Crush, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Crush, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.cursor-agent",
@@ -1430,10 +1570,15 @@
    "argv": [
     "omarchy-default-agent",
     "cursor-agent"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Cursor CLI, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Cursor CLI, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.dsh",
@@ -1456,10 +1601,15 @@
    "argv": [
     "omarchy-default-agent",
     "dsh"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts DeepSeek Harness, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts DeepSeek Harness, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.devin",
@@ -1482,10 +1632,15 @@
    "argv": [
     "omarchy-default-agent",
     "devin"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Devin CLI, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Devin CLI, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.freebuff",
@@ -1508,10 +1663,15 @@
    "argv": [
     "omarchy-default-agent",
     "freebuff"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Freebuff, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Freebuff, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.grok",
@@ -1534,10 +1694,15 @@
    "argv": [
     "omarchy-default-agent",
     "grok"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Grok, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Grok, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.hermes",
@@ -1560,10 +1725,15 @@
    "argv": [
     "omarchy-default-agent",
     "hermes"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Hermes, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Hermes, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.kilo",
@@ -1586,10 +1756,15 @@
    "argv": [
     "omarchy-default-agent",
     "kilo"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Kilo, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Kilo, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.kimi",
@@ -1612,10 +1787,15 @@
    "argv": [
     "omarchy-default-agent",
     "kimi"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Kimi, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Kimi, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.kiro-cli",
@@ -1638,10 +1818,15 @@
    "argv": [
     "omarchy-default-agent",
     "kiro-cli"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Kiro CLI, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Kiro CLI, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.mcode",
@@ -1664,10 +1849,15 @@
    "argv": [
     "omarchy-default-agent",
     "mcode"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts MiniMax Code, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts MiniMax Code, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.muse",
@@ -1690,10 +1880,15 @@
    "argv": [
     "omarchy-default-agent",
     "muse"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Muse Code, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Muse Code, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.omp",
@@ -1716,10 +1911,15 @@
    "argv": [
     "omarchy-default-agent",
     "omp"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts omp, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts omp, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.openclaw",
@@ -1742,10 +1942,15 @@
    "argv": [
     "omarchy-default-agent",
     "openclaw"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts OpenClaw, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts OpenClaw, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.opencode",
@@ -1768,10 +1973,15 @@
    "argv": [
     "omarchy-default-agent",
     "opencode"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts OpenCode, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts OpenCode, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.ori",
@@ -1794,10 +2004,15 @@
    "argv": [
     "omarchy-default-agent",
     "ori"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Ori, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Ori, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.pi",
@@ -1820,10 +2035,15 @@
    "argv": [
     "omarchy-default-agent",
     "pi"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Pi, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Pi, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.agent.qwen",
@@ -1846,10 +2066,15 @@
    "argv": [
     "omarchy-default-agent",
     "qwen"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "The default-agent helper can install dependencies, writes the default and launches the agent. This is a compound lifecycle handoff, not an isolated preference setter. Read apps.default.agent for the reported default; launch completion is unverified."
   },
   "confirm": "confirm",
-  "confirmText": "Setting the default agent also starts Qwen Code, and installs it first if it is missing."
+  "confirmText": "Setting the default agent also starts Qwen Code, and installs it first if it is missing.",
+  "files": [
+   "~/.config/omarchy/defaults/agent"
+  ]
  },
  {
   "id": "setup.default.dictation.superwhisper",
@@ -1872,9 +2097,14 @@
    "argv": [
     "omarchy-default-dictation",
     "superwhisper"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Selecting a dictation backend launches its installer/configuration workflow even when given a preset name. Read apps.default.dictation for the reported default; Control does not claim a verified installation or isolated default write."
   },
-  "group": "Superwhisper"
+  "group": "Superwhisper",
+  "files": [
+   "~/.config/omarchy/defaults/dictation"
+  ]
  },
  {
   "id": "setup.default.dictation.voxtype",
@@ -1897,9 +2127,14 @@
    "argv": [
     "omarchy-default-dictation",
     "voxtype"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Selecting a dictation backend launches its installer/configuration workflow even when given a preset name. Read apps.default.dictation for the reported default; Control does not claim a verified installation or isolated default write."
   },
-  "group": "Voxtype"
+  "group": "Voxtype",
+  "files": [
+   "~/.config/omarchy/defaults/dictation"
+  ]
  },
  {
   "id": "setup.plugin.add",
@@ -1919,7 +2154,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-plugin-add"
+   "command": "omarchy-plugin-add",
+   "automationStatus": "handoff",
+   "handoffReason": "Installs or updates external Git plugin code and may enable it. These helpers accept noninteractive arguments, but repository trust, whole-tree updates and their recovery are outside the native built-in clone/remove adapter. Use the concrete guided workflow; a launch is unverified."
   }
  },
  {
@@ -1943,7 +2180,12 @@
    "argv": [
     "omarchy-menu-plugin",
     "clone"
-   ]
+   ],
+   "nativeOperations": [
+    "plugins.clone"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -1967,7 +2209,12 @@
    "argv": [
     "omarchy-menu-plugin",
     "remove"
-   ]
+   ],
+   "nativeOperations": [
+    "plugins.remove"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -1988,7 +2235,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-security-fingerprint"
+   "command": "omarchy-setup-security-fingerprint",
+   "automationStatus": "handoff",
+   "handoffReason": "Security enrollment, authentication or privilege-policy setup belongs to its guided administrator workflow. Control does not collect credentials or treat terminal launch as verified enrollment/policy installation."
   },
   "icon": "fingerprint"
  },
@@ -2010,7 +2259,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-security-fido2"
+   "command": "omarchy-setup-security-fido2",
+   "automationStatus": "handoff",
+   "handoffReason": "Security enrollment, authentication or privilege-policy setup belongs to its guided administrator workflow. Control does not collect credentials or treat terminal launch as verified enrollment/policy installation."
   },
   "icon": "key"
  },
@@ -2032,7 +2283,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-security-sshd"
+   "command": "omarchy-setup-security-sshd",
+   "automationStatus": "handoff",
+   "handoffReason": "Security enrollment, authentication or privilege-policy setup belongs to its guided administrator workflow. Control does not collect credentials or treat terminal launch as verified enrollment/policy installation."
   },
   "icon": "server"
  },
@@ -2054,7 +2307,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-security-ssh-agent"
+   "command": "omarchy-setup-security-ssh-agent",
+   "automationStatus": "handoff",
+   "handoffReason": "Security enrollment, authentication or privilege-policy setup belongs to its guided administrator workflow. Control does not collect credentials or treat terminal launch as verified enrollment/policy installation."
   },
   "icon": "key"
  },
@@ -2076,7 +2331,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-security-sudoless-docker"
+   "command": "omarchy-setup-security-sudoless-docker",
+   "automationStatus": "handoff",
+   "handoffReason": "Security enrollment, authentication or privilege-policy setup belongs to its guided administrator workflow. Control does not collect credentials or treat terminal launch as verified enrollment/policy installation."
   },
   "icon": "container"
  },
@@ -2098,7 +2355,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-sudo-passwordless"
+   "command": "omarchy-sudo-passwordless",
+   "automationStatus": "handoff",
+   "handoffReason": "Security enrollment, authentication or privilege-policy setup belongs to its guided administrator workflow. Control does not collect credentials or treat terminal launch as verified enrollment/policy installation."
   },
   "icon": "terminal"
  },
@@ -2120,7 +2379,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-git"
+   "command": "omarchy-setup-git",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided Git identity setup accepts personal configuration through the owning terminal workflow. Control has no structured multi-field identity writer."
   },
   "icon": "git"
  },
@@ -2163,7 +2424,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-setup-direct-boot"
+   "command": "omarchy-setup-direct-boot",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   }
  },
  {
@@ -2184,7 +2447,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-system-factory-reset"
+   "command": "omarchy-system-factory-reset",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "confirm": "destructive",
   "confirmText": "Factory-reset this machine back to its freshly-installed state"
@@ -2210,7 +2475,9 @@
     "xdg-terminal-exec",
     "--app-id=org.omarchy.terminal",
     "omarchy-pkg-install"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2232,7 +2499,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-theme-install"
+   "command": "omarchy-theme-install",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2256,7 +2525,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-theme-bg-install"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2282,7 +2553,9 @@
     "Cascadia Mono",
     "ttf-cascadia-mono-nerd",
     "CaskaydiaMono Nerd Font"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2308,7 +2581,9 @@
     "Meslo LG Mono",
     "ttf-meslo-nerd",
     "MesloLGL Nerd Font"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2334,7 +2609,9 @@
     "Fira Code",
     "ttf-firacode-nerd",
     "FiraCode Nerd Font"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2360,7 +2637,9 @@
     "Victor Code",
     "ttf-victor-mono-nerd",
     "VictorMono Nerd Font"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2386,7 +2665,9 @@
     "Bitstream Vera Code",
     "ttf-bitstream-vera-mono-nerd",
     "BitstromWera Nerd Font"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2412,7 +2693,9 @@
     "Iosevka",
     "ttf-iosevka-nerd",
     "Iosevka Nerd Font Mono"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2434,7 +2717,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-webapp-install"
+   "command": "omarchy-webapp-install",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2455,7 +2740,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-tui-install"
+   "command": "omarchy-tui-install",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2476,7 +2763,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-windows-vm install"
+   "command": "omarchy-windows-vm install",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2500,7 +2789,9 @@
     "xdg-terminal-exec",
     "--app-id=org.omarchy.terminal",
     "omarchy-pkg-aur-install"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2521,7 +2812,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-preinstalls"
+   "command": "omarchy-install-preinstalls",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2542,7 +2835,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-browser chrome"
+   "command": "omarchy-install-browser chrome",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2563,7 +2858,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-browser edge"
+   "command": "omarchy-install-browser edge",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2584,7 +2881,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-browser brave"
+   "command": "omarchy-install-browser brave",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2605,7 +2904,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-browser brave-origin"
+   "command": "omarchy-install-browser brave-origin",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2626,7 +2927,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-browser firefox"
+   "command": "omarchy-install-browser firefox",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2647,7 +2950,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-browser zen"
+   "command": "omarchy-install-browser zen",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2668,7 +2973,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-1password"
+   "command": "omarchy-install-service-1password",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2694,7 +3001,9 @@
     "Bitwarden",
     "bitwarden bitwarden-cli",
     "bitwarden"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2715,7 +3024,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-chromium-google-account"
+   "command": "omarchy-install-chromium-google-account",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2736,7 +3047,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-dropbox"
+   "command": "omarchy-install-service-dropbox",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2757,7 +3070,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-microsoft"
+   "command": "omarchy-install-service-microsoft",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2778,7 +3093,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-nordvpn"
+   "command": "omarchy-install-service-nordvpn",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2804,7 +3121,9 @@
     "Notion",
     "notion-desktop",
     "com.notion.app.desktop.notion"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2825,7 +3144,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-once"
+   "command": "omarchy-install-service-once",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2846,7 +3167,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-signal"
+   "command": "omarchy-install-service-signal",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2872,7 +3195,9 @@
     "Slack",
     "slack-desktop",
     "slack"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2893,7 +3218,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-spotify"
+   "command": "omarchy-install-service-spotify",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2914,7 +3241,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-tailscale"
+   "command": "omarchy-install-service-tailscale",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2935,7 +3264,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-editor-vscode"
+   "command": "omarchy-install-editor-vscode",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2961,7 +3292,9 @@
     "Cursor",
     "cursor-bin",
     "cursor"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -2982,7 +3315,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-editor-zed"
+   "command": "omarchy-install-editor-zed",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3008,7 +3343,9 @@
     "Sublime Text",
     "sublime-text-4",
     "sublime_text"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3029,7 +3366,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-editor-helix"
+   "command": "omarchy-install-editor-helix",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3054,7 +3393,9 @@
     "omarchy-install-app",
     "Vim",
     "vim"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3075,7 +3416,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-editor-emacs"
+   "command": "omarchy-install-editor-emacs",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3096,7 +3439,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-terminal alacritty"
+   "command": "omarchy-install-terminal alacritty",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3117,7 +3462,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-terminal foot"
+   "command": "omarchy-install-terminal foot",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3138,7 +3485,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-terminal ghostty"
+   "command": "omarchy-install-terminal ghostty",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3159,7 +3508,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-terminal kitty"
+   "command": "omarchy-install-terminal kitty",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3185,7 +3536,9 @@
     "Amp Desktop",
     "amp-desktop-bin",
     "amp-desktop"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3206,7 +3559,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-ai-chatgpt"
+   "command": "omarchy-install-ai-chatgpt",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3227,7 +3582,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-ai-claude"
+   "command": "omarchy-install-ai-claude",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3253,7 +3610,9 @@
     "Grok Bot",
     "grok-bot",
     "grok-bot"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3274,7 +3633,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-ai-hermes"
+   "command": "omarchy-install-ai-hermes",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3299,7 +3660,9 @@
     "omarchy-install-app",
     "LM Studio",
     "lmstudio-bin"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3320,7 +3683,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-ai-openclaw"
+   "command": "omarchy-install-ai-openclaw",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3346,7 +3711,9 @@
     "Perplexity",
     "perplexity",
     "perplexity"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3367,7 +3734,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-ai-t3-code"
+   "command": "omarchy-install-ai-t3-code",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3388,7 +3757,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-steam"
+   "command": "omarchy-install-gaming-steam",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3409,7 +3780,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-retroarch"
+   "command": "omarchy-install-gaming-retroarch",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3435,7 +3808,9 @@
     "Minecraft",
     "minecraft-launcher",
     "minecraft-launcher"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3456,7 +3831,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-geforce-now"
+   "command": "omarchy-install-gaming-geforce-now",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3477,7 +3854,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-xbox-cloud"
+   "command": "omarchy-install-gaming-xbox-cloud",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3498,7 +3877,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-xbox-controllers"
+   "command": "omarchy-install-gaming-xbox-controllers",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3519,7 +3900,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-battlenet"
+   "command": "omarchy-install-gaming-battlenet",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3540,7 +3923,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-lutris"
+   "command": "omarchy-install-gaming-lutris",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3561,7 +3946,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-heroic"
+   "command": "omarchy-install-gaming-heroic",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3584,7 +3971,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-games-retro-install"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3605,7 +3994,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env ruby"
+   "command": "omarchy-install-dev-env ruby",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3626,7 +4017,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-docker-dbs"
+   "command": "omarchy-install-docker-dbs",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3647,7 +4040,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env go"
+   "command": "omarchy-install-dev-env go",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3668,7 +4063,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env python"
+   "command": "omarchy-install-dev-env python",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3689,7 +4086,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env zig"
+   "command": "omarchy-install-dev-env zig",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3710,7 +4109,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env rust"
+   "command": "omarchy-install-dev-env rust",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3731,7 +4132,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env java"
+   "command": "omarchy-install-dev-env java",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3752,7 +4155,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env dotnet"
+   "command": "omarchy-install-dev-env dotnet",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3773,7 +4178,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env ocaml"
+   "command": "omarchy-install-dev-env ocaml",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3794,7 +4201,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env clojure"
+   "command": "omarchy-install-dev-env clojure",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3815,7 +4224,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env scala"
+   "command": "omarchy-install-dev-env scala",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3836,7 +4247,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env node"
+   "command": "omarchy-install-dev-env node",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3857,7 +4270,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env bun"
+   "command": "omarchy-install-dev-env bun",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3878,7 +4293,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env deno"
+   "command": "omarchy-install-dev-env deno",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3899,7 +4316,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env php"
+   "command": "omarchy-install-dev-env php",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3920,7 +4339,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env laravel"
+   "command": "omarchy-install-dev-env laravel",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3941,7 +4362,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env symfony"
+   "command": "omarchy-install-dev-env symfony",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3962,7 +4385,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env elixir"
+   "command": "omarchy-install-dev-env elixir",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -3983,7 +4408,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dev-env phoenix"
+   "command": "omarchy-install-dev-env phoenix",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -4007,7 +4434,9 @@
     "xdg-terminal-exec",
     "--app-id=org.omarchy.terminal",
     "omarchy-pkg-remove"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a package from this computer."
@@ -4033,7 +4462,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-theme-remove"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a user-installed theme"
@@ -4059,7 +4490,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-webapp-remove"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a web app desktop launcher"
@@ -4084,7 +4517,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-tui-remove"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a terminal UI desktop launcher"
@@ -4107,7 +4542,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-windows-vm remove"
+   "command": "omarchy-windows-vm remove",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Install, launch, stop, inspect, or remove the Windows VM"
@@ -4130,7 +4567,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-preinstalls"
+   "command": "omarchy-remove-preinstalls",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove preinstalled Omarchy applications (web apps, TUIs, and selected packages)."
@@ -4153,7 +4592,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-security-fingerprint"
+   "command": "omarchy-remove-security-fingerprint",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove fingerprint authentication from sudo, polkit, and lock screen",
@@ -4177,7 +4618,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-security-fido2"
+   "command": "omarchy-remove-security-fido2",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove FIDO2 authentication from sudo and polkit",
@@ -4201,7 +4644,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-security-sshd"
+   "command": "omarchy-remove-security-sshd",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Disable the OpenSSH server, remove standard firewall rules, and optionally remove authorized keys",
@@ -4225,7 +4670,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-security-sudoless-docker"
+   "command": "omarchy-remove-security-sudoless-docker",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Disable sudoless Docker by removing your user from the docker group",
@@ -4249,7 +4696,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-hermes"
+   "command": "omarchy-remove-ai-hermes",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Hermes desktop app along with the Hermes runtime it installed."
@@ -4272,7 +4721,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-browser chrome"
+   "command": "omarchy-remove-browser chrome",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a supported browser and clean up Omarchy browser defaults"
@@ -4295,7 +4746,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-browser edge"
+   "command": "omarchy-remove-browser edge",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a supported browser and clean up Omarchy browser defaults"
@@ -4318,7 +4771,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-browser brave"
+   "command": "omarchy-remove-browser brave",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a supported browser and clean up Omarchy browser defaults"
@@ -4341,7 +4796,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-browser brave-origin"
+   "command": "omarchy-remove-browser brave-origin",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a supported browser and clean up Omarchy browser defaults"
@@ -4364,7 +4821,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-browser firefox"
+   "command": "omarchy-remove-browser firefox",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a supported browser and clean up Omarchy browser defaults"
@@ -4387,7 +4846,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-browser zen"
+   "command": "omarchy-remove-browser zen",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a supported browser and clean up Omarchy browser defaults"
@@ -4410,7 +4871,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-service-1password"
+   "command": "omarchy-remove-service-1password",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove 1Password and its Chromium extension."
@@ -4433,7 +4896,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-service-dropbox"
+   "command": "omarchy-remove-service-dropbox",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Dropbox and its bar plugin."
@@ -4456,7 +4921,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-service-tailscale"
+   "command": "omarchy-remove-service-tailscale",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Tailscale and its bar plugin."
@@ -4479,7 +4946,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-service-microsoft"
+   "command": "omarchy-remove-service-microsoft",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Microsoft Outlook, Word, Excel, PowerPoint, Teams, and OneDrive web apps."
@@ -4502,7 +4971,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-service-ssh-agent"
+   "command": "omarchy-remove-service-ssh-agent",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Disable the gcr-ssh-agent SSH agent and its environment override."
@@ -4525,7 +4996,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-amp"
+   "command": "omarchy-remove-ai-amp",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Amp desktop app along with its configuration and caches."
@@ -4548,7 +5021,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-chatgpt"
+   "command": "omarchy-remove-ai-chatgpt",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the ChatGPT desktop app along with its configuration and caches."
@@ -4571,7 +5046,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-claude"
+   "command": "omarchy-remove-ai-claude",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Claude desktop app along with its configuration and caches."
@@ -4594,7 +5071,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dictation-superwhisper"
+   "command": "omarchy-remove-dictation-superwhisper",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Superwhisper dictation and its desktop integration"
@@ -4617,7 +5096,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dictation-voxtype"
+   "command": "omarchy-remove-dictation-voxtype",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Voxtype dictation and its configuration"
@@ -4640,7 +5121,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-grok-bot"
+   "command": "omarchy-remove-ai-grok-bot",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Grok Bot along with its settings and data."
@@ -4663,7 +5146,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-lm-studio"
+   "command": "omarchy-remove-ai-lm-studio",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove LM Studio along with its configuration and every model it downloaded."
@@ -4686,7 +5171,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-ollama"
+   "command": "omarchy-remove-ai-ollama",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Ollama along with every model it pulled."
@@ -4709,7 +5196,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-openclaw"
+   "command": "omarchy-remove-ai-openclaw",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the OpenClaw agent platform along with its gateway service and web app."
@@ -4732,7 +5221,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-perplexity"
+   "command": "omarchy-remove-ai-perplexity",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Perplexity desktop app along with its runtime caches."
@@ -4755,7 +5246,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-ai-t3-code"
+   "command": "omarchy-remove-ai-t3-code",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove T3 Code along with its configuration and workspaces."
@@ -4778,7 +5271,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-steam"
+   "command": "omarchy-remove-gaming-steam",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Steam and all of its game libraries, configs, and caches."
@@ -4801,7 +5296,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-retroarch"
+   "command": "omarchy-remove-gaming-retroarch",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove RetroArch, all libretro cores, and its config/saves. Leaves ~/Games/roms and ~/Games/bios alone."
@@ -4824,7 +5321,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-minecraft"
+   "command": "omarchy-remove-gaming-minecraft",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Minecraft launcher along with its worlds, mods, and caches."
@@ -4847,7 +5346,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-geforce-now"
+   "command": "omarchy-remove-gaming-geforce-now",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the GeForce NOW Flatpak app and its data."
@@ -4870,7 +5371,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-xbox-cloud"
+   "command": "omarchy-remove-gaming-xbox-cloud",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the Xbox Cloud Gaming web app."
@@ -4885,8 +5388,8 @@
   "integration": "omarchy-wizard",
   "description": "",
   "keywords": [
-   "xbox controllers (\udb80\udcaf)",
-   "remove xbox controllers (\udb80\udcaf)"
+   "xbox controllers (󰂯)",
+   "remove xbox controllers (󰂯)"
   ],
   "sources": [
    "remove.gaming.xbox-controllers",
@@ -4894,7 +5397,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-xbox-controllers"
+   "command": "omarchy-remove-gaming-xbox-controllers",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove the xpadneo Xbox controller driver and undo its module/blacklist config."
@@ -4917,7 +5422,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-battlenet"
+   "command": "omarchy-remove-gaming-battlenet",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Battle.net, its Proton prefix, installed games, and desktop entry."
@@ -4940,7 +5447,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-lutris"
+   "command": "omarchy-remove-gaming-lutris",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Lutris, Wine, umu-launcher, and all their configs and caches."
@@ -4963,7 +5472,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-gaming-heroic"
+   "command": "omarchy-remove-gaming-heroic",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove Heroic Games Launcher and its game libraries, configs, and caches."
@@ -4986,7 +5497,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env ruby"
+   "command": "omarchy-remove-dev-env ruby",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5009,7 +5522,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env go"
+   "command": "omarchy-remove-dev-env go",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5032,7 +5547,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env python"
+   "command": "omarchy-remove-dev-env python",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5055,7 +5572,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env zig"
+   "command": "omarchy-remove-dev-env zig",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5078,7 +5597,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env rust"
+   "command": "omarchy-remove-dev-env rust",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5101,7 +5622,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env java"
+   "command": "omarchy-remove-dev-env java",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5124,7 +5647,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env dotnet"
+   "command": "omarchy-remove-dev-env dotnet",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5147,7 +5672,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env ocaml"
+   "command": "omarchy-remove-dev-env ocaml",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5170,7 +5697,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env clojure"
+   "command": "omarchy-remove-dev-env clojure",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5193,7 +5722,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env scala"
+   "command": "omarchy-remove-dev-env scala",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5216,7 +5747,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env node"
+   "command": "omarchy-remove-dev-env node",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5239,7 +5772,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env bun"
+   "command": "omarchy-remove-dev-env bun",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5262,7 +5797,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env deno"
+   "command": "omarchy-remove-dev-env deno",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5285,7 +5822,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env php"
+   "command": "omarchy-remove-dev-env php",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5308,7 +5847,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env laravel"
+   "command": "omarchy-remove-dev-env laravel",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5331,7 +5872,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env symfony"
+   "command": "omarchy-remove-dev-env symfony",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5354,7 +5897,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env elixir"
+   "command": "omarchy-remove-dev-env elixir",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5377,7 +5922,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-dev-env phoenix"
+   "command": "omarchy-remove-dev-env phoenix",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Remove a development environment that was previously installed via omarchy-install-dev-env."
@@ -5400,7 +5947,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update"
+   "command": "omarchy-update",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -5421,7 +5970,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-theme-update"
+   "command": "omarchy-theme-update",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -5442,7 +5993,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-firmware"
+   "command": "omarchy-update-firmware",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -5465,7 +6018,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-menu-timezone"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -5486,7 +6041,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-time"
+   "command": "omarchy-update-time",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -5507,7 +6064,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-channel-set stable"
+   "command": "omarchy-channel-set stable",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "confirm",
   "confirmText": "Switching the Omarchy package channel changes which versions this computer receives."
@@ -5530,7 +6089,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-channel-set rc"
+   "command": "omarchy-channel-set rc",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "confirm",
   "confirmText": "Switching the Omarchy package channel changes which versions this computer receives."
@@ -5553,7 +6114,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-channel-set edge"
+   "command": "omarchy-channel-set edge",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "confirm",
   "confirmText": "Switching the Omarchy package channel changes which versions this computer receives."
@@ -5576,7 +6139,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-channel-set dev"
+   "command": "omarchy-channel-set dev",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "confirm",
   "confirmText": "Switching the Omarchy package channel changes which versions this computer receives."
@@ -5601,7 +6166,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-restart-hyprsunset"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -5624,7 +6191,9 @@
    "kind": "exec",
    "argv": [
     "omarchy-restart-shell"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -5645,7 +6214,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-hyprland"
+   "command": "omarchy-refresh-hyprland",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrite all the user Hyprland Lua configs in ~/.config/hypr with the Omarchy defaults."
@@ -5668,7 +6239,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-hyprsunset"
+   "command": "omarchy-refresh-hyprsunset",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrite the user config for hyprsunset with the Omarchy default and restart the service."
@@ -5691,7 +6264,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-plymouth"
+   "command": "omarchy-refresh-plymouth",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrite the user config for the Plymouth drive decryption and boot sequence with the Omarchy default and rebuild it."
@@ -5714,7 +6289,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-tmux"
+   "command": "omarchy-refresh-tmux",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrite the user tmux config with the Omarchy default and reload tmux."
@@ -5737,7 +6314,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-shell"
+   "command": "omarchy-refresh-shell",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Reset shell.json to Omarchy defaults"
@@ -5760,7 +6339,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-audio"
+   "command": "omarchy-restart-audio",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -5781,7 +6362,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-wifi"
+   "command": "omarchy-restart-wifi",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -5802,7 +6385,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-bluetooth"
+   "command": "omarchy-restart-bluetooth",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -5823,7 +6408,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-trackpad"
+   "command": "omarchy-restart-trackpad",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -5844,7 +6431,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-drive-password"
+   "command": "omarchy-drive-password",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "icon": "disk"
  },
@@ -5865,7 +6454,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "passwd"
+   "command": "passwd",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "icon": "lock"
  },
@@ -5887,7 +6478,10 @@
   ],
   "launch": {
    "kind": "shell",
-   "command": "background=$(omarchy-theme-bg-switcher); [[ -n $background ]] && omarchy-theme-bg-set \"$background\""
+   "command": "background=$(omarchy-theme-bg-switcher); [[ -n $background ]] && omarchy-theme-bg-set \"$background\"",
+   "nativeSetting": "appearance.background",
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -5913,7 +6507,10 @@
     "theme",
     "bg",
     "next"
-   ]
+   ],
+   "nativeSetting": "appearance.background",
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -5938,7 +6535,9 @@
     "theme",
     "bg",
     "install"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens the current theme background folder for user-supplied image files. Selecting an existing background has the native appearance.background alternative; importing content is a file-manager workflow."
   }
  },
  {
@@ -5962,7 +6561,10 @@
     "bg",
     "intro",
     "toggle"
-   ]
+   ],
+   "nativeSetting": "appearance.background.intros",
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -5984,7 +6586,8 @@
    "kind": "panel",
    "target": "omarchy.image-picker",
    "verb": "summon",
-   "arg": "{\"source\":\"themes\"}"
+   "arg": "{\"source\":\"themes\"}",
+   "nativeSetting": "appearance.theme"
   }
  },
  {
@@ -6004,7 +6607,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-theme-install"
+   "command": "omarchy-theme-install",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -6029,7 +6634,9 @@
   ],
   "launch": {
    "kind": "shell",
-   "command": "unlock=$(omarchy-plymouth-switcher); if [[ $unlock == default ]]; then omarchy-launch-floating-terminal-with-presentation omarchy-plymouth-reset; elif [[ -n $unlock ]]; then omarchy-launch-floating-terminal-with-presentation \"omarchy-plymouth-set-by-theme $(printf %q \"$unlock\")\"; fi"
+   "command": "unlock=$(omarchy-plymouth-switcher); if [[ $unlock == default ]]; then omarchy-launch-floating-terminal-with-presentation omarchy-plymouth-reset; elif [[ -n $unlock ]]; then omarchy-launch-floating-terminal-with-presentation \"omarchy-plymouth-set-by-theme $(printf %q \"$unlock\")\"; fi",
+   "automationStatus": "handoff",
+   "handoffReason": "Hardware recovery, GPU or boot/sleep configuration is a guided system workflow. Its prerequisite, privilege and recovery behavior is owned by the upstream helper; Control does not expose a native plan/write/readback adapter."
   }
  },
  {
@@ -6047,7 +6654,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-plymouth-reset"
+   "command": "omarchy-plymouth-reset",
+   "automationStatus": "handoff",
+   "handoffReason": "Hardware recovery, GPU or boot/sleep configuration is a guided system workflow. Its prerequisite, privilege and recovery behavior is owned by the upstream helper; Control does not expose a native plan/write/readback adapter."
   },
   "confirm": "confirm",
   "confirmText": "Restores the default Omarchy boot and login screens. This needs administrator access."
@@ -6070,7 +6679,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-and-launch Ollama ollama ollama"
+   "command": "omarchy-install-and-launch Ollama ollama ollama",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -6134,7 +6745,9 @@
     "omarchy",
     "restart",
     "xcompose"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -6160,7 +6773,9 @@
     "menu",
     "summon",
     "update.kernel"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -6184,7 +6799,9 @@
    "argv": [
     "hyprpicker",
     "-a"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "requiresCommands": [
    "hyprpicker"
@@ -6239,7 +6856,9 @@
     "omarchy-shell",
     "omarchy.dock",
     "apps"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -6260,7 +6879,10 @@
     "menu",
     "summon",
     "appearance.font"
-   ]
+   ],
+   "nativeSetting": "appearance.font",
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -6286,7 +6908,12 @@
     "omarchy",
     "menu",
     "plugin"
-   ]
+   ],
+   "nativeOperations": [
+    "plugins.inspect"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -6334,7 +6961,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "nmtui"
+   "command": "nmtui",
+   "automationStatus": "handoff",
+   "handoffReason": "Connection enrollment, authentication and captive-portal interaction belong to the network panel or browser. Discover saved connections and use supported protected previews through the native network operations; secrets are not CLI arguments."
   },
   "requiresCommands": [
    "nmtui"
@@ -6365,7 +6994,9 @@
     "network",
     "captive",
     "portal"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Connection enrollment, authentication and captive-portal interaction belong to the network panel or browser. Discover saved connections and use supported protected previews through the native network operations; secrets are not CLI arguments."
   },
   "icon": "lock"
  },
@@ -6415,7 +7046,9 @@
     "omarchy",
     "tailscale",
     "send"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "requiresCommands": [
    "tailscale"
@@ -6442,7 +7075,9 @@
     "omarchy",
     "tailscale",
     "receive"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "requiresCommands": [
    "tailscale"
@@ -6468,7 +7103,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-service-sunshine"
+   "command": "omarchy-install-service-sunshine",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "group": "Sunshine",
   "icon": "gamepad"
@@ -6488,7 +7125,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-remove-service-sunshine"
+   "command": "omarchy-remove-service-sunshine",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Removes Sunshine and closes the streaming ports Omarchy opened.",
@@ -6538,7 +7177,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-audio-tuning status; omarchy-show-done"
+   "command": "omarchy-audio-tuning status; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "This destination reports hardware-specific speaker tuning. Changing tuning installs/removes PipeWire and user-service configuration tied to model detection; that maintenance is outside the native volume/routing adapter and has no Control write/readback contract."
   },
   "icon": "sliders"
  },
@@ -6560,7 +7201,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-audio"
+   "command": "omarchy-restart-audio",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   },
   "icon": "refresh"
  },
@@ -6606,7 +7249,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-bluetooth"
+   "command": "omarchy-restart-bluetooth",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   },
   "requiresHardware": [
    "bluetooth"
@@ -6658,7 +7303,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-camera"
+   "command": "omarchy-install-camera",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "requiresHardware": [
    "snapdragon"
@@ -6713,7 +7360,9 @@
     "recover",
     "internal",
     "monitor"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Hardware recovery, GPU or boot/sleep configuration is a guided system workflow. Its prerequisite, privilege and recovery behavior is owned by the upstream helper; Control does not expose a native plan/write/readback adapter."
   },
   "requiresHardware": [
    "internaldisplay",
@@ -6768,7 +7417,12 @@
     "omarchy-shell",
     "omarchy.power",
     "togglePercentage"
-   ]
+   ],
+   "nativeOperations": [
+    "widgets.option"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   },
   "requiresHardware": [
    "battery"
@@ -6794,7 +7448,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-hibernation-setup"
+   "command": "omarchy-hibernation-setup",
+   "automationStatus": "handoff",
+   "handoffReason": "Hardware recovery, GPU or boot/sleep configuration is a guided system workflow. Its prerequisite, privilege and recovery behavior is owned by the upstream helper; Control does not expose a native plan/write/readback adapter."
   },
   "confirm": "confirm",
   "confirmText": "Changes swap and boot settings for the whole system.",
@@ -6815,7 +7471,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-hibernation-remove"
+   "command": "omarchy-hibernation-remove",
+   "automationStatus": "handoff",
+   "handoffReason": "Hardware recovery, GPU or boot/sleep configuration is a guided system workflow. Its prerequisite, privilege and recovery behavior is owned by the upstream helper; Control does not expose a native plan/write/readback adapter."
   },
   "confirm": "destructive",
   "confirmText": "Removes the hibernation swap and boot resume settings.",
@@ -6844,7 +7502,9 @@
     "brightness",
     "keyboard",
     "cycle"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Cycles the first supported keyboard LED through hardware brightness steps. The upstream helper has relative/off/restore actions, not an absolute persisted preference; Control exposes this static hardware action and does not verify LED output."
   },
   "requiresHardware": [
    "kbdbacklight"
@@ -6866,7 +7526,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-restart-trackpad"
+   "command": "omarchy-restart-trackpad",
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   },
   "requiresHardware": [
    "touchpad"
@@ -6895,7 +7557,9 @@
     "omarchy",
     "menu",
     "keybindings"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -7022,7 +7686,9 @@
     "omarchy",
     "voxtype",
     "config"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens the owning application configuration interface. Voxtype may restart the shell; calendar settings may include account/service setup. Control does not infer an application-specific schema or accept account secrets."
   },
   "requiresCommands": [
    "voxtype"
@@ -7048,7 +7714,9 @@
     "omarchy",
     "voxtype",
     "model"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens the owning application configuration interface. Voxtype may restart the shell; calendar settings may include account/service setup. Control does not infer an application-specific schema or accept account secrets."
   },
   "requiresCommands": [
    "voxtype"
@@ -7070,7 +7738,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dictation-superwhisper"
+   "command": "omarchy-install-dictation-superwhisper",
+   "automationStatus": "handoff",
+   "handoffReason": "Installs and configures a dictation backend through its terminal workflow. Native input.dictation settings apply only after a supported backend is available; installation is a separate, unverified handoff."
   },
   "group": "Superwhisper"
  },
@@ -7089,7 +7759,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-dictation-voxtype"
+   "command": "omarchy-install-dictation-voxtype",
+   "automationStatus": "handoff",
+   "handoffReason": "Installs and configures a dictation backend through its terminal workflow. Native input.dictation settings apply only after a supported backend is available; installation is a separate, unverified handoff."
   },
   "group": "Voxtype"
  },
@@ -7126,13 +7798,24 @@
   "domain": "C13",
   "integration": "omarchy-wizard",
   "description": "Lists programs whose crash notifications are silenced.",
-  "keywords": [],
+  "keywords": [
+   "mute crashes",
+   "mute crash notifications",
+   "silence crashes",
+   "program crash",
+   "unmute crash notifications"
+  ],
   "sources": [
    "omarchy crash mute"
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-crash-mute; omarchy-show-done"
+   "command": "omarchy-crash-mute; omarchy-show-done",
+   "nativeOperations": [
+    "preferences.crash-mutes"
+   ],
+   "automationStatus": "native-alternative",
+   "handoffReason": "Use the advertised native alternative for parameterized planning and scoped readback. The original static launch is preserved for existing callers and does not verify its effects."
   }
  },
  {
@@ -7156,7 +7839,9 @@
     "omarchy",
     "agent",
     "crash"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Launches account-backed agent analysis or usage reporting. This may perform model/network work; it is outside the native machine-setting contract and is not verified by launch acceptance."
   }
  },
  {
@@ -7177,7 +7862,9 @@
    "argv": [
     "omarchy-menu-share",
     "file"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "group": "LocalSend",
   "icon": "network"
@@ -7203,7 +7890,9 @@
    "argv": [
     "omarchy",
     "calendar"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens the owning application configuration interface. Voxtype may restart the shell; calendar settings may include account/service setup. Control does not infer an application-specific schema or accept account secrets."
   }
  },
  {
@@ -7227,7 +7916,9 @@
    "argv": [
     "omarchy-notes",
     "--quick-note"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "requiresCommands": [
    "omarchy-notes"
@@ -7254,7 +7945,9 @@
     "omarchy",
     "notification",
     "weather"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   },
   "requiresCaps": [
    "shell"
@@ -7275,7 +7968,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-transcode-ascii"
+   "command": "omarchy-transcode-ascii",
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -7298,7 +7993,9 @@
     "capture",
     "webcam",
     "resize"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Runs a desktop productivity or content task, often with a picker or active application. Control exposes this destination, not a parameterized capture, sharing or content-processing API."
   }
  },
  {
@@ -7324,7 +8021,9 @@
    "argv": [
     "omarchy",
     "agent"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -7347,7 +8046,9 @@
     "agent",
     "usage",
     "update"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Launches account-backed agent analysis or usage reporting. This may perform model/network work; it is outside the native machine-setting contract and is not verified by launch acceptance."
   }
  },
  {
@@ -7370,7 +8071,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-add"
+   "command": "omarchy-agent-account-add",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   }
  },
  {
@@ -7393,7 +8096,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-list; omarchy-show-done"
+   "command": "omarchy-agent-account-list; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   }
  },
  {
@@ -7416,7 +8121,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-use"
+   "command": "omarchy-agent-account-use",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   }
  },
  {
@@ -7439,7 +8146,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-mode"
+   "command": "omarchy-agent-account-mode",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   }
  },
  {
@@ -7462,7 +8171,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-rename"
+   "command": "omarchy-agent-account-rename",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   }
  },
  {
@@ -7485,7 +8196,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-copy"
+   "command": "omarchy-agent-account-copy",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   }
  },
  {
@@ -7508,7 +8221,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-agent-account-remove"
+   "command": "omarchy-agent-account-remove",
+   "automationStatus": "handoff",
+   "handoffReason": "Agent account lifecycle and rotation policy are owned by the account tools. Some helpers accept noninteractive parameters, but Control has no account/credential schema or verified account-management adapter."
   },
   "confirm": "destructive",
   "confirmText": "Forgets the account login on this computer."
@@ -7529,7 +8244,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-openclaw-onboard"
+   "command": "omarchy-openclaw-onboard",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "requiresCommands": [
    "openclaw"
@@ -7550,7 +8267,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-hermes-cli"
+   "command": "omarchy-install-hermes-cli",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7568,7 +8287,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-openclaw-cli"
+   "command": "omarchy-install-openclaw-cli",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7586,7 +8307,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-chromium-claude"
+   "command": "omarchy-install-chromium-claude",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7604,7 +8327,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-chromium-copy-url"
+   "command": "omarchy-install-chromium-copy-url",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7622,7 +8347,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-chromium-ytdlp"
+   "command": "omarchy-install-chromium-ytdlp",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7640,7 +8367,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-video-decode"
+   "command": "omarchy-install-video-decode",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "requiresHardware": [
    "snapdragon"
@@ -7665,7 +8394,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-gaming-gpu-lib32"
+   "command": "omarchy-install-gaming-gpu-lib32",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7684,7 +8415,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-games-retro-cores; omarchy-show-done"
+   "command": "omarchy-games-retro-cores; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "requiresCommands": [
    "retroarch"
@@ -7708,7 +8441,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-nvim-setup"
+   "command": "omarchy-nvim-setup",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -7728,7 +8463,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "read -r -p \"Tool: \" t; omarchy-mise-install \"$t\""
+   "command": "read -r -p \"Tool: \" t; omarchy-mise-install \"$t\"",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "requiresCommands": [
    "mise"
@@ -7754,7 +8491,9 @@
     "launch",
     "terminal",
     "herdr"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   },
   "requiresCommands": [
    "herdr"
@@ -7780,7 +8519,9 @@
     "launch",
     "terminal",
     "tmux"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   },
   "requiresCommands": [
    "tmux"
@@ -7804,7 +8545,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-windows-vm status; omarchy-show-done"
+   "command": "omarchy-windows-vm status; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   }
  },
  {
@@ -7823,7 +8566,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-hook-install --help; omarchy-show-done"
+   "command": "omarchy-hook-install --help; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   }
  },
  {
@@ -7841,7 +8586,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-plugin-update"
+   "command": "omarchy-plugin-update",
+   "automationStatus": "handoff",
+   "handoffReason": "Installs or updates external Git plugin code and may enable it. These helpers accept noninteractive arguments, but repository trust, whole-tree updates and their recovery are outside the native built-in clone/remove adapter. Use the concrete guided workflow; a launch is unverified."
   }
  },
  {
@@ -7859,7 +8606,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "read -r -p \"Plugin folder: \" p; omarchy-plugin-validate \"$p\"; omarchy-show-done"
+   "command": "read -r -p \"Plugin folder: \" p; omarchy-plugin-validate \"$p\"; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Read-only validation of a selected local plugin folder. The helper accepts a folder argument; this catalog destination prompts for it. It is not a native plugin-code installation or execution contract."
   }
  },
  {
@@ -7893,7 +8642,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-available; omarchy-show-done"
+   "command": "omarchy-update-available; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -7911,7 +8662,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-aur-pkgs"
+   "command": "omarchy-update-aur-pkgs",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -7929,7 +8682,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-mise"
+   "command": "omarchy-update-mise",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "requiresCommands": [
    "mise"
@@ -7952,7 +8707,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-orphan-pkgs"
+   "command": "omarchy-update-orphan-pkgs",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -7972,7 +8729,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-update-pkg-prune"
+   "command": "omarchy-update-pkg-prune",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -7993,7 +8752,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-snapshot create"
+   "command": "omarchy-snapshot create",
+   "automationStatus": "handoff",
+   "handoffReason": "Snapshot lifecycle and filesystem restoration are consequential system administration workflows. The upstream helper owns selection, privilege and recovery; static launch acceptance does not verify a completed snapshot or restore."
   },
   "requiresCommands": [
    "snapper"
@@ -8012,7 +8773,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-snapshot restore"
+   "command": "omarchy-snapshot restore",
+   "automationStatus": "handoff",
+   "handoffReason": "Snapshot lifecycle and filesystem restoration are consequential system administration workflows. The upstream helper owns selection, privilege and recovery; static launch acceptance does not verify a completed snapshot or restore."
   },
   "requiresCommands": [
    "limine-snapper-restore"
@@ -8091,7 +8854,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-drive-info; omarchy-show-done"
+   "command": "omarchy-drive-info; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an upstream diagnostic/status report, possibly requiring privileges. Use native system facts or diagnostics operations when advertised; this static terminal report does not establish a settings change."
   }
  },
  {
@@ -8115,7 +8880,9 @@
     "launch",
     "tui",
     "btop"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an app, reference or session interface. The static launch is the supported action; it does not change or verify a persistent preference."
   }
  },
  {
@@ -8133,7 +8900,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-kernel list; omarchy-show-done"
+   "command": "omarchy-kernel list; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   }
  },
  {
@@ -8151,7 +8920,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-n1x-probe"
+   "command": "omarchy-n1x-probe",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "requiresHardware": [
    "n1x"
@@ -8172,7 +8943,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-applications"
+   "command": "omarchy-refresh-applications",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   }
  },
  {
@@ -8190,7 +8963,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-chromium"
+   "command": "omarchy-refresh-chromium",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrites ~/.config/chromium-flags.conf with Omarchy defaults."
@@ -8210,7 +8985,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-herdr"
+   "command": "omarchy-refresh-herdr",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrites the Herdr config with the Omarchy default and reloads it."
@@ -8230,7 +9007,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-limine"
+   "command": "omarchy-refresh-limine",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrites the Limine bootloader config and rebuilds it."
@@ -8250,7 +9029,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-pacman"
+   "command": "omarchy-refresh-pacman",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Overwrites the /etc/pacman config with Omarchy defaults."
@@ -8270,7 +9051,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-refresh-sddm"
+   "command": "omarchy-refresh-sddm",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "destructive",
   "confirmText": "Restores the SDDM theme from the default."
@@ -8290,7 +9073,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "read -r -p \"Config path under ~/.config: \" c; omarchy-refresh-config \"$c\"; omarchy-show-done"
+   "command": "read -r -p \"Config path under ~/.config: \" c; omarchy-refresh-config \"$c\"; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "System, repository, firmware, package or configuration maintenance remains a guided workflow. It may accept noninteractive arguments and may replace files or require privilege; a static launch does not verify all of its effects."
   },
   "confirm": "confirm",
   "confirmText": "Omarchy keeps a backup of the file it replaces."
@@ -8310,7 +9095,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-reinstall"
+   "command": "omarchy-reinstall",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "confirm": "destructive",
   "confirmText": "Reinstalls Omarchy packages and resets default configs."
@@ -8330,7 +9117,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-reinstall-configs"
+   "command": "omarchy-reinstall-configs",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "confirm": "destructive",
   "confirmText": "Resets Omarchy user configs and shipped defaults in your home folder."
@@ -8350,7 +9139,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-reinstall-pkgs"
+   "command": "omarchy-reinstall-pkgs",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "confirm": "destructive",
   "confirmText": "Reinstalls all default Omarchy packages."
@@ -8370,7 +9161,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-upgrade-to-quattro"
+   "command": "omarchy-upgrade-to-quattro",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   },
   "confirm": "confirm",
   "confirmText": "This migration is for older Omarchy installs. Current package installs do not need it."
@@ -8394,7 +9187,9 @@
     "omarchy",
     "restart",
     "hyprctl"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   },
   "requiresCaps": [
    "hyprland"
@@ -8424,7 +9219,9 @@
     "omarchy",
     "restart",
     "terminal"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -8443,7 +9240,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-tui-remove-all; omarchy-webapp-remove-all"
+   "command": "omarchy-tui-remove-all; omarchy-webapp-remove-all",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   },
   "confirm": "destructive",
   "confirmText": "Removes every TUI and web app launcher Omarchy installed."
@@ -8470,7 +9269,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-pkg-install"
+   "command": "omarchy-pkg-install",
+   "automationStatus": "handoff",
+   "handoffReason": "Package, resource or application installation/removal is a guided lifecycle workflow. Some helpers accept noninteractive parameters; Control exposes this static destination without claiming a native package/resource plan, rollback or verified end-to-end completion."
   }
  },
  {
@@ -8488,7 +9289,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-install-docker-dbs"
+   "command": "omarchy-install-docker-dbs",
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   }
  },
  {
@@ -8531,7 +9334,9 @@
     "menu",
     "summon",
     "setup.language"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Guided installation, system maintenance or application setup. Some underlying helpers accept parameters; Control exposes the reviewed static destination, not an arbitrary administration interface or verified completion of the whole workflow."
   }
  },
  {
@@ -8577,7 +9382,9 @@
   ],
   "launch": {
    "kind": "terminal",
-   "command": "omarchy-debug --no-sudo --print; omarchy-show-done"
+   "command": "omarchy-debug --no-sudo --print; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an upstream diagnostic/status report, possibly requiring privileges. Use native system facts or diagnostics operations when advertised; this static terminal report does not establish a settings change."
   }
  },
  {
@@ -8600,7 +9407,9 @@
     "omarchy",
     "restart",
     "shell"
-   ]
+   ],
+   "automationStatus": "handoff",
+   "handoffReason": "Restarts or repairs a desktop process/device service. Native service operations cover concrete discovered service units; this broader helper workflow retains its own sequencing and unverified outcome."
   }
  },
  {
@@ -8620,7 +9429,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "sudo ufw status verbose; omarchy-show-done"
+   "command": "sudo ufw status verbose; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Opens an upstream diagnostic/status report, possibly requiring privileges. Use native system facts or diagnostics operations when advertised; this static terminal report does not establish a settings change."
   },
   "requiresCommands": [
    "ufw"
@@ -8644,7 +9455,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "sudo ufw enable; omarchy-show-done"
+   "command": "sudo ufw enable; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Firewall administration belongs to the privileged terminal workflow. Rules may be parameterized upstream, but Control has no structured rule snapshot/recovery adapter and never supplies sudo credentials."
   },
   "requiresCommands": [
    "ufw"
@@ -8667,7 +9480,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "sudo ufw disable; omarchy-show-done"
+   "command": "sudo ufw disable; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Firewall administration belongs to the privileged terminal workflow. Rules may be parameterized upstream, but Control has no structured rule snapshot/recovery adapter and never supplies sudo credentials."
   },
   "requiresCommands": [
    "ufw"
@@ -8693,7 +9508,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "read -r -p \"Port to allow, such as 8080/tcp: \" p; [ -n \"$p\" ] && sudo ufw allow -- \"$p\"; omarchy-show-done"
+   "command": "read -r -p \"Port to allow, such as 8080/tcp: \" p; [ -n \"$p\" ] && sudo ufw allow -- \"$p\"; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Firewall administration belongs to the privileged terminal workflow. Rules may be parameterized upstream, but Control has no structured rule snapshot/recovery adapter and never supplies sudo credentials."
   },
   "requiresCommands": [
    "ufw"
@@ -8717,7 +9534,9 @@
   "sources": [],
   "launch": {
    "kind": "terminal",
-   "command": "sudo ufw status numbered; read -r -p \"Rule number to remove: \" n; [ -n \"$n\" ] && sudo ufw delete -- \"$n\"; omarchy-show-done"
+   "command": "sudo ufw status numbered; read -r -p \"Rule number to remove: \" n; [ -n \"$n\" ] && sudo ufw delete -- \"$n\"; omarchy-show-done",
+   "automationStatus": "handoff",
+   "handoffReason": "Firewall administration belongs to the privileged terminal workflow. Rules may be parameterized upstream, but Control has no structured rule snapshot/recovery adapter and never supplies sudo credentials."
   },
   "requiresCommands": [
    "ufw"

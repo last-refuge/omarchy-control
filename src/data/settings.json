@@ -126,6 +126,64 @@
   }
  },
  {
+  "id": "appearance.background.intros",
+  "page": "appearance",
+  "section": "Theme",
+  "label": "Background introductions",
+  "type": "toggle",
+  "domain": "C01",
+  "integration": "native",
+  "description": "Play background introductions when Omarchy changes the background.",
+  "keywords": [
+   "background intro",
+   "wallpaper intro",
+   "video intro"
+  ],
+  "sources": [
+   "omarchy theme bg intro",
+   "appearance.background.intro"
+  ],
+  "read": {
+   "kind": "exists",
+   "file": "~/.local/state/omarchy/toggles/background-intros-off",
+   "invert": true
+  },
+  "write": {
+   "kind": "cmd",
+   "argv": [
+    "omarchy",
+    "theme",
+    "bg",
+    "intro",
+    "{value}"
+   ],
+   "map": {
+    "true": "enable",
+    "false": "disable"
+   },
+   "guard": "empty-flag",
+   "skipUnchanged": true
+  },
+  "files": [
+   "~/.local/state/omarchy/toggles/background-intros-off"
+  ],
+  "recovery": "best-effort",
+  "scope": "per-user",
+  "effects": [
+   "Changes the background-intros-off preference marker.",
+   "Sends an Omarchy notification; successful preference readback does not prove an introduction played.",
+   "Unconfirmed writes preserve the current marker and backups for review; committed changes support guarded undo."
+  ],
+  "profile": {
+   "portability": "portable",
+   "category": "appearance",
+   "stock": "true"
+  },
+  "requiresCommands": [
+   "omarchy-theme-bg-intro"
+  ]
+ },
+ {
   "id": "appearance.icons",
   "page": "appearance",
   "section": "Icons",
@@ -1831,12 +1889,12 @@
   },
   "choices": [
    {
-    "value": "HH\n\u2014\nmm",
-    "label": "14 \u2014 30"
+    "value": "HH\n—\nmm",
+    "label": "14 — 30"
    },
    {
-    "value": "h\n\u2014\nmm\nAP",
-    "label": "2 \u2014 30 PM"
+    "value": "h\n—\nmm\nAP",
+    "label": "2 — 30 PM"
    },
    {
     "value": "dd\nMMM\n'W'ww\n''yy",

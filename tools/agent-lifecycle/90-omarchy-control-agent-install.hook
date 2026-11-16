@@ -1,0 +1,10 @@
+[Trigger]
+Operation=Install
+Operation=Upgrade
+Type=Package
+Target=omarchy-control
+
+[Action]
+Description=Notify running user managers about Omarchy Control skills
+When=PostTransaction
+Exec=/usr/lib/omarchy-control/agent-integration/session-notify install

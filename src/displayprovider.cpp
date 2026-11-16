@@ -1,4 +1,9 @@
 #include "displayprovider.h"
+#include "displaypreview.h"
+#include "networkpreview.h"
+#include <QElapsedTimer>
+#include <unistd.h>
+#include <sys/stat.h>
 
 #include <QDir>
 #include <QEventLoop>
@@ -8,6 +13,7 @@
 #include <QJsonDocument>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSet>
 #include <QThread>
 #include <QUuid>
 #include <algorithm>
@@ -31,7 +37,8 @@ bool DisplayProvider::isSafeOutputName(const QString &name) {
     // The output name is written into Lua that Hyprland evaluates, and EDID
     // data can influence it, so only plain connector names may pass.
     static const QRegularExpression safe("^[A-Za-z0-9._-]+$");
-    return safe.match(name).hasMatch();
+    const auto match = safe.match(name);
+    return !name.isEmpty() && name.size() <= 128 && match.hasMatch() && match.capturedLength() == name.size();
 }
 
 double DisplayProvider::cleanScale(double requested, int width, int height) {
@@ -94,6 +101,8 @@ QVariantList DisplayProvider::parseMonitors(const QByteArray &json) {
         row["model"] = m.value("model").toString();
         row["width"] = m.value("width").toInt();
         row["height"] = m.value("height").toInt();
+        row["id"] = m.value("id").toVariant();
+        row["serial"] = m.value("serial").toString();
         row["refresh"] = m.value("refreshRate").toDouble();
         row["x"] = m.value("x").toInt();
         row["y"] = m.value("y").toInt();
@@ -114,6 +123,43 @@ QVariantList DisplayProvider::parseMonitors(const QByteArray &json) {
     return rows;
 }
 
+bool DisplayProvider::decodeMonitors(const QByteArray &bytes, QVariantList *rows, QString *error) {
+    auto fail = [&](const QString &text) { if (error) *error = text; rows->clear(); return false; };
+    if (bytes.size() > 1024 * 1024 || QString::fromUtf8(bytes).toUtf8() != bytes) return fail("Display data is oversized or invalid UTF-8.");
+    QJsonParseError parsed; const auto doc = QJsonDocument::fromJson(bytes, &parsed);
+    if (parsed.error != QJsonParseError::NoError || !doc.isArray() || doc.array().size() > 64) return fail("Hyprland did not return a bounded output array.");
+    QSet<QString> names;
+    auto integer = [](const QJsonValue &v, int low, int high) { const double n = v.toDouble(qQNaN()); return v.isDouble() && std::isfinite(n) && std::floor(n) == n && n >= low && n <= high; };
+    for (const auto &value : doc.array()) {
+        if (!value.isObject()) return fail("Hyprland returned a non-object output.");
+        const auto m = value.toObject(); const auto name = m.value("name").toString();
+        if (!isSafeOutputName(name) || name.size() > 128 || names.contains(name)) return fail("Hyprland returned an invalid or duplicate output identity.");
+        names.insert(name);
+        const bool enabled = !m.value("disabled").toBool();
+        if ((!m.value("disabled").isUndefined() && !m.value("disabled").isBool())
+            || !integer(m.value("width"), enabled ? 1 : 0, 32768) || !integer(m.value("height"), enabled ? 1 : 0, 32768)
+            || !integer(m.value("x"), -131072, 131072) || !integer(m.value("y"), -131072, 131072)
+            || !integer(m.value("transform"), 0, 7) || !m.value("scale").isDouble() || !std::isfinite(m.value("scale").toDouble())
+            || (enabled && (m.value("scale").toDouble() < .25 || m.value("scale").toDouble() > 8))
+            || !m.value("refreshRate").isDouble() || !std::isfinite(m.value("refreshRate").toDouble()) || m.value("refreshRate").toDouble() < 0 || m.value("refreshRate").toDouble() > 1000)
+            return fail("Hyprland returned invalid or incomplete output geometry.");
+        if (!m.value("availableModes").isUndefined()) {
+            if (!m.value("availableModes").isArray() || m.value("availableModes").toArray().size() > 512) return fail("Hyprland returned an invalid mode list.");
+            for (const auto &mode : m.value("availableModes").toArray())
+                if (!mode.isString() || mode.toString().size() > 64 || !QRegularExpression("^[0-9]+x[0-9]+@[0-9]+(?:\\.[0-9]+)?(?:Hz)?$").match(mode.toString()).hasMatch()) return fail("Hyprland returned an invalid mode.");
+        }
+    }
+    *rows = parseMonitors(bytes); return true;
+}
+
+QVariantMap DisplayProvider::snapshot() const {
+    return {{"complete", m_status == "ok" && m_versionStatus == "ok"}, {"monitorsStatus", m_status}, {"monitorsError", m_monitorError},
+        {"versionStatus", m_versionStatus}, {"versionError", m_versionError}, {"monitors", m_status == "ok" ? QVariant(m_monitors) : QVariant()},
+        {"hyprlandVersion", m_versionStatus == "ok" ? QVariant(m_hyprlandVersion) : QVariant()}, {"recoveryCheck", lastCheck()},
+        {"editingUnlocked", editingUnlocked()}, {"savedLayout", m_savedLayout}, {"generation", m_refreshGeneration},
+        {"verificationScope", "Hyprland-reported-output-state"}, {"physicalAppearanceVerified", false}};
+}
+
 QString DisplayProvider::monitorLua(const QJsonObject &m) {
     const QString output = m.value("output").toString();
     if (m.value("disabled").toBool())
@@ -129,17 +175,30 @@ QString DisplayProvider::monitorLua(const QJsonObject &m) {
     return lua + " })";
 }
 
-DisplayProvider::DisplayProvider(CommandRunner *runner, ChangeCoordinator *coordinator, QObject *parent)
+DisplayProvider::DisplayProvider(CommandRunner *runner, ChangeCoordinator *coordinator, QObject *parent, bool collectHistory)
     : QObject(parent), m_runner(runner), m_coordinator(coordinator) {
     m_countdown.setInterval(1000);
     connect(&m_countdown, &QTimer::timeout, this, [this] {
-        --m_previewSeconds;
+        if (!m_previewToken.isEmpty()) {
+            const auto receipt = previewReceipt();
+            if (receipt.isEmpty()) { m_countdown.stop(); m_starting = false; m_previewing = true; emit previewChanged(); return; }
+            m_receipt = receipt;
+            if (DisplayPreview::terminal(receipt)) {
+                m_countdown.stop(); m_starting = false; m_previewing = false; emit previewChanged();
+                if (receipt.value("phase") == "reverted") endPreview("timeout"); else refresh();
+                return;
+            }
+            m_starting = receipt.value("phase") == "arming" || receipt.value("phase") == "applying";
+            m_previewing = !m_starting;
+            m_previewSeconds = std::max(0, int((receipt.value("deadline").toDouble() - QDateTime::currentMSecsSinceEpoch() + 999) / 1000));
+            if (receipt.value("phase") != "preview") { if (receipt.value("phase") == "restore_failed") m_countdown.stop(); emit previewChanged(); return; }
+        } else --m_previewSeconds;
         emit previewChanged();
         if (m_previewSeconds > 0)
             return;
         m_countdown.stop();
         // The watchdog owns the timeout; here we only wait to hear it finish.
-        waitForWatchdog(m_resultFile, "restored", 80, [this](bool restored) {
+        waitForWatchdog(m_resultFile, "restored", m_previewToken.isEmpty() ? 80 : 400, [this](bool restored) {
             m_previewing = false;
             emit previewChanged();
             if (m_isCheck) {
@@ -150,7 +209,7 @@ DisplayProvider::DisplayProvider(CommandRunner *runner, ChangeCoordinator *coord
             endPreview(restored ? "timeout" : "unconfirmed");
         });
     });
-    collectInterrupted();
+    if (collectHistory) collectInterrupted();
 }
 
 void DisplayProvider::collectInterrupted() {
@@ -158,6 +217,7 @@ void DisplayProvider::collectInterrupted() {
     // verdict behind. The plan file is gone once a watchdog is done with it.
     const QDir dir(runDirectory());
     for (const auto &info : dir.entryInfoList({"display-*.result"}, QDir::Files)) {
+        if (info.fileName().startsWith("display-dp-")) continue; // Durable receipts retain their results until pruning.
         if (QFileInfo::exists(info.absolutePath() + "/" + info.completeBaseName() + ".json"))
             continue;
         QByteArray result;
@@ -429,11 +489,41 @@ QString DisplayProvider::runDirectory() const {
     return m_runner->env().runtimeDir + "/omarchy-control";
 }
 
+bool DisplayProvider::previewCanKeep() const {
+    const auto receipt = previewReceipt();
+    return m_previewing && receipt.value("phase") == "preview" && receipt.value("deadline").toDouble() > QDateTime::currentMSecsSinceEpoch();
+}
+
+QJsonObject DisplayProvider::previewReceipt() const {
+    if (m_previewToken.isEmpty()) return {};
+    return DisplayPreview::load(m_runner->env(), m_previewToken);
+}
+
+bool DisplayProvider::adoptPreview(const QString &token, QString *error) {
+    const auto receipt = DisplayPreview::load(m_runner->env(), token, error);
+    if (receipt.isEmpty()) return false;
+    if (!DisplayPreview::sameSession(m_runner->env(), receipt)) { if (error) *error = "The preview belongs to another Hyprland session."; return false; }
+    if (DisplayPreview::terminal(receipt)) { if (error) *error = "The display preview has already ended."; return false; }
+    m_previewToken = token; m_receipt = receipt;
+    const QString base = DisplayPreview::runtimeBase(m_runner->env(), token);
+    m_planPath = base + ".json"; m_keepFile = base + ".keep"; m_revertFile = base + ".revert"; m_resultFile = base + ".result";
+    m_pendingLayout = receipt.value("layout").toArray().toVariantList();
+    m_previewOriginal = signatureOf(receipt.value("original").toArray().toVariantList());
+    m_startFingerprints.clear(); const auto fingerprints = receipt.value("fingerprints").toObject();
+    for (auto it = fingerprints.begin(); it != fingerprints.end(); ++it) m_startFingerprints.insert(it.key(), it.value().toString());
+    m_isCheck = false; m_starting = receipt.value("phase") == "arming" || receipt.value("phase") == "applying"; m_previewing = !m_starting;
+    m_previewSeconds = std::max(0, int((receipt.value("deadline").toDouble() - QDateTime::currentMSecsSinceEpoch() + 999) / 1000));
+    m_previewTotal = PreviewSeconds;
+    if (receipt.value("phase") != "restore_failed") m_countdown.start();
+    emit previewChanged(); return true;
+}
+
 QString DisplayProvider::recoveryCheckPath() const {
     return m_runner->env().appStateDir + "/display-recovery-check.json";
 }
 
 bool DisplayProvider::editingUnlocked() const {
+    if (m_status != QLatin1String("ok") || m_versionStatus != QLatin1String("ok")) return false;
     QByteArray contents;
     if (!FileOps::readFile(recoveryCheckPath(), &contents))
         return false;
@@ -443,34 +533,72 @@ bool DisplayProvider::editingUnlocked() const {
 
 void DisplayProvider::refresh() {
     const Env &env = m_runner->env();
-    m_runner->run(env.hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this](const CommandResult &result) {
-        if (!result.ok()) {
+    const int generation = ++m_refreshGeneration;
+    m_refreshPending = 2;
+    m_status = "loading"; m_versionStatus = "loading"; m_monitorError.clear(); m_versionError.clear();
+    auto complete = [this, generation] {
+        if (generation != m_refreshGeneration || --m_refreshPending != 0) return;
+        if (!m_previewLock && m_status == "ok" && m_versionStatus == "ok") {
+            const auto receipt = DisplayPreview::current(m_runner->env());
+            if (!receipt.isEmpty() && !DisplayPreview::terminal(receipt)) adoptPreview(receipt.value("token").toString());
+            else if (!m_previewToken.isEmpty()) { m_starting = false; m_previewing = false; m_countdown.stop(); emit previewChanged(); }
+        }
+        emit refreshed();
+    };
+    CommandOptions options{3000}; options.maxOutputBytes = 1024 * 1024;
+    m_runner->run(env.hyprctl({"-j", "monitors", "all"}), options, this, [this, generation, complete](const CommandResult &result) {
+        if (generation != m_refreshGeneration) return;
+        QVariantList rows;
+        if (!result.ok() || result.truncated || !decodeMonitors(result.out, &rows, &m_monitorError)) {
             m_status = "unavailable";
+            if (m_monitorError.isEmpty()) m_monitorError = "The output read failed or exceeded its limit.";
             emit changed();
+            complete();
             return;
         }
         HyprModule module(m_runner->env());
         m_savedLayout = module.load() && !module.monitors().isEmpty();
-        setMonitors(parseMonitors(result.out));
+        setMonitors(rows);
         m_status = "ok";
         emit changed();
+        complete();
     });
-    m_runner->run(env.hyprctl({"-j", "version"}), CommandOptions{3000}, this, [this](const CommandResult &result) {
-        const QString version = QJsonDocument::fromJson(result.out).object().value("version").toString();
-        if (version != m_hyprlandVersion) {
-            m_hyprlandVersion = version;
+    m_runner->run(env.hyprctl({"-j", "version"}), options, this, [this, generation, complete](const CommandResult &result) {
+        if (generation != m_refreshGeneration) return;
+        QJsonParseError error; const auto doc = QJsonDocument::fromJson(result.out, &error);
+        const QString version = doc.object().value("version").toString();
+        m_versionStatus = result.ok() && !result.truncated && error.error == QJsonParseError::NoError && !version.isEmpty() && version.size() < 256 ? "ok" : "unavailable";
+        if (m_versionStatus != "ok") m_versionError = "The Hyprland version could not be read.";
+        const QString trusted = m_versionStatus == "ok" ? version : QString();
+        if (trusted != m_hyprlandVersion) {
+            m_hyprlandVersion = trusted;
             emit changed();
         }
+        complete();
     });
 }
 
 QString DisplayProvider::validateLayout(const QVariantList &layout) const {
+    if (layout.isEmpty() || layout.size() != m_monitors.size() || layout.size() > 64) return tr("Supply one row for every reported output.");
+    QSet<QString> seen;
     bool anyEnabled = false;
+    auto integer = [](const QVariant &v, int low, int high) { const auto j = QJsonValue::fromVariant(v); const double n = j.toDouble(qQNaN()); return j.isDouble() && std::isfinite(n) && std::floor(n) == n && n >= low && n <= high; };
     for (const auto &value : layout) {
         const auto row = value.toMap();
         const QString output = row.value("output").toString();
         if (!isSafeOutputName(output))
             return tr("A display has a name that cannot be used safely.");
+        if (seen.contains(output)) return tr("Every output must appear exactly once.");
+        seen.insert(output);
+        if (row.value("enabled").metaType().id() != QMetaType::Bool || !integer(row.value("x"), -131072, 131072) || !integer(row.value("y"), -131072, 131072)) return tr("Output enablement and coordinates must be typed, bounded values.");
+        const auto mirror = row.value("mirrorOf");
+        if (mirror.isValid() && mirror.metaType().id() != QMetaType::QString) return tr("A mirror target must be an output name.");
+        if (mirror.isValid() && !mirror.toString().isEmpty() && mirror.toString() != "none") {
+            bool present = false;
+            for (const auto &v : layout) if (v.toMap().value("output").toString() == mirror.toString() && v.toMap().value("enabled").toBool()) present = true;
+            if (!isSafeOutputName(mirror.toString()) || mirror.toString() == output || !present) return tr("A mirror must target another enabled output.");
+        }
+        if (row.contains("vrr") && row.value("vrr").metaType().id() != QMetaType::Bool) return tr("Variable refresh enablement must be true or false.");
         bool known = false;
         QStringList modes;
         QString current;
@@ -491,10 +619,10 @@ QString DisplayProvider::validateLayout(const QVariantList &layout) const {
             if (!modes.contains(row.value("mode").toString()) && row.value("mode").toString() != current)
                 return tr("%1 does not offer that mode.").arg(output);
             const double scale = row.value("scale").toDouble();
-            if (scale < 0.25 || scale > 8)
+            if (!QJsonValue::fromVariant(row.value("scale")).isDouble() || !std::isfinite(scale) || scale < 0.25 || scale > 8)
                 return tr("That scale is outside what %1 can use.").arg(output);
             const int transform = row.value("transform").toInt();
-            if (transform < 0 || transform > 7)
+            if (!integer(row.value("transform"), 0, 7) || transform < 0 || transform > 7)
                 return tr("That rotation is not valid.");
         }
     }
@@ -529,10 +657,8 @@ static QJsonObject monitorRule(const QVariantMap &row) {
 void DisplayProvider::waitForWatchdog(const QString &file, const QString &expected, int attempts, std::function<void(bool)> done) {
     QByteArray contents;
     FileOps::readFile(file, &contents);
-    if (contents.contains(expected.toUtf8())) {
-        done(true);
-        return;
-    }
+    if (contents.trimmed() == expected.toUtf8()) { done(true); return; }
+    if (QList<QByteArray>{"restored", "kept", "restore-failed", "keep-unconfirmed", "not-started"}.contains(contents.trimmed())) { done(false); return; }
     if (attempts <= 0) {
         done(false);
         return;
@@ -542,9 +668,13 @@ void DisplayProvider::waitForWatchdog(const QString &file, const QString &expect
 
 void DisplayProvider::applyLayout(const QVariantList &layout, int index, std::function<void(bool, const QString &)> done) {
     if (index >= layout.size()) {
-        done(true, {});
+        if (m_isCheck || m_previewToken.isEmpty()) { done(true, {}); return; }
+        const auto expected = signatureOf(layout);
+        readMonitorsUntil(ObserveAttempts, {}, [this, expected](const QVariantList &rows) { return signatureOf(rows) == expected || m_receipt.value("deadline").toDouble() <= QDateTime::currentMSecsSinceEpoch(); },
+            [expected, done](bool ok, const QVariantList &rows, bool) { done(ok && signatureOf(rows) == expected, tr("Hyprland did not confirm the complete preview layout.")); });
         return;
     }
+    if (!m_isCheck && !m_previewToken.isEmpty() && (QFile::exists(m_revertFile) || m_receipt.value("deadline").toDouble() <= QDateTime::currentMSecsSinceEpoch())) { done(false, tr("The preview expired or restoration was requested.")); return; }
     const QString lua = monitorLua(monitorRule(layout[index].toMap()));
     CommandOptions options;
     options.mutation = true;
@@ -563,6 +693,16 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
         emit message(tr("A display preview is already running."), true);
         return;
     }
+    m_previewToken.clear(); m_receipt = {}; m_mutationStarted = false;
+    QString guard = DisplayPreview::pendingReason(m_runner->env());
+    if (guard.isEmpty()) guard = NetworkPreview::pendingReason(m_runner->env());
+    if (!guard.isEmpty() || m_coordinator->busy() || !m_coordinator->leaseRun().isEmpty() || m_coordinator->leaseHeldElsewhere()) { failStart(guard.isEmpty() ? tr("Another change or restore is running.") : guard, isCheck); return; }
+    QDir().mkpath(m_runner->env().appStateDir);
+    m_previewLock = std::make_unique<QLockFile>(m_runner->env().appStateDir + "/change.lock");
+    if (!m_previewLock->tryLock(0)) { failStart(tr("Another Control process is changing settings."), isCheck); return; }
+    guard = DisplayPreview::pendingReason(m_runner->env());
+    if (guard.isEmpty()) guard = NetworkPreview::pendingReason(m_runner->env());
+    if (!guard.isEmpty() || m_coordinator->leaseHeldElsewhere()) { failStart(guard.isEmpty() ? tr("A restore is running.") : guard, isCheck); return; }
     // Every output name goes into Lua below, whichever path brought it here.
     for (const auto &row : layout) {
         if (!isSafeOutputName(row.toMap().value("output").toString())) {
@@ -570,10 +710,11 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
             return;
         }
     }
+    if (isCheck) { m_previewToken.clear(); m_receipt = {}; }
     const QString dir = runDirectory();
-    QDir().mkpath(dir);
-    QFile::setPermissions(dir, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
-    const QString token = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
+    QString prepareError;
+    if (!DisplayPreview::prepare(m_runner->env(), &prepareError) || !m_runner->env().hasHyprlandSignature()) { failStart(prepareError.isEmpty() ? tr("A Hyprland session identity is required.") : prepareError, isCheck); return; }
+    const QString token = "dp-" + QUuid::createUuid().toString(QUuid::Id128);
     m_planPath = dir + "/display-" + token + ".json";
     m_keepFile = dir + "/display-" + token + ".keep";
     m_revertFile = dir + "/display-" + token + ".revert";
@@ -590,8 +731,19 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
     plan["keepFile"] = m_keepFile;
     plan["revertFile"] = m_revertFile;
     plan["resultFile"] = m_resultFile;
+    HyprModule beforeModule(m_runner->env());
+    m_startFingerprints = {{beforeModule.path(), FileOps::fingerprint(beforeModule.path())}, {beforeModule.hyprlandPath(), FileOps::fingerprint(beforeModule.hyprlandPath())}};
+    if (!isCheck) {
+        m_previewToken = token;
+        QJsonObject fingerprints; for (auto it = m_startFingerprints.begin(); it != m_startFingerprints.end(); ++it) fingerprints[it.key()] = it.value();
+        m_receipt = {{"schema", 1}, {"token", token}, {"phase", "arming"}, {"session", m_runner->env().process.value("HYPRLAND_INSTANCE_SIGNATURE")},
+            {"hyprland", m_hyprlandVersion}, {"deadline", double(QDateTime::currentMSecsSinceEpoch() + seconds * 1000LL)},
+            {"original", QJsonArray::fromVariantList(m_monitors)}, {"layout", QJsonArray::fromVariantList(layout)}, {"fingerprints", fingerprints},
+            {"verificationScope", "reported-output-geometry-and-owned-configuration"}, {"physicalAppearanceVerified", false}};
+        plan["token"] = token;
+    }
     QString error;
-    if (!FileOps::atomicWrite(m_planPath, QJsonDocument(plan).toJson(), &error)) {
+    if ((!isCheck && !DisplayPreview::save(m_runner->env(), m_receipt, &error)) || !FileOps::atomicWrite(m_planPath, QJsonDocument(plan).toJson(), &error)) {
         failStart(error, isCheck);
         return;
     }
@@ -609,10 +761,6 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
     setOutcome({}, {}, {});
     emit previewChanged();
     emit changed();
-    HyprModule module(m_runner->env());
-    m_startFingerprints.clear();
-    m_startFingerprints.insert(module.path(), FileOps::fingerprint(module.path()));
-    m_startFingerprints.insert(module.hyprlandPath(), FileOps::fingerprint(module.hyprlandPath()));
     waitForWatchdog(m_resultFile, "armed", 30, [this, layout, seconds, isCheck](bool armed) {
         if (!armed) {
             m_starting = false;
@@ -620,10 +768,15 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
             failStart(tr("The display safety timer did not respond, so nothing was changed."), isCheck);
             return;
         }
+        if (!isCheck) { m_receipt["phase"] = "applying"; QString error; if (!DisplayPreview::save(m_runner->env(), m_receipt, &error)) { failStart(error, isCheck); return; } }
         // Keep and Restore only appear once every row has been applied, so neither can
         // race a modeset that is still going on.
+        m_mutationStarted = true;
         applyLayout(layout, 0, [this, layout, seconds, isCheck](bool ok, const QString &detail) {
             m_starting = false;
+            if (!isCheck && m_receipt.value("deadline").toDouble() <= QDateTime::currentMSecsSinceEpoch()) ok = false;
+            if (ok && !isCheck) { m_receipt["phase"] = "preview"; QString error; ok = DisplayPreview::save(m_runner->env(), m_receipt, &error); }
+            m_previewLock.reset();
             if (!ok) {
                 const QString problem = tr("Hyprland refused the layout: %1").arg(detail);
                 // The watchdog has to be told, and it may have rows to put back.
@@ -642,7 +795,7 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
                 return;
             }
             m_previewing = true;
-            m_previewSeconds = seconds;
+            m_previewSeconds = isCheck ? seconds : std::max(0, int((m_receipt.value("deadline").toDouble() - QDateTime::currentMSecsSinceEpoch() + 999) / 1000));
             m_previewTotal = seconds;
             // What was staged is now on screen; Keep or the timer decides what stays.
             if (!isCheck) {
@@ -689,6 +842,11 @@ void DisplayProvider::startPreview(const QVariantList &layout, int seconds, bool
 }
 
 void DisplayProvider::failStart(const QString &text, bool isCheck) {
+    if (!m_mutationStarted && !m_previewToken.isEmpty() && !m_receipt.isEmpty()) {
+        m_receipt["phase"] = "not_started"; m_receipt["error"] = text;
+        DisplayPreview::save(m_runner->env(), m_receipt);
+    }
+    m_previewLock.reset(); m_starting = false;
     if (isCheck) {
         m_checkState = "failed";
         setOutcome("error", tr("The recovery check could not run"), text, "check");
@@ -707,8 +865,10 @@ QStringList DisplayProvider::signatureOf(const QVariantList &monitors) {
     QStringList signature;
     for (const auto &monitor : monitors) {
         const auto m = monitor.toMap();
+        if (!m.value("enabled").toBool()) { signature << m.value("output").toString() + " off"; continue; }
         signature << QString("%1 %2 %3x%4 %5 %6 %7").arg(m.value("output").toString(), m.value("mode").toString()).arg(m.value("x").toInt()).arg(m.value("y").toInt()).arg(m.value("scale").toDouble()).arg(m.value("transform").toInt()).arg(m.value("enabled").toBool() ? "on" : "off");
     }
+    signature.sort();
     return signature;
 }
 
@@ -733,14 +893,15 @@ void DisplayProvider::readMonitorsUntil(int attempts, std::function<bool()> want
     m_runner->run(m_runner->env().hyprctl({"-j", "monitors", "all"}), CommandOptions{3000}, this, [this, attempts, wanted, settled, done](const CommandResult &query) {
         if (wanted && !wanted())
             return;
-        const QVariantList monitors = query.ok() ? parseMonitors(query.out) : QVariantList();
-        const bool landed = query.ok() && settled(monitors);
+        QVariantList monitors;
+        const bool known = query.ok() && !query.truncated && decodeMonitors(query.out, &monitors);
+        const bool landed = known && settled(monitors);
         // A failed read is not a frame behind; waiting would not change it.
-        if (query.ok() && !landed && attempts > 1) {
+        if (known && !landed && attempts > 1) {
             QTimer::singleShot(ObserveIntervalMs, this, [this, attempts, wanted, settled, done] { readMonitorsUntil(attempts - 1, wanted, settled, done); });
             return;
         }
-        done(query.ok(), monitors, landed);
+        done(known, monitors, landed);
     });
 }
 
@@ -760,7 +921,7 @@ void DisplayProvider::verifyLayout(const QStringList &expected, std::function<vo
 }
 
 void DisplayProvider::endPreview(const QString &how) {
-    QFile::remove(m_resultFile);
+    if (m_previewToken.isEmpty()) QFile::remove(m_resultFile);
     emit changed();
     verifyLayout(m_previewOriginal, [this, how](bool same, bool known) {
         const QString verified = !known ? tr("Hyprland could not be asked for the current layout. Check your displays.")
@@ -791,65 +952,49 @@ void DisplayProvider::preview(const QVariantList &layout) {
 }
 
 void DisplayProvider::keep() {
-    if (!m_previewing)
-        return;
+    if (!m_previewing || m_previewToken.isEmpty()) return;
+    const auto receipt = previewReceipt();
+    if (!DisplayPreview::sameSession(m_runner->env(), receipt) || receipt.value("phase") != "preview" || receipt.value("deadline").toDouble() <= QDateTime::currentMSecsSinceEpoch()) {
+        emit message(tr("The display preview has expired or belongs to another session. Inspect it before continuing."), true); return;
+    }
     m_countdown.stop();
-    QFile keepFile(m_keepFile);
-    if (keepFile.open(QIODevice::WriteOnly))
-        keepFile.close();
-    const QVariantList layout = m_pendingLayout;
-    waitForWatchdog(m_resultFile, "kept", 50, [this, layout](bool kept) {
-        m_previewing = false;
-        emit previewChanged();
-        if (!kept) {
-            // The watchdog may already have restored; report what is true now.
-            emit message(tr("The preview had already ended. Check the current layout."), true);
-            endPreview("unconfirmed");
-            return;
-        }
-        QFile::remove(m_resultFile);
-        // Persist only now that the layout is confirmed to work.
-        HyprModule module(m_runner->env());
-        ChangeCoordinator::Request request;
-        request.settingId = "displays.layout";
-        request.label = tr("Display layout");
-        request.after = "custom";
-        request.files << module.path() << module.hyprlandPath();
-        // A hand edit made while the preview ran is not ours to overwrite.
-        request.expectedFingerprints = m_startFingerprints;
-        request.apply = [this, layout](ChangeCoordinator::Done done) {
-            HyprModule target(m_runner->env());
-            QString error;
-            if (!target.load(&error)) {
-                done(false, error);
-                return;
-            }
-            QJsonArray rules;
-            for (const auto &row : layout)
-                rules.append(monitorRule(row.toMap()));
-            target.setMonitors(rules);
-            done(target.save(&error) && target.installImport(&error), error);
-        };
-        m_coordinator->submit(std::move(request), [this](const Transaction &tx) {
-            const bool saved = tx.phase == QLatin1String("committed");
-            emit message(saved ? tr("Display layout saved.") : tr("The layout is active but was not saved: %1").arg(tx.message), !saved);
-            if (!saved)
-                setOutcome("warning", tr("The layout is active but was not saved"), tx.message);
-            emit changed();
-            refresh();
-        });
+    QString error;
+    if (QFileInfo(m_keepFile).isSymLink() || !FileOps::atomicWrite(m_keepFile, "user-confirmed-usable\n", &error)) { emit message(error, true); return; }
+    waitForWatchdog(m_resultFile, "kept", 400, [this](bool kept) {
+        const auto receipt = previewReceipt();
+        const bool saved = kept && receipt.value("phase") == "kept";
+        m_previewing = false; m_starting = false; emit previewChanged();
+        Transaction tx = Transaction::fromJson(receipt.value("transaction").toObject());
+        if (!saved && tx.phase.isEmpty()) { tx.phase = "partial"; tx.message = tr("The preview ended without a confirmed save. Inspect its receipt and current outputs."); }
+        emit message(saved ? tr("Display layout saved.") : tx.message, !saved);
+        emit operationFinished(tx);
+        emit changed(); refresh();
     });
 }
 
 void DisplayProvider::revert() {
-    if (!m_previewing)
-        return;
+    if (!m_previewing && m_previewToken.isEmpty()) return;
+    if (!m_previewToken.isEmpty()) {
+        QString error; const auto receipt = previewReceipt();
+        if (!DisplayPreview::sameSession(m_runner->env(), receipt) || DisplayPreview::terminal(receipt) || !DisplayPreview::prepare(m_runner->env(), &error)) { emit message(error.isEmpty() ? tr("The preview has ended or belongs to another session.") : error, true); return; }
+        if (!QFileInfo::exists(m_planPath)) {
+            QJsonArray previous; for (const auto &v : receipt.value("original").toArray()) previous.append(monitorRule(v.toObject().toVariantMap()));
+            const QJsonObject plan{{"token", m_previewToken}, {"previous", previous}, {"seconds", PreviewSeconds}, {"keepFile", m_keepFile}, {"revertFile", m_revertFile}, {"resultFile", m_resultFile}};
+            if (QFileInfo(m_planPath).isSymLink() || !FileOps::atomicWrite(m_planPath, QJsonDocument(plan).toJson(), &error)) { emit message(error, true); return; }
+        }
+        if (QFileInfo(m_revertFile).isSymLink() || !FileOps::atomicWrite(m_revertFile, "restore-requested\n", &error)) { emit message(error, true); return; }
+        // An existing owner holds its own watchdog lock. A replacement exits
+        // harmlessly when that owner is alive, and recovers if it has died.
+        if (!m_runner->launchDetached({m_runner->env().selfBinary, "display-watchdog", m_planPath}, &error)) { emit message(error, true); return; }
+    } else {
+        QFile revertFile(m_revertFile);
+        if (revertFile.open(QIODevice::WriteOnly)) revertFile.close();
+    }
     m_countdown.stop();
-    QFile revertFile(m_revertFile);
-    if (revertFile.open(QIODevice::WriteOnly))
-        revertFile.close();
-    waitForWatchdog(m_resultFile, "restored", 50, [this](bool restored) {
-        m_previewing = false;
+    waitForWatchdog(m_resultFile, "restored", 200, [this](bool restored) {
+        const auto receipt = previewReceipt();
+        if (!m_previewToken.isEmpty()) restored &= receipt.value("phase") == "reverted";
+        m_previewing = false; m_starting = false;
         emit previewChanged();
         emit message(restored ? tr("Restored the previous display layout.") : tr("The previous layout could not be confirmed. Check your displays."), !restored);
         endPreview(restored ? "revert" : "unconfirmed");
@@ -940,91 +1085,181 @@ void DisplayProvider::reportCheck(bool ok, const QVariantList &monitors, bool re
 }
 
 int DisplayProvider::runWatchdog(const Env &env, const QString &planPath) {
-    QByteArray contents;
-    if (!FileOps::readFile(planPath, &contents))
-        return 1;
+    struct stat planInfo{};
+    if (::lstat(QFile::encodeName(planPath).constData(), &planInfo) || !S_ISREG(planInfo.st_mode) || planInfo.st_uid != geteuid() || planInfo.st_nlink != 1 || planInfo.st_size > 1024 * 1024) return 1;
+    QFile input(planPath);
+    if (!input.open(QIODevice::ReadOnly)) return 1;
+    const auto contents = input.read(1024 * 1024 + 1);
+    if (input.error() != QFileDevice::NoError || contents.size() > 1024 * 1024) return 1;
     const auto plan = QJsonDocument::fromJson(contents).object();
-    const QString keepFile = plan.value("keepFile").toString();
-    const QString revertFile = plan.value("revertFile").toString();
-    const QString resultFile = plan.value("resultFile").toString();
-    const int seconds = plan.value("seconds").toInt(PreviewSeconds);
-
-    auto report = [&](const QByteArray &text) { FileOps::atomicWrite(resultFile, text + "\n"); };
-    report("armed");
-
-    // Plain blocking calls: this process has one job, no window to keep alive,
-    // and must not depend on anything else being healthy.
-    auto hyprctl = [&](const QStringList &arguments, QByteArray *out = nullptr) {
-        const QStringList argv = env.hyprctl(arguments);
-        QProcess process;
-        process.setProcessEnvironment(env.process);
-        process.start(env.findExecutable(argv.first()), argv.mid(1));
-        if (!process.waitForStarted(2000) || !process.waitForFinished(5000)) {
-            process.kill();
-            process.waitForFinished(500);
-            return false;
-        }
-        if (out)
-            *out = process.readAllStandardOutput();
-        return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
-    };
-
-    const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + seconds * 1000LL;
-    bool kept = false;
-    while (QDateTime::currentMSecsSinceEpoch() < deadline) {
-        if (QFile::exists(keepFile)) {
-            kept = true;
-            break;
-        }
-        if (QFile::exists(revertFile))
-            break;
-        QThread::msleep(100);
+    const QString token = plan.value("token").toString(); const bool durable = !token.isEmpty();
+    QJsonObject receipt; QString error;
+    std::unique_ptr<QLockFile> watchdogLock;
+    if (durable) {
+        receipt = DisplayPreview::load(env, token, &error);
+        const QString base = DisplayPreview::runtimeBase(env, token);
+        if (receipt.isEmpty() || !DisplayPreview::sameSession(env, receipt) || DisplayPreview::terminal(receipt)
+            || !DisplayPreview::prepare(env, &error) || planPath != base + ".json"
+            || plan.value("keepFile") != base + ".keep" || plan.value("revertFile") != base + ".revert" || plan.value("resultFile") != base + ".result"
+            || QFileInfo(planPath).isSymLink() || QFileInfo(planPath).ownerId() != uint(geteuid())) return 1;
+        QJsonArray previous; for (const auto &v : receipt.value("original").toArray()) previous.append(monitorRule(v.toObject().toVariantMap()));
+        if (previous != plan.value("previous").toArray()) return 1;
+        watchdogLock = std::make_unique<QLockFile>(base + ".watchdog.lock");
+        if (!watchdogLock->tryLock(0)) return 1;
     }
-    if (kept) {
-        report("kept");
-    } else {
-        // Hot-unplug: only outputs still present can be restored, and at least
-        // one must stay on or the session would have no screen at all.
-        QByteArray current;
-        QStringList present;
-        if (hyprctl({"-j", "monitors", "all"}, &current))
-            for (const auto &value : QJsonDocument::fromJson(current).array())
-                present << value.toObject().value("name").toString();
-
-        bool anyRestoredOn = false;
-        bool allOk = true;
-        QJsonArray previous = plan.value("previous").toArray();
-        // Enabled monitors first, so there is never a moment with no output.
-        for (int pass = 0; pass < 2; ++pass) {
-            for (const auto &value : previous) {
-                const auto rule = value.toObject();
-                const bool disabled = rule.value("disabled").toBool();
-                if (disabled != (pass == 1))
-                    continue;
-                const QString output = rule.value("output").toString();
-                if (!DisplayProvider::isSafeOutputName(output) || (!present.isEmpty() && !present.contains(output)))
-                    continue;
-                if (disabled && !anyRestoredOn)
-                    continue;
-                const bool ok = hyprctl({"eval", monitorLua(rule)});
-                allOk = allOk && ok;
-                if (!disabled && ok)
-                    anyRestoredOn = true;
+    const QString keepFile = plan.value("keepFile").toString(), revertFile = plan.value("revertFile").toString(), resultFile = plan.value("resultFile").toString();
+    const int seconds = qBound(0, plan.value("seconds").toInt(PreviewSeconds), 60);
+    auto report = [&](const QByteArray &text) {
+        struct stat info{};
+        if (durable && ::lstat(QFile::encodeName(resultFile).constData(), &info) == 0 && (!S_ISREG(info.st_mode) || info.st_uid != geteuid() || info.st_nlink != 1 || (info.st_mode & 0077))) return false;
+        return FileOps::atomicWrite(resultFile, text + "\n");
+    };
+    if (!report("armed")) return 1;
+    CommandRunner runner(env); QElapsedTimer restoreBudget; bool restoring = false;
+    auto hyprctl = [&](const QStringList &arguments, QByteArray *out = nullptr) {
+        QEventLoop loop; CommandResult result; bool finished = false;
+        if (restoring && restoreBudget.elapsed() >= 20000) return false;
+        CommandOptions options{restoring ? int(std::min<qint64>(3000, 20000 - restoreBudget.elapsed())) : 3000}; options.maxOutputBytes = 1024 * 1024; options.mutation = arguments.value(0) == "eval";
+        runner.run(env.hyprctl(arguments), options, &loop, [&](const CommandResult &value) { result = value; finished = true; loop.quit(); });
+        if (!finished) loop.exec();
+        if (out) *out = result.out;
+        return result.ok() && !result.truncated;
+    };
+    auto readMonitors = [&](QVariantList *rows) { QByteArray bytes; return hyprctl({"-j", "monitors", "all"}, &bytes) && decodeMonitors(bytes, rows); };
+    auto sameHardware = [](const QVariantList &before, const QVariantList &now) {
+        if (before.size() != now.size()) return false;
+        for (const auto &v : before) {
+            const auto row = v.toMap(); bool found = false;
+            for (const auto &n : now) {
+                const auto current = n.toMap(); if (current.value("output") != row.value("output")) continue;
+                found = true;
+                for (const auto &key : {"id", "make", "model", "serial", "description"}) if (QJsonValue::fromVariant(current.value(key)) != QJsonValue::fromVariant(row.value(key))) return false;
             }
+            if (!found) return false;
+        }
+        return true;
+    };
+    const qint64 remaining = durable ? qBound<qint64>(0, qint64(receipt.value("deadline").toDouble()) - QDateTime::currentMSecsSinceEpoch(), seconds * 1000LL) : seconds * 1000LL;
+    QElapsedTimer timer; timer.start(); bool kept = false;
+    while (timer.elapsed() < remaining && (!durable || QDateTime::currentMSecsSinceEpoch() < receipt.value("deadline").toDouble())) {
+        if (QFile::exists(revertFile)) break;
+        if (QFile::exists(keepFile)) { kept = true; break; }
+        QThread::msleep(50);
+    }
+    if (kept && durable) {
+        // The detached owner performs persistence itself. Losing the caller
+        // cannot leave a Keep acknowledgement between watchdog and file commit.
+        receipt = DisplayPreview::load(env, token, &error);
+        QVariantList rows; QByteArray version;
+        const auto original = receipt.value("original").toArray().toVariantList(), layout = receipt.value("layout").toArray().toVariantList();
+        kept = receipt.value("phase") == "preview" && receipt.value("deadline").toDouble() > QDateTime::currentMSecsSinceEpoch()
+            && readMonitors(&rows) && sameHardware(original, rows) && signatureOf(rows) == signatureOf(layout)
+            && hyprctl({"-j", "version"}, &version) && QJsonDocument::fromJson(version).object().value("version") == receipt.value("hyprland");
+        if (kept) {
+            receipt["phase"] = "keeping"; kept = DisplayPreview::save(env, receipt, &error);
+        }
+        if (kept) {
+            ChangeCoordinator coordinator(env);
+            ChangeCoordinator::Request request; HyprModule module(env);
+            request.settingId = "displays.layout"; request.label = tr("Display layout"); request.after = "custom";
+            request.files = {module.path(), module.hyprlandPath()}; request.extra = {{"displayToken", token}};
+            const auto fingerprints = receipt.value("fingerprints").toObject();
+            if (fingerprints.size() != 2 || !fingerprints.contains(module.path()) || !fingerprints.contains(module.hyprlandPath())) kept = false;
+            for (auto it = fingerprints.begin(); it != fingerprints.end(); ++it) request.expectedFingerprints.insert(it.key(), it.value().toString());
+            request.preflight = [&, original, layout](ChangeCoordinator::Done done) { QVariantList fresh; done(!QFile::exists(revertFile) && readMonitors(&fresh) && sameHardware(original, fresh) && signatureOf(fresh) == signatureOf(layout), "Outputs changed before Keep could save the layout."); };
+            request.apply = [&, layout](ChangeCoordinator::Done done) {
+                HyprModule target(env); QString problem;
+                if (QFile::exists(revertFile)) { done(false, "Restoration was requested before Keep wrote files."); return; }
+                if (!target.load(&problem)) { done(false, problem); return; }
+                QJsonArray rules; for (const auto &v : layout) rules.append(monitorRule(v.toMap()));
+                target.setMonitors(rules); QByteArray import;
+                if (!target.plannedImport(&import, &problem) || !DisplayPreview::capturePersistence(env, &receipt, target.render(), import, &problem)) { done(false, problem); return; }
+                done(target.save(&problem) && !QFile::exists(revertFile) && target.installImport(&problem), problem);
+            };
+            request.writtenFingerprints = [&] {
+                QHash<QString, QString> written; HyprModule target(env); const auto files = receipt.value("persistence").toObject();
+                if (files.contains("module")) written[target.path()] = files.value("module").toObject().value("after").toString();
+                if (files.contains("import")) written[target.hyprlandPath()] = files.value("import").toObject().value("after").toString();
+                return written;
+            };
+            request.verify = [&, layout](ChangeCoordinator::Done done) {
+                HyprModule target(env); const auto files = receipt.value("persistence").toObject(); QVariantList fresh;
+                done(!QFile::exists(revertFile) && FileOps::fingerprint(target.path()) == files.value("module").toObject().value("after").toString()
+                    && FileOps::fingerprint(target.hyprlandPath()) == files.value("import").toObject().value("after").toString()
+                    && readMonitors(&fresh) && signatureOf(fresh) == signatureOf(layout), "The owned files and saved display layout could not both be confirmed.");
+            };
+            if (kept) {
+                QEventLoop loop; bool finished = false; Transaction transaction;
+                coordinator.submit(std::move(request), [&](const Transaction &tx) { transaction = tx; finished = true; loop.quit(); });
+                if (!finished) loop.exec();
+                receipt["transaction"] = transaction.toJson(); kept = transaction.phase == "committed";
+                if (!kept) receipt["error"] = transaction.message;
+            }
+        }
+        if (kept) {
+            receipt["phase"] = "kept";
+            if (!DisplayPreview::save(env, receipt, &error)) { report("keep-unconfirmed"); return 1; }
+        }
+    }
+    if (kept) report("kept");
+    else {
+        std::unique_ptr<QLockFile> changeLock; bool filesRestored = true;
+        if (durable) {
+            changeLock = std::make_unique<QLockFile>(env.appStateDir + "/change.lock");
+            if (!changeLock->tryLock(10000)) { receipt["phase"] = "restore_failed"; receipt["error"] = "Another writer prevented restoration. Retry display preview revert."; DisplayPreview::save(env, receipt); report("restore-failed"); return 1; }
+            receipt = DisplayPreview::load(env, token, &error);
+            if (receipt.value("phase") == "not_started") { report("not-started"); QFile::remove(planPath); QFile::remove(keepFile); QFile::remove(revertFile); return 0; }
+            filesRestored = !receipt.isEmpty() && DisplayPreview::restorePersistence(env, receipt, &error);
+            if (!filesRestored) receipt["error"] = error;
+            receipt["phase"] = "reverting"; DisplayPreview::save(env, receipt);
+        }
+        restoring = true; restoreBudget.start();
+        QVariantList current; const bool known = readMonitors(&current);
+        QStringList present; for (const auto &v : current) present << v.toMap().value("output").toString();
+        bool anyRestoredOn = false, allOk = known;
+        const auto original = receipt.value("original").toArray().toVariantList();
+        const auto previous = plan.value("previous").toArray();
+        for (int pass = 0; pass < 2; ++pass) for (const auto &v : previous) {
+            const auto rule = v.toObject(); const bool disabled = rule.value("disabled").toBool();
+            if (disabled != (pass == 1)) continue;
+            const QString output = rule.value("output").toString();
+            if (!known || !isSafeOutputName(output) || !present.contains(output)) continue;
+            if (durable) {
+                QVariantList beforeOne, nowOne;
+                for (const auto &row : original) if (row.toMap().value("output") == output) beforeOne << row;
+                for (const auto &row : current) if (row.toMap().value("output") == output) nowOne << row;
+                if (!known || !sameHardware(beforeOne, nowOne)) { allOk = false; continue; }
+            }
+            if (disabled && !anyRestoredOn) continue;
+            const bool ok = hyprctl({"eval", monitorLua(rule)}); allOk &= ok; if (!disabled && ok) anyRestoredOn = true;
         }
         bool lastResort = false;
-        if (!anyRestoredOn) {
-            for (const auto &name : present) {
-                if (DisplayProvider::isSafeOutputName(name) && hyprctl({"eval", QString("hl.monitor({ output = \"%1\", mode = \"preferred\", position = \"auto\", scale = 1 })").arg(name)})) {
-                    lastResort = true;
-                    break;
-                }
-            }
+        if (!anyRestoredOn && known) for (const auto &name : present) {
+            if (isSafeOutputName(name) && hyprctl({"eval", QString("hl.monitor({ output = \"%1\", mode = \"preferred\", position = \"auto\", scale = 1 })").arg(name)})) { lastResort = true; break; }
         }
-        report(allOk && (anyRestoredOn || lastResort) ? "restored" : "restore-failed");
+        bool restored = allOk && (anyRestoredOn || lastResort);
+        if (durable) {
+            // Command acceptance alone cannot certify restoration. Poll later
+            // frames, binding the readback to the outputs that are still present.
+            restored = false; QElapsedTimer observation; observation.start();
+            while (allOk && observation.elapsed() < 3000) {
+                QVariantList observed;
+                if (!readMonitors(&observed)) break;
+                bool enabled = false; for (const auto &v : observed) enabled |= v.toMap().value("enabled").toBool();
+                if (enabled && matchesWherePresent(signatureOf(original), signatureOf(observed)) && !lastResort) { restored = true; break; }
+                QThread::msleep(50);
+            }
+            restored &= filesRestored;
+            receipt["phase"] = restored ? "reverted" : "restore_failed";
+            receipt["restoreVerified"] = restored;
+            receipt["persistenceRestored"] = filesRestored;
+            receipt["restoreScope"] = "original-identity-outputs-still-present-and-captured-owned-files";
+            if (lastResort) receipt["error"] = "A fallback output was enabled; the original layout could not be fully restored.";
+            if (!DisplayPreview::save(env, receipt, &error)) { report("restore-failed"); return 1; }
+        }
+        report(restored ? "restored" : "restore-failed");
+        if (durable && !restored) return 1; // Retain the plan for guarded retry.
     }
-    QFile::remove(planPath);
-    QFile::remove(keepFile);
-    QFile::remove(revertFile);
+    QFile::remove(planPath); QFile::remove(keepFile); QFile::remove(revertFile);
     return 0;
 }

@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QSize>
 #include <QTimer>
+#include <QLockFile>
+#include <memory>
 #include <QVariantList>
 
 #include "changecoordinator.h"
@@ -29,6 +31,8 @@ class DisplayProvider : public QObject {
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(bool editingUnlocked READ editingUnlocked NOTIFY changed)
     Q_PROPERTY(bool previewing READ previewing NOTIFY previewChanged)
+    Q_PROPERTY(bool previewCanKeep READ previewCanKeep NOTIFY previewChanged)
+    Q_PROPERTY(QString previewState READ previewState NOTIFY previewChanged)
     Q_PROPERTY(int previewSeconds READ previewSeconds NOTIFY previewChanged)
     Q_PROPERTY(int previewTotal READ previewTotal NOTIFY previewChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY previewChanged)
@@ -44,7 +48,7 @@ class DisplayProvider : public QObject {
     Q_PROPERTY(QVariantMap outcome READ outcome NOTIFY changed)
 
 public:
-    DisplayProvider(CommandRunner *runner, ChangeCoordinator *coordinator, QObject *parent = nullptr);
+    DisplayProvider(CommandRunner *runner, ChangeCoordinator *coordinator, QObject *parent = nullptr, bool collectHistory = true);
 
     QVariantList monitors() const { return m_monitors; }
     QString status() const { return m_status; }
@@ -63,6 +67,13 @@ public:
     QString stageProblem() const;
     QVariantMap selectedScale() const;
     QVariantMap outcome() const { return m_outcome; }
+    QVariantMap snapshot() const;
+    QString previewToken() const { return m_previewToken; }
+    QJsonObject previewReceipt() const;
+    bool previewCanKeep() const;
+    QString previewState() const { return m_receipt.value("phase").toString(); }
+    bool adoptPreview(const QString &token, QString *error = nullptr);
+    static bool decodeMonitors(const QByteArray &json, QVariantList *rows, QString *error = nullptr);
 
     Q_INVOKABLE void refresh();
     // `layout` is a list of {output, mode, x, y, scale, transform, enabled}.
@@ -103,8 +114,10 @@ signals:
     void selectionChanged();
     // Hyprland reported its displays again; staging and selection changes do not count.
     void monitorsChanged();
+    void refreshed();
     void message(const QString &text, bool isError);
     void checkFinished(bool passed, const QString &detail);
+    void operationFinished(const Transaction &transaction);
 
 private:
     void startPreview(const QVariantList &layout, int seconds, bool isCheck);
@@ -145,11 +158,14 @@ private:
     bool m_savedLayout = false;
     QVariantMap m_outcome;
     QString m_status = "loading";
+    QString m_versionStatus = "not_requested", m_monitorError, m_versionError;
+    int m_refreshGeneration = 0, m_refreshPending = 0;
     QString m_checkState = "idle";
     QString m_hyprlandVersion;
     bool m_previewing = false;
     bool m_isCheck = false;
     bool m_starting = false;
+    bool m_mutationStarted = false;
     bool m_checkMoved = false;
     // The display the check nudges, and where Hyprland has to report it.
     QString m_checkOutput;
@@ -160,5 +176,8 @@ private:
     int m_previewSeconds = 0;
     int m_previewTotal = 0;
     QString m_planPath, m_keepFile, m_revertFile, m_resultFile;
+    QString m_previewToken;
+    QJsonObject m_receipt;
+    std::unique_ptr<QLockFile> m_previewLock;
     QTimer m_countdown;
 };

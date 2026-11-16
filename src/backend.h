@@ -137,7 +137,6 @@ private:
     QVariantMap currentState(const QString &id) const;
     void watchFiles();
     void loadPreferences();
-    void savePreferences();
     void refreshRelated(const QString &id);
     void handleResult(const QString &id, const CatalogEntry *entry, const Transaction &tx);
     QString noteFor(const CatalogEntry &entry) const;

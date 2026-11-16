@@ -571,6 +571,11 @@ void ProfileProvider::resumeRestore() {
 void ProfileProvider::cancelRestore() {
     if (m_core->profileRunner.running())
         m_core->profileRunner.cancel();
+    else if (!m_run.value("id").toString().isEmpty()) {
+        QString error;
+        if (!m_core->profileRunner.requestCancel(m_run.value("id").toString(), &error)) emit toast(error, "error");
+        else emit toast("Cancellation requested. The current operation finishes and is verified before stopping.", "info");
+    }
 }
 
 void ProfileProvider::clearRun() {

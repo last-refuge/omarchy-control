@@ -1,0 +1,9 @@
+[Trigger]
+Operation=Remove
+Type=Package
+Target=omarchy-control
+
+[Action]
+Description=Restore owned active-user skills before removing Omarchy Control
+When=PreTransaction
+Exec=/usr/lib/omarchy-control/agent-integration/session-notify remove

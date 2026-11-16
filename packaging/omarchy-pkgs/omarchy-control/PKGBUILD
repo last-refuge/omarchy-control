@@ -16,6 +16,8 @@ depends=(
   'libarchive'
   'libgcc'
   'libstdc++'
+  'python'
+  'systemd'
   'qt6-base'
   'qt6-declarative'
   'qt6-svg'
@@ -40,7 +42,13 @@ build() {
 package() {
   cd "$srcdir/$pkgname-$pkgver"
 
-  install -Dm755 build/omarchy-control "$pkgdir/usr/bin/omarchy-control"
+  # Published older tarballs predate the shared payload. Keep their pinned
+  # checksum intact; releases containing the lifecycle code stage it here.
+  if [[ -f tools/agent-lifecycle/stage-payload.py ]]; then
+    /usr/bin/python3 tools/agent-lifecycle/stage-payload.py --destination "$pkgdir" --binary build/omarchy-control
+  else
+    install -Dm755 build/omarchy-control "$pkgdir/usr/bin/omarchy-control"
+  fi
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 src/fonts/Inter-LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/Inter-LICENSE.txt"
   install -Dm644 pkgbuild/omarchy-control.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-control.svg"

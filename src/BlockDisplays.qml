@@ -681,7 +681,7 @@ ColumnLayout {
                     AppText {
                         objectName: "displayChangesTitle"
                         font.weight: Font.Medium
-                        text: changes.mode === "preview" ? qsTr("Keep this layout?") : qsTr("Changes not applied")
+                        text: changes.mode === "preview" ? (displays.previewCanKeep ? qsTr("Keep this layout?") : qsTr("Display recovery is pending")) : qsTr("Changes not applied")
                     }
                     Rectangle {
                         visible: !root.narrow
@@ -696,7 +696,8 @@ ColumnLayout {
                         scale_: 0.93
                         readonly property bool problem: changes.mode === "pending" && displays.stageProblem.length > 0
                         color: problem ? theme.dangerText : theme.muted
-                        text: changes.mode === "preview" ? qsTr("The previous layout comes back in %n second(s) unless you keep this one.", "", displays.previewSeconds)
+                        text: changes.mode === "preview" ? (displays.previewCanKeep ? qsTr("The previous layout comes back in %n second(s) unless you keep this one.", "", displays.previewSeconds)
+                            : displays.previewState === "keeping" ? qsTr("Saving the confirmed layout…") : qsTr("Restoration could not be confirmed. Inspect your displays or retry Restore."))
                             : problem ? displays.stageProblem : qsTr("Unconfirmed changes restore automatically.")
                     }
                 }
@@ -720,6 +721,7 @@ ColumnLayout {
                 AppButton {
                     visible: changes.mode === "preview"
                     text: qsTr("Restore")
+                    enabled: displays.previewState !== "keeping"
                     onClicked: displays.revert()
                 }
                 AppButton {
@@ -727,6 +729,7 @@ ColumnLayout {
                     visible: changes.mode === "preview"
                     style: "primary"
                     text: qsTr("Keep")
+                    enabled: displays.previewCanKeep
                     onClicked: displays.keep()
                 }
             }

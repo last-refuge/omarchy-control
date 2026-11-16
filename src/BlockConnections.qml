@@ -7,6 +7,7 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     readonly property var net: backend.network
+    readonly property string devicesState: net.states.devices.status
     property var devices: []
     spacing: 12
 
@@ -40,7 +41,7 @@ ColumnLayout {
         Layout.fillWidth: true
         icon: "network"
         title: qsTr("Connections")
-        detail: root.net.status !== "ok" ? ""
+        detail: root.net.states.general.status !== "ok" ? ""
               : root.net.connectivity === "limited" ? qsTr("Limited internet")
               : root.net.connectivity === "portal" ? qsTr("Sign-in needed for internet")
               : root.net.connectivity === "none" ? qsTr("No internet")
@@ -71,11 +72,12 @@ ColumnLayout {
                         wrapMode: Text.Wrap
                         secondary: true
                         scale_: 0.93
-                        text: qsTr("Going back to the previous one in %n second(s).", "", root.net.keepSeconds)
+                        text: root.net.canKeep ? qsTr("Going back to the previous one in %n second(s).", "", root.net.keepSeconds)
+                            : qsTr("Preview status is unconfirmed. Check this connection or go back.")
                     }
                 }
-                AppButton { text: qsTr("Go back"); onClicked: root.net.revertConnection() }
-                AppButton { id: keepButton; text: qsTr("Keep"); style: "primary"; onClicked: root.net.keepConnection() }
+                AppButton { text: qsTr("Go back"); enabled: !root.net.busy; onClicked: root.net.revertConnection() }
+                AppButton { id: keepButton; text: qsTr("Keep"); style: "primary"; enabled: root.net.canKeep && !root.net.busy; onClicked: root.net.keepConnection() }
             }
             Rectangle {
                 Layout.fillWidth: true
@@ -99,19 +101,20 @@ ColumnLayout {
             height: visible ? message.implicitHeight + 28 : 0
             AppText {
                 id: message
+                objectName: "connectionReadMessage"
                 x: 16
                 width: parent.width - 32
                 anchors.verticalCenter: parent.verticalCenter
                 wrapMode: Text.Wrap
-                color: root.net.status === "unavailable" ? theme.dangerText : theme.muted
-                text: root.net.status === "unavailable" ? qsTr("NetworkManager is not responding, so connections cannot be shown.")
-                    : root.net.status === "loading" && !root.devices.length ? qsTr("Looking for connections…")
+                color: root.devicesState === "read_unavailable" ? theme.dangerText : theme.muted
+                text: root.net.status === "loading" || root.devicesState === "not_requested" ? qsTr("Looking for connections…")
+                    : root.devicesState !== "ok" ? qsTr("NetworkManager is not responding, so connections cannot be shown.")
                     : root.devices.length ? "" : qsTr("No network interfaces found.")
             }
         }
         Repeater {
             id: rows
-            model: root.net.status === "unavailable" ? [] : root.devices
+            model: root.devicesState === "ok" || root.devicesState === "loading" ? root.devices : []
             delegate: Item {
                 id: row
                 objectName: "connectionRow"
@@ -178,8 +181,8 @@ ColumnLayout {
                     }
                     AppButton {
                         id: disconnect
-                        visible: row.device.connected && row.managed
-                        enabled: !row.action.length
+                        visible: !!row.device.connected && row.managed
+                        enabled: root.net.status !== "loading" && root.devicesState === "ok" && !root.net.radioBusy && !row.action.length
                         text: qsTr("Disconnect")
                         Accessible.name: qsTr("Disconnect %1").arg(row.device.connection || row.device.device)
                         onClicked: confirm.open_(qsTr("Disconnect %1").arg(row.device.connection), qsTr("If this is your only connection, this computer goes offline."), [], qsTr("Disconnect"), false, function () { root.net.deactivate(row.device.device) })

@@ -79,7 +79,7 @@ AppPanel {
                     if (list[i].value === association.current)
                         known = true
                 if (!known)
-                    list.unshift({ value: association.current, label: association.current.length ? association.currentLabel : qsTr("Not set"), icon: association.currentIcon || "" })
+                    list.unshift({ value: association.current, label: association.status === "read_unavailable" ? qsTr("Could not read current app") : association.status === "unresolved" ? qsTr("Not resolved") : association.current.length ? association.currentLabel : qsTr("Not set"), icon: association.currentIcon || "" })
                 return list
             }
             function takeFocus() { choice.forceActiveFocus(Qt.TabFocusReason) }
@@ -106,6 +106,7 @@ AppPanel {
                 AppCombo {
                     id: choice
                     objectName: "associationChoice"
+                    enabled: row.association.status !== "read_unavailable" && row.association.appsStatus !== "read_unavailable"
                     label: row.association.label
                     implicitWidth: Math.max(170, Math.min(250, root.width * 0.46))
                     model: row.options

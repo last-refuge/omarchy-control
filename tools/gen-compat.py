@@ -32,14 +32,29 @@ for setting, binaries in {"appearance.icons": ["omarchy-hook", "omarchy-theme-se
     for binary in binaries:
         with open("/usr/bin/" + binary, "rb") as f:
             out["commands"][binary] = hashlib.sha256(f.read()).hexdigest()
-# Profile restores that are not settings: themes installed from Git the way
+# Non-setting adapters include profile restores, device helpers and private debug
+# collection. Profile themes are installed from Git the way
 # omarchy-theme-install does, into the same folder under the same name; the bar's layout
 # written the way omarchy-bar commits shell.json; and plugins switched with Omarchy's own
 # commands (docs/MY-OMARCHY.md).
 out["adapters"] = {}
 for adapter, binaries in {"profile.themes": ["omarchy-theme-install"],
                           "profile.bar": ["omarchy-bar", "omarchy-shell-config"],
-                          "profile.plugins": ["omarchy-plugin-disable", "omarchy-plugin-enable", "omarchy-plugin-list"]}.items():
+                          "profile.plugins": ["omarchy-plugin-disable", "omarchy-plugin-enable", "omarchy-plugin-list"],
+                          "audio.input.default": ["omarchy-audio-input-set-default"],
+                          "audio.output.default": ["omarchy-audio-output-set-default"],
+                          "audio.output.routing": ["omarchy-audio-output-sink"],
+                          "bluetooth.power": ["omarchy-bluetooth-power"],
+                          "diagnostics.export": ["omarchy-debug"],
+                          "plugins.enabled": ["omarchy-plugin-enable", "omarchy-plugin-disable", "omarchy-plugin-list", "omarchy-shell"],
+                          "plugins.clone": ["omarchy-plugin-clone", "omarchy-plugin-catalog", "omarchy-plugin-enable", "omarchy-plugin-list", "omarchy-shell"],
+                          "plugins.remove": ["omarchy-plugin-remove", "omarchy-plugin-list", "omarchy-shell"],
+                          "plugins.recover": ["omarchy-shell"],
+                          "widgets.move": ["omarchy-bar", "omarchy-shell"],
+                          "widgets.option": ["omarchy-bar", "omarchy-shell"],
+                          "preferences.crash-mutes": ["omarchy-crash-mute", "omarchy-toggle", "omarchy-toggle-enabled"],
+                          "dock.pin": ["omarchy-dock", "omarchy-shell-config"],
+                          "bluetooth.device": ["omarchy-bluetooth-device", "omarchy-bluetooth-power"]}.items():
     out["adapters"][adapter] = binaries
     for binary in binaries:
         with open("/usr/bin/" + binary, "rb") as f:

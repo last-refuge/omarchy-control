@@ -78,7 +78,9 @@ AppPanel {
                 anchors.verticalCenter: parent.verticalCenter
                 wrapMode: Text.Wrap
                 secondary: true
-                text: qsTr("No active hooks. Omarchy's samples in ~/.config/omarchy/hooks stay inert until renamed.")
+                readonly property var state: backend.system.factStates.hooks || {}
+                text: state.status === "unavailable" || state.status === "partial" ? qsTr("Hooks could not be read completely.")
+                    : qsTr("No active hooks. Omarchy's samples in ~/.config/omarchy/hooks stay inert until renamed.")
             }
         }
         Repeater {
