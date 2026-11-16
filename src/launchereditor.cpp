@@ -12,6 +12,7 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <QUrl>
+#include <algorithm>
 
 #include "fileops.h"
 #include "iconlayer.h"
@@ -582,15 +583,29 @@ QString LauncherEditor::chooseIcon(const QUrl &file) {
 }
 
 QVariantList LauncherEditor::packIcons(const QString &query, int limit) const {
-    const QHash<QString, QString> icons = IconLayer::appIcons(m_env, currentPack());
+    return iconChoices(currentPack(), query, limit).value("icons").toList();
+}
+
+QVariantMap LauncherEditor::iconChoices(const QString &pack, const QString &query, int limit) const {
+    limit = std::clamp(limit, 1, 300);
+    QStringList diagnostics;
+    QHash<QString, QString> origins;
+    const QHash<QString, QString> icons = IconLayer::appIcons(m_env, pack, &diagnostics, &origins);
     QStringList names;
     const QString wanted = query.trimmed().toLower();
     for (auto it = icons.begin(); it != icons.end(); ++it)
         if (wanted.isEmpty() || it.key().toLower().contains(wanted))
             names << it.key();
-    names.sort(Qt::CaseInsensitive);
+    std::sort(names.begin(), names.end(), [](const QString &a, const QString &b) {
+        const int compared = a.compare(b, Qt::CaseInsensitive);
+        return compared ? compared < 0 : a < b;
+    });
     QVariantList rows;
     for (const QString &name : names.mid(0, limit))
-        rows << QVariantMap{{"name", name}, {"url", QUrl::fromLocalFile(icons.value(name)).toString()}};
-    return rows;
+        rows << QVariantMap{{"name", name}, {"url", QUrl::fromLocalFile(icons.value(name)).toString(QUrl::FullyEncoded)},
+                           {"path", icons.value(name)}, {"from", origins.value(name)}, {"inherited", origins.value(name) != pack}};
+    diagnostics.removeDuplicates();
+    return {{"pack", pack}, {"query", query.trimmed()}, {"icons", rows}, {"matches", names.size()}, {"limit", limit},
+            {"truncated", names.size() > limit}, {"complete", diagnostics.isEmpty()}, {"diagnostics", diagnostics.mid(0, 100)},
+            {"scope", "application/device SVG and PNG names in this pack, inherited packs and hicolor; image decoding and launcher rendering are not verified"}};
 }

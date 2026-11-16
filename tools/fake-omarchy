@@ -14,13 +14,25 @@ pactl)
     get-default-sink) echo alsa_output.pci-0000_00_1f.3.HiFi__Speaker__sink;;
     get-default-source) echo alsa_input.pci-0000_00_1f.3.HiFi__Mic__source;;
   esac;;
-nmcli)
+busctl)
   case "$*" in
-    "-t -f WIFI,CONNECTIVITY general") echo "enabled:full";;
-    "-t -f WIFI general") echo enabled;;
+    *"get-property org.freedesktop.NetworkManager /org/freedesktop/NetworkManager org.freedesktop.NetworkManager WirelessEnabled WirelessHardwareEnabled") printf 'b %s\nb true\n' "$(kv wifi true)";;
+    *"org.freedesktop.DBus.Properties Set ssv org.freedesktop.NetworkManager WirelessEnabled b "*) setkv wifi "${@: -1}";;
+  esac;;
+nmcli)
+  args=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in -c|-e) shift 2;; *) args+=("$1"); shift;; esac
+  done
+  set -- "${args[@]}"
+  case "$*" in
+    "-g GENERAL.DBUS-PATH device show wlp0s20f3") echo /org/freedesktop/NetworkManager/Devices/1;;
+    "-t -f WIFI,CONNECTIVITY general") if [ "$(kv wifi true)" = true ]; then echo enabled:full; else echo disabled:none; fi;;
+    "-t -f WIFI general") if [ "$(kv wifi true)" = true ]; then echo enabled; else echo disabled; fi;;
     "-t -f DEVICE,TYPE,STATE,CONNECTION device") printf 'wlp0s20f3:wifi:connected:Home network\ntailscale0:tun:connected (externally):tailscale0\n';;
     "-t -f NAME,UUID,TYPE,ACTIVE connection show") printf 'Home network:11111111-1111-1111-1111-111111111111:802-11-wireless:yes\nCafe:22222222-2222-2222-2222-222222222222:802-11-wireless:no\n';;
     "-t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list --rescan no") printf '*:Home network:82:WPA2\n :Cafe:54:WPA2\n :Neighbor:31:WPA3\n :Airport Free:22:\n';;
+    "-t -f IN-USE,SSID,SIGNAL,SECURITY,BSSID,DEVICE device wifi list --rescan no") printf '*:Home network:82:WPA2:02\\:00\\:00\\:00\\:00\\:01:wlp0s20f3\n :Cafe:54:WPA2:02\\:00\\:00\\:00\\:00\\:02:wlp0s20f3\n :Neighbor:31:WPA3:02\\:00\\:00\\:00\\:00\\:03:wlp0s20f3\n :Airport Free:22::02\\:00\\:00\\:00\\:00\\:04:wlp0s20f3\n';;
   esac;;
 bluetoothctl)
   case "$1" in

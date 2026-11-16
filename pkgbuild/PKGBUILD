@@ -1,11 +1,11 @@
 pkgname=omarchy-control
-pkgver=0.5.0
+pkgver=0.6.0
 pkgrel=1
 pkgdesc='One searchable place to understand this computer, change its settings, and reach the right tool'
 arch=('x86_64' 'aarch64')
 url='https://github.com/last-refuge/omarchy-control'
-license=('MIT')
-depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'hicolor-icon-theme' 'curl' 'libarchive')
+license=('MIT' 'OFL-1.1')
+depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'hicolor-icon-theme' 'curl' 'libarchive' 'python' 'systemd')
 optdepends=('omarchy: the desktop this manages'
             'hyprland: window, input, and display settings'
             'networkmanager: network settings'
@@ -25,7 +25,7 @@ build() {
 
 package() {
   cd "$startdir/.."
-  install -Dm755 build/omarchy-control "$pkgdir/usr/bin/omarchy-control"
+  /usr/bin/python3 tools/agent-lifecycle/stage-payload.py --destination "$pkgdir" --binary build/omarchy-control
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 src/fonts/Inter-LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/Inter-LICENSE.txt"
   install -Dm644 "$startdir/omarchy-control.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-control.svg"

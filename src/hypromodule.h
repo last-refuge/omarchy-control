@@ -34,6 +34,9 @@ public:
     QJsonArray rules() const { return m_data.value("rules").toArray(); }
 
     bool load(QString *error = nullptr);
+    // Read-only, bounded ownership inspection. A failed read is never an empty
+    // collection, and the Lua is compared as text, never executed.
+    QJsonObject inspect() const;
     // Nothing chosen here at all, so the file and its line have no reason to exist.
     bool isEmpty() const;
     // Takes the line out of hyprland.lua, then the file, in that order: Lua's require
@@ -57,6 +60,7 @@ public:
     // untouched and the setting offers advanced access instead.
     bool importInstalled() const;
     bool canInstallImport() const;
+    bool plannedImport(QByteArray *contents, QString *error = nullptr) const;
     bool installImport(QString *error = nullptr);
     bool removeImport(QString *error = nullptr);
 

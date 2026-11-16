@@ -5,6 +5,7 @@
 
 #include "changecoordinator.h"
 #include "commandrunner.h"
+#include "provideroperation.h"
 
 // Background services and login items. System-level actions go through systemctl
 // so that the desktop's own polkit agent asks for authorization; the app itself
@@ -25,6 +26,14 @@ public:
     QVariantList startupApps() const { return m_startup; }
     int failedCount() const;
     QString status() const { return m_status; }
+    QString scopeStatus(bool system) const { return system ? m_systemStatus : m_userStatus; }
+    QString startupStatus() const { return m_startupStatus; }
+
+    void refreshServices(bool system);
+    void refreshStartup();
+    void planService(const QString &unit, const QString &action, bool system, std::function<void(ProviderPlan)> done);
+    ProviderPlan planStartup(const QString &id, bool enabled) const;
+    void changeService(const QString &unit, const QString &action, bool system, bool interactive);
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void serviceAction(const QString &unit, const QString &action, bool system);
@@ -32,18 +41,24 @@ public:
 
     static bool isSafeUnit(const QString &unit);
     static QVariantList mergeUnits(const QByteArray &units, const QByteArray &files);
-    static QVariantList readStartup(const Env &env);
+    static QVariantList readStartup(const Env &env, QString *error = nullptr);
     static QByteArray withHidden(const QByteArray &entry, bool hidden);
 
 signals:
     void changed();
+    void refreshed();
+    void operationFinished(const Transaction &transaction);
     void message(const QString &text, bool isError);
 
 private:
-    void loadScope(bool system);
+    void loadScope(bool system, std::function<void()> done);
+    void readService(const QString &unit, bool system, std::function<void(bool, QJsonObject)> done);
+    void reject(const ProviderPlan &plan);
 
     CommandRunner *m_runner;
     ChangeCoordinator *m_coordinator;
     QVariantList m_user, m_system, m_startup;
     QString m_status = "loading";
+    QString m_userStatus = "loading", m_systemStatus = "loading", m_startupStatus = "loading";
+    int m_generation[2] = {0, 0};
 };

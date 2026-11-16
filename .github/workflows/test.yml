@@ -20,7 +20,7 @@ jobs:
       - name: Install build tools
         run: >-
           pacman -Syu --noconfirm --needed
-          git python ttf-dejavu noto-fonts noto-fonts-cjk
+          git python xdg-utils ttf-dejavu noto-fonts noto-fonts-cjk
           qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
 
       - uses: actions/checkout@v4
@@ -34,3 +34,11 @@ jobs:
 
       - name: Translation coverage
         run: sudo -u builder python3 -I tools/i18n-report.py
+
+      - name: CLI operation accounting
+        run: |
+          sudo -u builder python3 -I tools/cli-coverage.py --json
+          sudo -u builder python3 -I -B -m unittest discover -s tests -p 'test_cli_coverage.py'
+
+      - name: Agent lifecycle and recovery guards
+        run: sudo -u builder python3 -I -B -m unittest discover -s tests -p 'test_agent_lifecycle.py'

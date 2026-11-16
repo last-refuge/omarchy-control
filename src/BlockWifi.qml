@@ -8,6 +8,9 @@ ColumnLayout {
     id: root
     readonly property var net: backend.network
     readonly property bool hasWifi: !!backend.capabilities.wifi
+    readonly property string generalState: net.states.general.status
+    readonly property string wifiState: net.states.wifi.status
+    readonly property string savedState: net.states.saved.status
     // The catalog rows this panel claims, such as the band, drawn under the networks.
     property var panelRows: []
     property string focusId: ""
@@ -58,8 +61,9 @@ ColumnLayout {
             visible: root.hasWifi
             style: "flat"
             implicitHeight: Math.round(theme.fontSize * 2)
-            text: root.net.scanning ? qsTr("Scanning…") : qsTr("Scan")
-            enabled: !root.net.scanning && root.net.wifiEnabled && root.net.status === "ok"
+            objectName: "wifiScan"
+            text: root.net.scanning ? qsTr("Requesting scan…") : qsTr("Scan")
+            enabled: root.net.status !== "loading" && !root.net.scanning && !root.net.radioBusy && root.net.wifiEnabled && root.generalState === "ok"
             onClicked: root.net.rescan()
         }
         AppSwitch {
@@ -68,8 +72,8 @@ ColumnLayout {
             visible: root.hasWifi
             label: qsTr("Wi-Fi")
             on: root.net.wifiEnabled
-            unknown: root.net.status === "loading"
-            enabled: root.net.status === "ok"
+            unknown: root.net.status === "loading" || root.generalState !== "ok"
+            enabled: root.net.status !== "loading" && root.generalState === "ok" && !root.net.radioBusy && !root.net.scanning && !root.net.busy && !root.net.awaitingKeep
             onClicked: win.setWifi(!on)
         }
     }
@@ -81,23 +85,28 @@ ColumnLayout {
             height: visible ? message.implicitHeight + 28 : 0
             AppText {
                 id: message
+                objectName: "wifiReadMessage"
                 x: 16
                 width: parent.width - 32
                 anchors.verticalCenter: parent.verticalCenter
                 wrapMode: Text.Wrap
-                color: root.hasWifi && root.net.status === "unavailable" ? theme.dangerText : theme.muted
+                color: root.hasWifi && (root.generalState === "read_unavailable" || root.wifiState === "read_unavailable" || root.savedState === "read_unavailable") ? theme.dangerText : theme.muted
                 text: !root.hasWifi ? qsTr("No Wi-Fi adapter detected.")
-                    : root.net.status === "unavailable" ? qsTr("NetworkManager is not responding, so networks cannot be shown.")
-                    : root.net.status === "loading" ? qsTr("Looking for networks…")
+                    : root.net.status === "loading" || root.generalState === "not_requested" ? qsTr("Looking for networks…")
+                    : root.generalState !== "ok" ? qsTr("NetworkManager is not responding, so networks cannot be shown.")
                     : !root.net.wifiEnabled ? qsTr("Wi-Fi is off. Turn it on to see networks nearby.")
+                    : root.wifiState === "loading" ? qsTr("Looking for networks…")
+                    : root.wifiState !== "ok" ? qsTr("Wi-Fi networks could not be read. Try again.")
+                    : root.savedState !== "ok" ? qsTr("Saved connections could not be read. Try again.")
                     : root.ssids.length ? ""
-                    : root.net.scanning ? qsTr("Scanning for networks…")
+                    : root.net.scanning ? qsTr("Requesting a scan…")
+                    : root.net.scanResult.outcome === "scan_requested" ? qsTr("Scan requested. Results may arrive later.")
                     : qsTr("No networks found. Scan to look again.")
             }
         }
         Repeater {
             id: networks
-            model: root.hasWifi && root.net.wifiEnabled && root.net.status === "ok" ? root.ssids : []
+            model: root.hasWifi && root.net.wifiEnabled && (root.generalState === "ok" || root.generalState === "loading") && (root.wifiState === "ok" || root.wifiState === "loading") ? root.ssids : []
             delegate: Item {
                 id: row
                 objectName: "wifiNetwork"
@@ -163,8 +172,8 @@ ColumnLayout {
                     AppButton {
                         id: join
                         visible: !row.network.active
-                        enabled: !root.net.busy && !root.net.awaitingKeep
-                        text: row.uuid.length ? qsTr("Connect") : qsTr("Join in panel")
+                        enabled: root.net.status !== "loading" && root.savedState === "ok" && !root.net.busy && !root.net.awaitingKeep
+                        text: root.savedState !== "ok" ? qsTr("Unavailable") : row.uuid.length ? qsTr("Connect") : qsTr("Join in panel")
                         iconName: row.uuid.length ? "" : "external"
                         Accessible.name: (row.uuid.length ? qsTr("Connect to %1") : qsTr("Join %1 in the Omarchy panel")).arg(modelData)
                         // Passwords belong to Omarchy's panel, never to this window.

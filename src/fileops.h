@@ -22,6 +22,10 @@ bool atomicWrite(const QString &path, const QByteArray &contents, QString *error
 QString fingerprint(const QString &path);
 QString fingerprintBytes(const QByteArray &contents);
 
+// Empty preference markers may be created/removed only below owned, unshared
+// directories in this home, with no links or custom leaf content.
+QString emptyMarkerError(const QString &home, const QString &path);
+
 // JSON with // and /* */ comments and trailing commas, as Omarchy's menu
 // extensions allow. These return false and set `error` rather than guess.
 QByteArray stripJsonComments(const QByteArray &source);

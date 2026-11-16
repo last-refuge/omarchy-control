@@ -1,0 +1,11 @@
+[Unit]
+Description=Remove owned Omarchy Control agent registrations before package removal
+ConditionUser=!root
+ConditionPathIsExecutable=/usr/bin/omarchy-control
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/omarchy-control/agent-integration/user-recovery remove
+TimeoutStartSec=60
+NoNewPrivileges=yes
+UMask=0077

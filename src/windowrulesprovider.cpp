@@ -7,6 +7,7 @@
 #include <QTimer>
 
 #include "hypromodule.h"
+#include "hyprchange.h"
 
 WindowRulesProvider::WindowRulesProvider(CommandRunner *runner, ChangeCoordinator *coordinator, QObject *parent)
     : QObject(parent), m_runner(runner), m_coordinator(coordinator) {}
@@ -21,107 +22,103 @@ QVariantList WindowRulesProvider::rules() const {
     return rows;
 }
 
+QJsonObject WindowRulesProvider::snapshot() const {
+    auto snapshot = HyprModule(m_runner->env()).inspect();
+    snapshot.remove("binds");
+    if (snapshot.value("rules").isArray()) snapshot["rules"] = HyprChange::selectable(snapshot, "rules");
+    snapshot["scope"] = "Owned module only; rules in other Lua files and effective window behavior are not inspected.";
+    return snapshot;
+}
+
+QJsonObject WindowRulesProvider::constraints() {
+    return {{"match", QJsonObject{{"type", "string"}, {"minimumLength", 1}, {"maximumLength", 120},
+                                 {"normalization", "trim surrounding whitespace; control characters are rejected"},
+                                 {"validation", "Qt regular-expression syntax only; compositor acceptance and app matching are not established"}}},
+            {"actions", QJsonArray{
+                QJsonObject{{"action", "float"}, {"valueRequired", false}, {"valuePattern", "\\A\\z"}},
+                QJsonObject{{"action", "tile"}, {"valueRequired", false}, {"valuePattern", "\\A\\z"}},
+                QJsonObject{{"action", "noblur"}, {"valueRequired", false}, {"valuePattern", "\\A\\z"}},
+                QJsonObject{{"action", "workspace"}, {"valueRequired", true}, {"valuePattern", "\\A([0-9]{1,3}|special(:[A-Za-z0-9_-]{1,32})?)\\z"},
+                            {"examples", QJsonArray{"3", "special", "special:notes"}}},
+                QJsonObject{{"action", "opacity"}, {"valueRequired", true}, {"valuePattern", "\\A(0(\\.[0-9]{1,3})?|1(\\.0{1,3})?)( (0(\\.[0-9]{1,3})?|1(\\.0{1,3})?))?\\z"},
+                            {"examples", QJsonArray{"0.9", "0.9 0.85"}}}}},
+            {"verificationScope", "input-validation-only"},
+            {"effects", QJsonArray{"No files are read or changed, and Hyprland is not contacted or reloaded."}}};
+}
+
 QString WindowRulesProvider::check(const QString &match, const QString &action, const QString &value) {
     if (match.trimmed().isEmpty() || match.size() > 120)
         return tr("Enter the app's window class, which is up to 120 characters.");
     for (const QChar c : match)
         if (c.category() == QChar::Other_Control)
             return tr("That value contains characters that are not allowed.");
-    if (!QRegularExpression(match).isValid())
+    if (!QRegularExpression(match.trimmed()).isValid())
         return tr("That is not a valid pattern.");
-    static const QRegularExpression workspace("^([0-9]{1,3}|special(:[A-Za-z0-9_-]{1,32})?)$");
-    static const QRegularExpression opacity("^(0(\\.[0-9]{1,3})?|1(\\.0{1,3})?)( (0(\\.[0-9]{1,3})?|1(\\.0{1,3})?))?$");
-    if (action == QLatin1String("float") || action == QLatin1String("tile") || action == QLatin1String("noblur"))
-        return {};
-    if (action == QLatin1String("workspace"))
-        return workspace.match(value).hasMatch() ? QString() : tr("Enter a workspace number.");
-    if (action == QLatin1String("opacity"))
-        return opacity.match(value).hasMatch() ? QString() : tr("Enter an opacity from 0 to 1, or two values for active and inactive.");
+    for (const auto &item : constraints().value("actions").toArray()) {
+        const auto schema = item.toObject();
+        if (schema.value("action").toString() != action) continue;
+        if (QRegularExpression(schema.value("valuePattern").toString()).match(value).hasMatch()) return {};
+        if (action == QLatin1String("workspace")) return tr("Enter a workspace number.");
+        if (action == QLatin1String("opacity")) return tr("Enter an opacity from 0 to 1, or two values for active and inactive.");
+        return tr("That rule type does not take a value.");
+    }
     return tr("That rule type is not available.");
 }
 
-void WindowRulesProvider::submit(const QString &label, std::function<bool(HyprModule &, QString *)> edit, const QString &success) {
-    HyprModule probe(m_runner->env());
-    ChangeCoordinator::Request request;
-    request.settingId = "windowrules";
-    request.label = label;
-    request.files << probe.path() << probe.hyprlandPath();
-    auto baseline = std::make_shared<QStringList>();
-    request.apply = [this, edit, baseline](ChangeCoordinator::Done done) {
-        m_runner->run(m_runner->env().hyprctl({"-j", "configerrors"}), CommandOptions{3000}, this, [this, edit, baseline, done](const CommandResult &errors) {
-            for (const auto &item : QJsonDocument::fromJson(errors.out).array())
-                if (!item.toString().trimmed().isEmpty())
-                    baseline->append(item.toString().trimmed());
-            HyprModule module(m_runner->env());
-            QString error;
-            if (!module.load(&error) || !edit(module, &error) || !module.save(&error) || !module.installImport(&error)) {
-                done(false, error);
-                return;
-            }
-            CommandOptions options;
-            options.mutation = true;
-            m_runner->run(m_runner->env().hyprctl({"reload"}), options, this, [done](const CommandResult &result) { done(result.ok(), result.describe("Hyprland")); });
-        });
-    };
-    // Hyprland has no query for a Lua window rule, so a clean reload is what can be
-    // established. The message says what that does and does not prove.
-    request.verify = [this, baseline](ChangeCoordinator::Done done) {
-        QTimer::singleShot(150, this, [this, baseline, done] {
-            m_runner->run(m_runner->env().hyprctl({"-j", "configerrors"}), CommandOptions{3000}, this, [this, baseline, done](const CommandResult &errors) {
-                if (!errors.ok()) {
-                    done(false, errors.describe("Hyprland"));
-                    return;
-                }
-                for (const auto &item : QJsonDocument::fromJson(errors.out).array()) {
-                    const QString text = item.toString().trimmed();
-                    if (!text.isEmpty() && !baseline->contains(text)) {
-                        done(false, tr("Hyprland reported a config error: %1").arg(text.left(240)));
-                        return;
-                    }
-                }
-                done(true, {});
-            });
-        });
-    };
-    request.rollback = [this](ChangeCoordinator::Done done) {
-        CommandOptions options;
-        options.mutation = true;
-        m_runner->run(m_runner->env().hyprctl({"reload"}), options, this, [done](const CommandResult &) { done(true, {}); });
-    };
-    m_coordinator->submit(std::move(request), [this, success](const Transaction &tx) {
-        emit message(tx.phase == QLatin1String("committed") ? success : tx.message, tx.phase != QLatin1String("committed"));
+
+void WindowRulesProvider::reject(const ProviderPlan &plan) {
+    Transaction tx; tx.settingId = "windowrules"; tx.phase = "failed"; tx.message = plan.error;
+    emit message(plan.error, true);
+    emit operationFinished(tx);
+}
+
+void WindowRulesProvider::planAdd(const QString &match, const QString &action, const QString &value, std::function<void(ProviderPlan)> done) {
+    const QString error = check(match, action, value);
+    if (!error.isEmpty()) { ProviderPlan plan; plan.operation = "rules.add"; plan.error = error; done(plan); return; }
+    auto plan = HyprChange::base(m_runner->env(), "rules.add", match.trimmed(), "rules");
+    if (!plan.ok) { done(plan); return; }
+    auto rows = plan.details.value("entriesBefore").toArray();
+    const QJsonObject record{{"match", match.trimmed()}, {"action", action}, {"value", value}};
+    plan.details["record"] = record;
+    plan.before = QString::number(rows.size()) + " owned rules";
+    rows.append(record); plan.details["entriesAfter"] = rows;
+    plan.after = match.trimmed() + " " + action + " " + value;
+    plan.effects << tr("The rule applies to windows opened later. Reload success does not establish matching or behavior of an application window.");
+    HyprChange::runtime(m_runner, this, plan, done);
+}
+
+void WindowRulesProvider::planRemove(const QString &selector, std::function<void(ProviderPlan)> done) {
+    auto plan = HyprChange::base(m_runner->env(), "rules.remove", selector, "rules");
+    if (!plan.ok) { done(plan); return; }
+    const int index = HyprChange::selected(plan, selector);
+    if (index < 0) { plan.ok = false; plan.errorCode = "stale_target"; plan.error = tr("That rule selector is invalid or stale. Read rule list again."); done(plan); return; }
+    auto rows = plan.details.value("entriesBefore").toArray();
+    plan.details["record"] = rows.at(index); rows.removeAt(index);
+    plan.details["entriesAfter"] = rows; plan.before = selector; plan.after = "removed";
+    HyprChange::runtime(m_runner, this, plan, done);
+}
+
+void WindowRulesProvider::applyPlan(const ProviderPlan &plan) {
+    if (!plan.ok) { reject(plan); return; }
+    HyprChange::submit(m_runner, m_coordinator, this, plan, {}, {}, [this, plan](const Transaction &tx) {
+        emit message(tx.phase == QLatin1String("committed") ? (plan.operation == QLatin1String("rules.add") ? tr("Rule saved. It applies to windows opened from now on.") : tr("Rule removed")) : tx.message,
+                     tx.phase != QLatin1String("committed"));
+        emit operationFinished(tx);
         emit changed();
     });
 }
 
 void WindowRulesProvider::addRule(const QString &match, const QString &action, const QString &value) {
-    const QString problem = validate(match, action, value);
-    if (!problem.isEmpty()) {
-        emit message(problem, true);
-        return;
-    }
-    const QJsonObject rule{{"match", match.trimmed()}, {"action", action}, {"value", value}};
-    submit(tr("Window rule for %1").arg(match.trimmed()),
-           [rule](HyprModule &module, QString *) {
-               QJsonArray rules = module.rules();
-               rules.append(rule);
-               module.setRules(rules);
-               return true;
-           },
-           tr("Rule saved. It applies to windows opened from now on."));
+    planAdd(match, action, value, [this](const ProviderPlan &plan) { applyPlan(plan); });
 }
 
-void WindowRulesProvider::removeRule(int index) {
-    submit(tr("Window rule removed"),
-           [index](HyprModule &module, QString *error) {
-               QJsonArray rules = module.rules();
-               if (index < 0 || index >= rules.size()) {
-                   *error = tr("That rule no longer exists.");
-                   return false;
-               }
-               rules.removeAt(index);
-               module.setRules(rules);
-               return true;
-           },
-           tr("Rule removed"));
+void WindowRulesProvider::removeRule(const QVariant &selection) {
+    if (selection.metaType().id() == QMetaType::QString) {
+        planRemove(selection.toString(), [this](const ProviderPlan &plan) { applyPlan(plan); });
+        return;
+    }
+    const int index = selection.toInt();
+    const auto rows = HyprChange::selectable(HyprModule(m_runner->env()).inspect(), "rules");
+    const QString selector = index < 0 || index >= rows.size() ? QString() : rows.at(index).toObject().value("selector").toString();
+    planRemove(selector, [this](const ProviderPlan &plan) { applyPlan(plan); });
 }

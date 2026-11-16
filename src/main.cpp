@@ -5,14 +5,20 @@
 #include <QGuiApplication>
 
 #include "cli.h"
+#include "cliapi.h"
 #include "env.h"
 #include "gui.h"
 #include "version.h"
 
 int main(int argc, char *argv[]) {
     const QString command = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QString();
+    QStringList commandArguments;
+    for (int i = 1; i < argc; ++i)
+        commandArguments << QString::fromLocal8Bit(argv[i]);
 
-    if (command == QLatin1String("open")) {
+    // A versioned call must produce a CLI refusal for unsupported operations,
+    // including open, rather than unexpectedly launching a window.
+    if (command == QLatin1String("open") && !CliApi::requested(commandArguments)) {
         QGuiApplication app(argc, argv);
         app.setApplicationName("omarchy-control");
         app.setApplicationVersion(APP_VERSION);

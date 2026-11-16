@@ -1,5 +1,54 @@
 {
  "adapters": {
+  "audio.input.default": [
+   "omarchy-audio-input-set-default"
+  ],
+  "audio.output.default": [
+   "omarchy-audio-output-set-default"
+  ],
+  "audio.output.routing": [
+   "omarchy-audio-output-sink"
+  ],
+  "bluetooth.device": [
+   "omarchy-bluetooth-device",
+   "omarchy-bluetooth-power"
+  ],
+  "bluetooth.power": [
+   "omarchy-bluetooth-power"
+  ],
+  "diagnostics.export": [
+   "omarchy-debug"
+  ],
+  "dock.pin": [
+   "omarchy-dock",
+   "omarchy-shell-config"
+  ],
+  "plugins.clone": [
+   "omarchy-plugin-clone",
+   "omarchy-plugin-catalog",
+   "omarchy-plugin-enable",
+   "omarchy-plugin-list",
+   "omarchy-shell"
+  ],
+  "plugins.enabled": [
+   "omarchy-plugin-enable",
+   "omarchy-plugin-disable",
+   "omarchy-plugin-list",
+   "omarchy-shell"
+  ],
+  "plugins.recover": [
+   "omarchy-shell"
+  ],
+  "plugins.remove": [
+   "omarchy-plugin-remove",
+   "omarchy-plugin-list",
+   "omarchy-shell"
+  ],
+  "preferences.crash-mutes": [
+   "omarchy-crash-mute",
+   "omarchy-toggle",
+   "omarchy-toggle-enabled"
+  ],
   "profile.bar": [
    "omarchy-bar",
    "omarchy-shell-config"
@@ -11,11 +60,26 @@
   ],
   "profile.themes": [
    "omarchy-theme-install"
+  ],
+  "widgets.move": [
+   "omarchy-bar",
+   "omarchy-shell"
+  ],
+  "widgets.option": [
+   "omarchy-bar",
+   "omarchy-shell"
   ]
  },
  "commands": {
+  "omarchy-audio-input-set-default": "753239a07324ebb53170a21aaf8bb88812046a49decb6e09d5cec87850f38be9",
+  "omarchy-audio-output-set-default": "cb6244584eed45bca830fd412f3f937af3bd00b4ec1490786e54daa8ed463506",
+  "omarchy-audio-output-sink": "ab0b3f92c546d09a24fbf300f4892a1aadac06746438f663bd85138a3492ecfd",
   "omarchy-bar": "7fff2a1f7ed2fcb573cd1394b71ce9f4b040e918a9240d966f788210d4a2a727",
+  "omarchy-bluetooth-device": "e1b9acf4838070afea8a42a8681daa1806608f5bab3d51d415ae126092c8bb80",
+  "omarchy-bluetooth-power": "3116e052035e8b15a46f38f0106d9e32ebf8cc913af60f2863068f3f618cb255",
   "omarchy-brightness-display": "044e6bcb55bb98b683acd967414e0339f95ebe21393395b3e184d35f44809596",
+  "omarchy-crash-mute": "2479fe20ee9d99b76e8be8c968745640cdb713199a6bf6e32a8ceb5bdccebca7",
+  "omarchy-debug": "9248839d1ce5b656c28b5bd4813ed4dcc70e01ee54641d707ec445bad947c9ac",
   "omarchy-default-browser": "5019c574ad374ca8ed3b1a454b66929d9d9f13c071fcbc33acd62c8be3fc3faa",
   "omarchy-default-editor": "6b2040d0a6762af5bba76b30d9dddace48505ccd8bb6c19de25990f5b20c52ab",
   "omarchy-default-terminal": "f1dccc23c3bf553d80860c06ebc1334574a9ff0868b7af73a562c63ef81d7e25",
@@ -32,19 +96,25 @@
   "omarchy-hyprland-workspace-layout-default": "6f3f99de6b57e4aba01d9de66590897b83f3e050b8b815ed648f2af3300a2f88",
   "omarchy-language": "6f24a7fc9a2fd75c8a10054f4348a7190d792d62bf4617b7ccf48c94ae49e066",
   "omarchy-network-band": "89349eb91c7064060d108ba68abdecf887716e2b2da33c9b7682551d3fe95e79",
+  "omarchy-plugin-catalog": "f995166899b794b49ac15a256cce4b1513648870a9c951c680c8fac18f627ab8",
+  "omarchy-plugin-clone": "793b6dcef709c1919e3c3f38eb49bf14fd4ea2314bdf04954197b08736de63a1",
   "omarchy-plugin-disable": "394414db2d5fd393080f013ba301cf44d81c7bcea7046f7b8c5e34faf1acde15",
   "omarchy-plugin-enable": "e8e176daf0ead11b5f5f8e6b0de319c3875335eaf5face41f1bb678779526b1a",
   "omarchy-plugin-list": "81b990d021a53cbe597c09d8bef92c8909879003db30fb8f56d9f0e03bbcb461",
+  "omarchy-plugin-remove": "8c247b5f3415a6ae08749646dff8ca094f544c93e92b17a72645f703a5d78903",
   "omarchy-powerprofiles-set": "3dd63e539a26d1a8bc1338394ef0c2ba29920ef76db5dfdd85b54d67af35e98a",
   "omarchy-shell": "fd1ac699c5d83846c8eb530ead22792be61b9704f68e64caa63f7243d170fa24",
   "omarchy-shell-config": "931df34897dba74e2a98b190040c9d50d3082d00f58c19a22ab48402cebcf539",
+  "omarchy-theme-bg-intro": "f9f74eb19f9a4b4a5489176bba132cb058f52baea6b3e60e4387a30e2d7c4f9a",
   "omarchy-theme-bg-set": "865beafef7643dc4aac6f2eca06d68808c197d39fba7fedaba75892cfd050a1a",
   "omarchy-theme-install": "f08635d3d58f56ee49d94a132bcd2c36a92e7e8dc6891515d2d77edfa73bd15b",
   "omarchy-theme-set": "ab251f6cf6e07c6e07b0c4177220e4691d04a872c03694f2bdc606e17facd9da",
   "omarchy-theme-set-gnome": "942bb8fd260387a39ef664c3b172d1fe1baff265a2592a26d8efe118f35a19aa",
+  "omarchy-toggle": "f1e8dfb25e31a79fc8c5a4e6e9c1c91cd60a97a854c2e2a401793155980fee5c",
   "omarchy-toggle-animations": "911377069712ade3cded671a0a3d9ee118c10c23702e266486d330e6cf83f49e",
   "omarchy-toggle-bar": "936660563a3f853eb8aa6094ae45c7a4800024226465393d5c1848319fd31e30",
   "omarchy-toggle-crash-capture": "673b86c866c60bcb182ee0b03b74747beb55fda2cf1f42dc182f4dd8ccb9ad93",
+  "omarchy-toggle-enabled": "5f5b2797e2f5912f0c5e19f02ede429fdc2952dbf3f3d0c31f1d6e2964006988",
   "omarchy-toggle-idle": "69afeddb67a4089504730d427f96de72200efa386923dd6c229d4d5059f75d02",
   "omarchy-toggle-nightlight": "31335986e0bfd5b93703e1fefec9602b2e90d9604660911fb88b735a128ecb95",
   "omarchy-toggle-screensaver": "dcf366c694db01f299d96791cc349863209a11f866cfe763d88efa196382313c",
@@ -59,6 +129,7 @@
  "settings": {
   "appearance.animations": "omarchy-toggle-animations",
   "appearance.background": "omarchy-theme-bg-set",
+  "appearance.background.intros": "omarchy-theme-bg-intro",
   "appearance.corners": "omarchy-hyprland-corners",
   "appearance.font": "omarchy-font-set",
   "appearance.fontcjk": "omarchy-font-cjk",

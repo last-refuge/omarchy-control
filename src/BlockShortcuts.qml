@@ -7,7 +7,11 @@ ColumnLayout {
     readonly property var shortcuts: backend.shortcuts
     property string filter: ""
     property string captured: ""
-    readonly property var check: captured.length ? shortcuts.checkKeys(captured) : ({ valid: false, conflicts: [], critical: false })
+    readonly property var check: {
+        // Re-evaluate a captured chord when discovery finishes, too.
+        const state = shortcuts.status
+        return captured.length ? shortcuts.checkKeys(captured) : ({ valid: false, available: false, conflicts: [], critical: false })
+    }
     readonly property var visibleRows: shortcuts.binds.filter(function (b) {
         return !filter.length || (b.keys + " " + b.description).toLowerCase().indexOf(filter.toLowerCase()) >= 0
     })
@@ -59,7 +63,7 @@ ColumnLayout {
                     AppButton {
                         text: root.check.conflicts.length ? qsTr("Replace") : qsTr("Add")
                         style: root.check.conflicts.length ? "danger" : "primary"
-                        enabled: root.check.valid && commandField.text.trim().length > 0
+                        enabled: root.check.valid && root.check.available && commandField.text.trim().length > 0
                         onClicked: {
                             var save = function () {
                                 root.shortcuts.addBinding(root.captured, descriptionField.text, commandField.text, root.check.conflicts.length > 0)
@@ -84,8 +88,10 @@ ColumnLayout {
                     wrapMode: Text.Wrap
                     color: !root.check.valid || root.check.conflicts.length ? theme.warning : theme.muted
                     text: !root.check.valid ? qsTr("A shortcut needs at least one modifier and one key.")
+                        : !root.check.available ? qsTr("Shortcuts could not be read. Try again after the desktop is available.")
                         : root.check.conflicts.length ? qsTr("%1 is already used by: %2").arg(root.check.keys).arg(root.check.conflicts.join(", "))
-                        : qsTr("%1 is free.").arg(root.check.keys)
+                        : root.check.collisionState === "unknown" ? qsTr("Some shortcuts use keycodes or multiple keys and cannot be compared by name.")
+                        : qsTr("No matching named shortcut was reported for %1.").arg(root.check.keys)
                 }
             }
         }
@@ -97,7 +103,19 @@ ColumnLayout {
                 spacing: 10
                 AppText { text: modelData.keys; color: theme.accentText; Layout.preferredWidth: 260 }
                 AppText { text: modelData.description || modelData.command; Layout.fillWidth: true }
-                AppButton { style: "flat"; text: qsTr("Remove"); onClicked: root.shortcuts.removeBinding(modelData.keys) }
+                AppButton {
+                    style: "flat"; text: qsTr("Remove")
+                    onClicked: {
+                        var selected = modelData.selector
+                        var chord = modelData.keys
+                        var remove = function () { root.shortcuts.removeBinding(selected) }
+                        if (root.shortcuts.checkKeys(chord).critical)
+                            confirm.open_(qsTr("Remove %1").arg(chord),
+                                          qsTr("This shortcut is one of the main ways back into the desktop. Make sure you keep another way to open the launcher."),
+                                          [], qsTr("Remove"), true, remove)
+                        else remove()
+                    }
+                }
             }
         }
 

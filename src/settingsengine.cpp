@@ -16,10 +16,19 @@
 #include "blur.h"
 #include "fileops.h"
 
+// Some upstream preferences are empty marker files. Refuse redirected or
+// non-marker content before invoking a helper that can touch or remove one.
+static QString emptyFlagError(const Env &env, const CatalogEntry &entry) {
+    if (entry.write.value("guard") != QLatin1String("empty-flag")) return {};
+    return FileOps::emptyMarkerError(env.home, env.expand(entry.read.value("file").toString()));
+}
+
 QVariantMap ChangePlan::toVariant() const {
     QVariantMap m;
     m["ok"] = ok;
     m["error"] = error;
+    if (!error.isEmpty())
+        m["errorCode"] = errorCode;
     m["normalized"] = normalized;
     m["confirmText"] = confirmText;
     m["needsOwnership"] = needsOwnership;
@@ -234,6 +243,13 @@ void SettingsEngine::readFiles(const CatalogEntry &entry, ReadCallback callback)
     const QString kind = entry.read.value("kind").toString();
     const QString file = env.expand(entry.read.value("file").toString());
     ReadResult result;
+    const QString guardError = emptyFlagError(env, entry);
+    if (!guardError.isEmpty()) {
+        result.status = "unavailable";
+        result.reason = guardError;
+        callback(result);
+        return;
+    }
     result.status = "ok";
     if (kind == QLatin1String("exists")) {
         const bool exists = QFileInfo::exists(file);
@@ -537,15 +553,18 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
     const CatalogEntry *entry = m_catalog->find(id);
     const auto tr = [](const char *text) { return QCoreApplication::translate("SettingsEngine", text); };
     if (!entry) {
+        plan.errorCode = "unknown_id";
         plan.error = tr("Unknown setting.");
         return plan;
     }
     if (!entry->isEditable()) {
+        plan.errorCode = "read_only";
         plan.error = tr("This cannot be changed here.");
         return plan;
     }
     const auto availability = m_capabilities->availability(*entry);
     if (!availability.available) {
+        plan.errorCode = "unavailable";
         plan.error = availability.reason;
         return plan;
     }
@@ -555,9 +574,17 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
     if (m_compat) {
         const QString changed = m_compat->changedFor(*entry, m_capabilities->versions().value("hyprland").toString());
         if (!changed.isEmpty()) {
+            plan.errorCode = "compatibility_blocked";
             plan.error = tr("Omarchy's %1 changed since this was tested, so changes here are paused. Review it under Advanced.").arg(changed);
             return plan;
         }
+    }
+
+    const QString guardError = emptyFlagError(m_runner->env(), *entry);
+    if (!guardError.isEmpty()) {
+        plan.errorCode = "ownership_conflict";
+        plan.error = guardError;
+        return plan;
     }
 
     QString value = rawValue.trimmed();
@@ -594,6 +621,7 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
             // A default-app setter opens an installer when the app is missing, so it
             // is refused here for the CLI and for an undo, not just hidden in the list.
             if (object.contains("requiresCommand") && !m_capabilities->hasCommand(object.value("requiresCommand").toString())) {
+                plan.errorCode = "choice_unavailable";
                 plan.error = tr("That app is not installed. Install it first under Apps & defaults.");
                 return plan;
             }
@@ -615,6 +643,7 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
         // Omarchy's own setters run sed over these values, so a live-list value
         // whose list could not be read is refused rather than passed along.
         if (!known && liveList && knownChoices.isEmpty() && !entry->allowCustomValue) {
+            plan.errorCode = "choices_unavailable";
             plan.error = tr("The list of choices could not be read, so this was not changed.");
             return plan;
         }
@@ -656,6 +685,7 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
         // change would quietly vanish at the next reload.
         HyprModule module(m_runner->env());
         if (module.load() && !module.monitors().isEmpty()) {
+            plan.errorCode = "configuration_conflict";
             plan.error = tr("Your saved display layout sets the scale. Change it under Arrangement.");
             return plan;
         }
@@ -665,6 +695,7 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
         HyprModule module(m_runner->env(), slotOf(*entry));
         plan.files << module.path();
         if (module.state() == HyprModule::ModifiedByUser) {
+            plan.errorCode = "ownership_conflict";
             plan.error = tr("%1 was edited by hand, so this is paused. Edit it directly under Advanced.").arg(module.fileName());
             return plan;
         }
@@ -675,6 +706,7 @@ ChangePlan SettingsEngine::plan(const QString &id, const QString &rawValue, cons
             adds = adds || !edit.remove;
         if (adds && !module.importInstalled()) {
             if (!module.canInstallImport()) {
+                plan.errorCode = "unsupported_configuration";
                 plan.error = tr("hyprland.lua does not have Omarchy's stock layout, so this can only be changed by editing it directly under Advanced.");
                 return plan;
             }
@@ -906,13 +938,15 @@ void SettingsEngine::verifyValue(const QString &id, const QString &expected, int
 
 void SettingsEngine::applyCommand(const CatalogEntry &entry, const QJsonObject &write, const QString &value, const QString &before,
                                   const QString &target, ChangeCoordinator::Done done) {
+    const QString guardError = emptyFlagError(m_runner->env(), entry);
+    if (!guardError.isEmpty()) { done(false, guardError); return; }
     QString mappedValue = mapped(write.value("map").toObject(), value);
     QJsonArray argv = write.value("argv").toArray();
     if (value.isEmpty() && write.contains("clear"))
         argv = write.value("clear").toArray();
     // Some Omarchy commands only toggle: run one only when it would move toward
     // the requested state, which is the read-then-act race the plan calls out.
-    if (write.value("toggleOnly").toBool() && before == value) {
+    if ((write.value("toggleOnly").toBool() || write.value("skipUnchanged").toBool()) && before == value) {
         done(true, {});
         return;
     }
@@ -994,6 +1028,22 @@ void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallbac
             request.runId = runId;
             for (const auto &file : plan.files)
                 request.files << file;
+            if (entry->write.value("guard") == QLatin1String("empty-flag")) {
+                const QString path = m_runner->env().expand(entry->read.value("file").toString());
+                const bool existed = (current.value == "true") != entry->read.value("invert").toBool();
+                request.expectedFingerprints.insert(path, existed ? FileOps::fingerprintBytes({}) : QStringLiteral("missing"));
+                // A helper does not expose path identity across its subprocess.
+                // Keep backups for review on uncertainty; never restore through
+                // a path another writer may have replaced with a link.
+                request.restoreFilesOnFailure = false;
+                const bool existsAfter = (plan.normalized == "true") != entry->read.value("invert").toBool();
+                const QString after = existsAfter ? FileOps::fingerprintBytes({}) : QStringLiteral("missing");
+                request.writtenFingerprints = [path, after] { return QHash<QString, QString>{{path, after}}; };
+                request.preflight = [env = m_runner->env(), entry = *entry](auto done) {
+                    const auto error = emptyFlagError(env, entry);
+                    done(error.isEmpty(), error);
+                };
+            }
             const QJsonObject write = entry->write;
             const QString value = plan.normalized;
             const QString before = current.value;
@@ -1296,6 +1346,14 @@ void SettingsEngine::reset(const QString &id, ApplyCallback callback, const QStr
         return;
     }
     failed.label = entry->label;
+    const auto availability = m_capabilities->availability(*entry);
+    const QString changed = m_compat ? m_compat->changedFor(*entry, m_capabilities->versions().value("hyprland").toString()) : QString();
+    if (!availability.available || !changed.isEmpty()) {
+        failed.message = !availability.available ? availability.reason
+            : QCoreApplication::translate("SettingsEngine", "Omarchy's %1 changed since this was tested, so changes here are paused. Review it under Advanced.").arg(changed);
+        callback(failed);
+        return;
+    }
     const QString writeKind = entry->write.value("kind").toString();
     if (writeKind == QLatin1String("icons")) {
         apply(id, QString::fromLatin1(IconThemeProvider::FollowTheme), std::move(callback), QStringLiteral("reset"), runId);

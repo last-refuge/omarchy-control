@@ -159,12 +159,15 @@ ScrollView {
                                 spacing: 2
                                 AppText { text: qsTr("Wi-Fi"); Layout.fillWidth: true }
                                 AppText {
+                                    objectName: "overviewWifiState"
                                     Layout.fillWidth: true
                                     secondary: true
                                     scale_: 0.88
                                     // A Latin network name must not flip the line in a right-to-left language.
-                                    text: (root.mirrored ? "\u200F" : "") + (backend.network.status !== "ok" ? qsTr("NetworkManager is not responding")
+                                    text: (root.mirrored ? "\u200F" : "") + (backend.network.status === "loading" ? qsTr("Checking network state…")
+                                        : backend.network.states.general.status !== "ok" ? qsTr("NetworkManager is not responding")
                                         : !backend.network.wifiEnabled ? qsTr("Off")
+                                        : backend.network.states.devices.status !== "ok" || backend.network.devices.some(function (device) { return device.type === "wifi" && !device.stateKnown }) ? qsTr("Connection state unavailable")
                                         : root.connectedWifi ? qsTr("%1 · Connected").arg(root.connectedWifi.connection)
                                         : qsTr("Not connected"))
                                 }
@@ -172,7 +175,8 @@ ScrollView {
                             AppSwitch {
                                 label: qsTr("Wi-Fi")
                                 on: backend.network.wifiEnabled
-                                enabled: backend.network.status === "ok"
+                                unknown: backend.network.status === "loading" || backend.network.states.general.status !== "ok"
+                                enabled: backend.network.status !== "loading" && backend.network.states.general.status === "ok" && !backend.network.radioBusy && !backend.network.scanning && !backend.network.busy && !backend.network.awaitingKeep
                                 onClicked: win.setWifi(!on)
                             }
                         }

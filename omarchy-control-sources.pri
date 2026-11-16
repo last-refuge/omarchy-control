@@ -22,16 +22,20 @@ HEADERS += \
     $$PWD/src/capabilities.h \
     $$PWD/src/blur.h \
     $$PWD/src/hypromodule.h \
+    $$PWD/src/hyprchange.h \
     $$PWD/src/changecoordinator.h \
     $$PWD/src/settingsengine.h \
     $$PWD/src/helperlauncher.h \
     $$PWD/src/audioprovider.h \
     $$PWD/src/bluetoothprovider.h \
     $$PWD/src/networkprovider.h \
+    $$PWD/src/networkpreview.h \
     $$PWD/src/displayprovider.h \
+    $$PWD/src/displaypreview.h \
     $$PWD/src/servicesprovider.h \
     $$PWD/src/shortcutsprovider.h \
     $$PWD/src/pluginsprovider.h \
+    $$PWD/src/pluginfiles.h \
     $$PWD/src/systemprovider.h \
     $$PWD/src/windowrulesprovider.h \
     $$PWD/src/updater.h \
@@ -49,6 +53,10 @@ HEADERS += \
     $$PWD/src/backend.h \
     $$PWD/src/coverage.h \
     $$PWD/src/cli.h \
+    $$PWD/src/cliapi.h \
+    $$PWD/src/skillintegration.h \
+    $$PWD/src/provideroperation.h \
+    $$PWD/src/preferences.h \
     $$PWD/src/trayhost.h \
     $$PWD/src/gui.h
 
@@ -69,16 +77,21 @@ SOURCES += \
     $$PWD/src/capabilities.cpp \
     $$PWD/src/blur.cpp \
     $$PWD/src/hypromodule.cpp \
+    $$PWD/src/hyprchange.cpp \
     $$PWD/src/changecoordinator.cpp \
     $$PWD/src/settingsengine.cpp \
     $$PWD/src/helperlauncher.cpp \
     $$PWD/src/audioprovider.cpp \
     $$PWD/src/bluetoothprovider.cpp \
     $$PWD/src/networkprovider.cpp \
+    $$PWD/src/networkpreview.cpp \
+    $$PWD/src/preferences.cpp \
     $$PWD/src/displayprovider.cpp \
+    $$PWD/src/displaypreview.cpp \
     $$PWD/src/servicesprovider.cpp \
     $$PWD/src/shortcutsprovider.cpp \
     $$PWD/src/pluginsprovider.cpp \
+    $$PWD/src/pluginfiles.cpp \
     $$PWD/src/systemprovider.cpp \
     $$PWD/src/windowrulesprovider.cpp \
     $$PWD/src/updater.cpp \
@@ -95,5 +108,7 @@ SOURCES += \
     $$PWD/src/backend.cpp \
     $$PWD/src/coverage.cpp \
     $$PWD/src/cli.cpp \
+    $$PWD/src/cliapi.cpp \
+    $$PWD/src/skillintegration.cpp \
     $$PWD/src/trayhost.cpp \
     $$PWD/src/gui.cpp

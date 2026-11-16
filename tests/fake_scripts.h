@@ -160,7 +160,7 @@ const char kFakeBar[] = R"SH(
 state="$HOME/bar-state"
 config="$HOME/.config/omarchy/shell.json"
 write_config() {
-  local out='{"bar":{"id":"local.test-bar","layout":{'
+  local out='{"version":1,"bar":{"id":"local.test-bar","layout":{'
   local first=1 section
   for section in left centerBegin center centerEnd right tray; do
     [ $first = 1 ] || out+=','

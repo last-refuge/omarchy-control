@@ -76,6 +76,7 @@ Column {
     // same pack afterwards, since the tiles it was on have just been replaced.
     property var shown: []
     property string shownSignature: ""
+    property int focusRevision: 0
     onWantedChanged: {
         var next = JSON.stringify(wanted)
         if (next === shownSignature)
@@ -89,9 +90,10 @@ Column {
         shownSignature = next
         shown = wanted
         if (focused.length)
-            Qt.callLater(root.refocus, focused)
+            Qt.callLater(root.refocus, focused, root.focusRevision)
     }
-    function refocus(value) {
+    function refocus(value, revision) {
+        if (revision !== focusRevision) return
         for (var i = 0; i < tileRepeater.count; ++i) {
             var item = tileRepeater.itemAt(i)
             if (item && item.value === value)
@@ -102,13 +104,26 @@ Column {
     readonly property bool noOtherPacks: !loading && packs.length > 0 && packs.length <= 2
 
     // Search lands on the pack in use, or on the first one if none of them is.
+    property bool pendingFocus: false
+    onLoadingChanged: if (pendingFocus) Qt.callLater(root.finishFocus)
+    onShownChanged: if (pendingFocus) Qt.callLater(root.finishFocus)
+    onCurrentChanged: if (pendingFocus) Qt.callLater(root.finishFocus)
     function takeFocus() {
+        focusRevision++
+        pendingFocus = true
+        Qt.callLater(root.finishFocus)
+    }
+    function finishFocus() {
+        if (!pendingFocus || loading || !visible || !tileRepeater.count)
+            return
         var target = tileRepeater.count ? tileRepeater.itemAt(0) : null
         for (var i = 0; i < tileRepeater.count; ++i)
             if (tileRepeater.itemAt(i) && tileRepeater.itemAt(i).selected)
                 target = tileRepeater.itemAt(i)
-        if (target)
+        if (target && target.enabled) {
             target.forceActiveFocus(Qt.TabFocusReason)
+            pendingFocus = false
+        }
     }
 
     spacing: 8
@@ -153,6 +168,7 @@ Column {
             Repeater {
                 id: tileRepeater
                 model: root.shown
+                onItemAdded: if (root.pendingFocus) Qt.callLater(root.finishFocus)
                 delegate: AbstractButton {
                     id: tile
                     objectName: "iconPackTile"
@@ -414,9 +430,12 @@ Column {
             enabled: !root.busy
             text: qsTr("Use this pack")
             onClicked: {
-                root.picked("pack:" + root.importer.themeId)
-                // This button goes away next, and the keyboard should not go with it.
+                // Selection can synchronously rebuild tiles. Move focus before
+                // emitting it and invalidate a tile restore already queued.
+                root.focusRevision++
+                root.pendingFocus = false
                 importButton.forceActiveFocus(Qt.TabFocusReason)
+                root.picked("pack:" + root.importer.themeId)
                 root.importer.dismiss()
             }
         }

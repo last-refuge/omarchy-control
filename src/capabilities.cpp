@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QSysInfo>
+#include <memory>
 
 #include "fileops.h"
 
@@ -135,24 +136,33 @@ void Capabilities::scanFiles() {
 
 static QString packageVersion(const CommandResult &result) {
     // The route prints the package version; the file under OMARCHY_PATH can lag.
-    return result.ok() ? result.outText() : QString();
+    return result.ok() && !result.truncated ? result.outText() : QString();
 }
 
 void Capabilities::scanServices() {
-    m_runner->run({"omarchy", "version"}, CommandOptions{3000}, this, [this](const CommandResult &result) {
+    scanServices([] {});
+}
+
+void Capabilities::scanServices(std::function<void()> done) {
+    auto remaining = std::make_shared<int>(4);
+    auto finished = [remaining, done] { if (--*remaining == 0) done(); };
+    m_runner->run({"omarchy", "version"}, CommandOptions{3000}, this, [this, finished](const CommandResult &result) {
         m_versions.insert("omarchy", packageVersion(result));
         emit changed();
+        finished();
     });
-    m_runner->run({"omarchy", "shell", "shell", "ping"}, CommandOptions{3000}, this, [this](const CommandResult &result) {
+    m_runner->run({"omarchy", "shell", "shell", "ping"}, CommandOptions{3000}, this, [this, finished](const CommandResult &result) {
         set("shell", result.ok());
+        finished();
     });
-    m_runner->run(m_runner->env().hyprctl({"-j", "version"}), CommandOptions{2000}, this, [this](const CommandResult &result) {
-        const auto object = QJsonDocument::fromJson(result.out).object();
+    m_runner->run(m_runner->env().hyprctl({"-j", "version"}), CommandOptions{2000}, this, [this, finished](const CommandResult &result) {
+        const auto object = result.ok() && !result.truncated ? QJsonDocument::fromJson(result.out).object() : QJsonObject{};
         set("hyprland", result.ok() && !object.isEmpty());
         m_versions.insert("hyprland", object.value("version").toString());
+        finished();
     });
-    m_runner->run(m_runner->env().hyprctl({"-j", "devices"}), CommandOptions{2000}, this, [this](const CommandResult &result) {
-        const auto object = QJsonDocument::fromJson(result.out).object();
+    m_runner->run(m_runner->env().hyprctl({"-j", "devices"}), CommandOptions{2000}, this, [this, finished](const CommandResult &result) {
+        const auto object = result.ok() && !result.truncated ? QJsonDocument::fromJson(result.out).object() : QJsonObject{};
         bool touchpad = false;
         for (const auto &mouse : object.value("mice").toArray()) {
             const QString name = mouse.toObject().value("name").toString();
@@ -161,6 +171,7 @@ void Capabilities::scanServices() {
         }
         set("touchpad", touchpad);
         set("touchscreen", !object.value("touch").toArray().isEmpty());
+        finished();
     });
 }
 
@@ -169,11 +180,11 @@ void Capabilities::scanServicesBlocking() {
     auto ping = m_runner->runBlocking({"omarchy", "shell", "shell", "ping"}, CommandOptions{3000});
     set("shell", ping.ok());
     auto version = m_runner->runBlocking(m_runner->env().hyprctl({"-j", "version"}), CommandOptions{2000});
-    const auto object = QJsonDocument::fromJson(version.out).object();
+    const auto object = version.ok() && !version.truncated ? QJsonDocument::fromJson(version.out).object() : QJsonObject{};
     set("hyprland", version.ok() && !object.isEmpty());
     m_versions.insert("hyprland", object.value("version").toString());
     auto devices = m_runner->runBlocking(m_runner->env().hyprctl({"-j", "devices"}), CommandOptions{2000});
-    const auto deviceObject = QJsonDocument::fromJson(devices.out).object();
+    const auto deviceObject = devices.ok() && !devices.truncated ? QJsonDocument::fromJson(devices.out).object() : QJsonObject{};
     bool touchpad = false;
     for (const auto &mouse : deviceObject.value("mice").toArray()) {
         const QString name = mouse.toObject().value("name").toString();

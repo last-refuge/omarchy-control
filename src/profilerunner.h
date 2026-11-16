@@ -74,7 +74,8 @@ public:
     void apply(const ProfilePlan &plan, Done done);
     void resume(const QString &runId, Done done);
     // Stops before the next operation. The one underway finishes and is verified first.
-    void cancel() { m_cancelled = true; }
+    void cancel();
+    bool requestCancel(const QString &runId, QString *error = nullptr) const;
     bool running() const { return m_running; }
 
     ProfileRun load(const QString &id, QString *error = nullptr) const;
@@ -105,6 +106,7 @@ private:
     PackageProvider *m_packages;
     Env m_env;
     bool m_cancelled = false;
+    QString m_activeRunId;
     bool m_running = false;
     bool m_packageTerminal = false;
     ProfileDesktop::Context m_desktopContext;  // The profile being restored, and its folder.

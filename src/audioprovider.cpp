@@ -7,12 +7,16 @@
 #include <QUrl>
 
 #include "iconthemes.h"
+#include "compat.h"
 
 static int volumePercent(const QJsonObject &volume) {
     int highest = 0;
     bool any = false;
     for (auto it = volume.begin(); it != volume.end(); ++it) {
-        const int percent = it.value().toObject().value("value_percent").toString().remove('%').toInt();
+        bool valid = false;
+        const int percent = it.value().toObject().value("value_percent").toString().remove('%').toInt(&valid);
+        if (!valid)
+            return -1;
         highest = qMax(highest, percent);
         any = true;
     }
@@ -107,6 +111,7 @@ QVariantList AudioProvider::parseNodes(const QByteArray &json, const QString &de
         row["kind"] = nodeKind(properties, row["description"].toString(), sources);
         row["volume"] = volumePercent(node.value("volume").toObject());
         row["mute"] = node.value("mute").toBool();
+        row["muteKnown"] = node.value("mute").isBool();
         row["state"] = node.value("state").toString();
         row["isDefault"] = name == defaultName;
         rows << row;
@@ -131,6 +136,9 @@ QVariantList AudioProvider::parseStreams(const QByteArray &json) {
         row["sink"] = stream.value("sink").toInt();
         row["iconName"] = properties.value("application.icon_name").toString();
         row["binary"] = properties.value("application.process.binary").toString();
+        row["identity"] = properties.value("object.serial").toVariant().toString();
+        row["selector"] = row.value("identity").toString().isEmpty() ? QString()
+            : QString::number(row.value("index").toInt()) + "@" + row.value("identity").toString();
         row["volume"] = volumePercent(stream.value("volume").toObject());
         rows << row;
     }
@@ -216,11 +224,13 @@ void AudioProvider::refresh() {
         }
         emit changed();
         // A DSP sink can front the real output, where loudness actually lives.
-        m_runner->run({"omarchy", "audio", "output", "sink"}, CommandOptions{3000}, this, [this](const CommandResult &result) {
-            if (result.ok() && m_defaultOutputSink != result.outText()) {
-                m_defaultOutputSink = result.outText();
-                emit changed();
-            }
+        m_runner->run({"omarchy", "audio", "output", "sink"}, CommandOptions{3000}, this, [this, generation](const CommandResult &result) {
+            if (generation != m_generation)
+                return;
+            m_routingKnown = result.ok() && !result.outText().isEmpty();
+            m_defaultOutputSink = m_routingKnown ? result.outText() : QString();
+            emit changed();
+            emit refreshed();
         });
     };
     auto fetch = [this, pending, finished](const QStringList &argv, std::function<void(const CommandResult &)> store) {
@@ -231,141 +241,221 @@ void AudioProvider::refresh() {
             finished();
         });
     };
-    fetch({"pactl", "-f", "json", "list", "sinks"}, [pending](const CommandResult &r) { pending->sinks = r.out; });
-    fetch({"pactl", "-f", "json", "list", "sources"}, [pending](const CommandResult &r) { pending->sources = r.out; });
-    fetch({"pactl", "-f", "json", "list", "sink-inputs"}, [pending](const CommandResult &r) { pending->inputs = r.out; });
+    fetch({"pactl", "-f", "json", "list", "sinks"}, [pending](const CommandResult &r) { pending->sinks = r.out; pending->failed |= !QJsonDocument::fromJson(r.out).isArray() || r.truncated; });
+    fetch({"pactl", "-f", "json", "list", "sources"}, [pending](const CommandResult &r) { pending->sources = r.out; pending->failed |= !QJsonDocument::fromJson(r.out).isArray() || r.truncated; });
+    fetch({"pactl", "-f", "json", "list", "sink-inputs"}, [pending](const CommandResult &r) { pending->inputs = r.out; pending->failed |= !QJsonDocument::fromJson(r.out).isArray() || r.truncated; });
     fetch({"pactl", "get-default-sink"}, [pending](const CommandResult &r) { pending->defaultSink = r.outText(); });
     fetch({"pactl", "get-default-source"}, [pending](const CommandResult &r) { pending->defaultSource = r.outText(); });
 }
 
-void AudioProvider::setDefault(const QString &name, bool input) {
-    const QVariantList &rows = input ? m_inputs : m_outputs;
-    QString objectId, description, before;
-    for (const auto &row : rows) {
-        const auto map = row.toMap();
-        if (map.value("name").toString() == name) {
-            objectId = map.value("objectId").toString();
-            description = map.value("description").toString();
-        }
-        if (map.value("isDefault").toBool())
-            before = map.value("name").toString();
+static QVariantMap namedNode(const QVariantList &rows, const QString &name) {
+    for (const auto &row : rows)
+        if (row.toMap().value("name").toString() == name)
+            return row.toMap();
+    return {};
+}
+
+ProviderPlan AudioProvider::plan(const QString &side, const QString &action, const QString &target, const QString &value, const QString &expectedIdentity) const {
+    ProviderPlan p;
+    p.operation = "audio." + (side == QLatin1String("stream") ? QStringLiteral("moveStream")
+        : action == QLatin1String("default") ? QStringLiteral("setDefault") + (side == QLatin1String("input") ? "Input" : "Output")
+        : QStringLiteral("set") + (side == QLatin1String("input") ? "Input" : "") + (action == QLatin1String("volume") ? "Volume" : "Mute"));
+    p.target = target;
+    const auto fail = [&](const QString &code, const QString &error) { p.errorCode = code; p.error = error; return p; };
+    const bool input = side == QLatin1String("input"), stream = side == QLatin1String("stream");
+    if ((!input && !stream && side != QLatin1String("output")) ||
+        (stream ? action != QLatin1String("move") : !QStringList{"default", "volume", "mute"}.contains(action)))
+        return fail("invalid_arguments", "Unknown audio operation.");
+    if (m_status != QLatin1String("ok"))
+        return fail("read_unavailable", tr("Sound devices could not be read. Refresh before changing them."));
+    if (action == QLatin1String("volume")) {
+        bool valid = false;
+        const int percent = value.toInt(&valid);
+        if (!valid || percent < 0 || percent > 150)
+            return fail("invalid_value", "Volume must be a whole percentage from 0 to 150.");
+        p.after = QString::number(percent);
+    } else if (action == QLatin1String("mute")) {
+        if (value != QLatin1String("true") && value != QLatin1String("false"))
+            return fail("invalid_value", "Mute must be true or false.");
+        p.after = value;
+    } else {
+        p.after = stream ? value : target;
     }
-    if (objectId.isEmpty()) {
-        emit message(tr("That device is no longer available."), true);
-        refresh();
+    const bool routed = !input && !stream && action != QLatin1String("default") && namedNode(m_outputs, target).value("isDefault").toBool();
+    if (routed && !m_routingKnown)
+        return fail("read_unavailable", tr("The output behind the sound processing could not be confirmed."));
+    const QString resolved = routed ? m_defaultOutputSink : target;
+    const QVariantMap node = namedNode(input ? m_inputs : m_outputs, stream ? value : resolved);
+    if (node.isEmpty() || (!stream && namedNode(input ? m_inputs : m_outputs, target).isEmpty()))
+        return fail("stale_target", tr("That device is no longer available."));
+    bool identityValid = false;
+    node.value("objectId").toString().toUInt(&identityValid);
+    if (!identityValid)
+        return fail("read_unavailable", tr("The sound device's identity could not be read."));
+    p.details = {{"side", side}, {"action", action}, {"effectiveTarget", stream ? value : resolved},
+                 {"objectId", node.value("objectId").toString()}, {"scope", "audio-session"}, {"description", node.value("description").toString()}};
+    if (routed) {
+        p.details["checkRouting"] = true;
+    }
+    if (stream) {
+        bool valid = false;
+        const int index = target.toInt(&valid);
+        QVariantMap row;
+        for (const auto &candidate : m_streams)
+            if (candidate.toMap().value("index").toInt() == index)
+                row = candidate.toMap();
+        if (!valid || index < 0 || row.isEmpty())
+            return fail("stale_target", tr("That app stopped playing before it could move."));
+        if (row.value("identity").toString().isEmpty())
+            return fail("read_unavailable", tr("A stable identity for that audio stream could not be read."));
+        if (!expectedIdentity.isEmpty() && row.value("identity").toString() != expectedIdentity)
+            return fail("stale_target", tr("That audio stream was replaced. Read the current streams before moving it."));
+        p.target = row.value("selector").toString();
+        p.details["streamIdentity"] = row.value("identity").toString();
+        p.before = row.value("output").toString();
+        p.effects << "Moves this live application stream to the selected output.";
+    } else if (action == QLatin1String("default")) {
+        for (const auto &row : input ? m_inputs : m_outputs)
+            if (row.toMap().value("isDefault").toBool())
+                p.before = row.toMap().value("name").toString();
+        p.effects << "Changes the default device and asks Omarchy to move active application streams.";
+        p.details["verificationScope"] = "default-device-only";
+    } else if (action == QLatin1String("volume")) {
+        if (node.value("volume").toInt() < 0)
+            return fail("read_unavailable", tr("The current volume could not be read."));
+        p.before = QString::number(node.value("volume").toInt());
+        p.effects << "Changes volume on the effective device; levels above 100% can distort.";
+    } else {
+        if (!node.value("muteKnown").toBool())
+            return fail("read_unavailable", tr("The current mute state could not be read."));
+        p.before = node.value("mute").toBool() ? "true" : "false";
+        p.effects << "Changes mute on the effective sound device.";
+    }
+    const QString compatKey = action == QLatin1String("default") ? "audio." + side + ".default"
+        : p.details.value("checkRouting").toBool() ? "audio.output.routing" : QString();
+    const QString changed = Compat(m_runner->env()).changedForKey(compatKey);
+    if (!changed.isEmpty())
+        return fail("compatibility_blocked", QStringLiteral("Omarchy's %1 changed since review; this operation is paused.").arg(changed));
+    p.ok = true;
+    return p;
+}
+
+void AudioProvider::change(const QString &side, const QString &action, const QString &target, const QString &value) {
+    const ProviderPlan p = plan(side, action, target, value);
+    if (!p.ok) {
+        Transaction tx;
+        tx.phase = "failed";
+        tx.message = p.error;
+        emit message(p.error, true);
+        emit operationFinished(tx);
         return;
     }
-    const QStringList argv{"omarchy", "audio", input ? "input" : "output", "set", "default", objectId, name};
-    const QStringList query{"pactl", input ? "get-default-source" : "get-default-sink"};
-
+    const bool input = side == QLatin1String("input"), stream = side == QLatin1String("stream");
+    const QString effective = p.details.value("effectiveTarget").toString();
+    const QString list = input ? "sources" : "sinks";
+    QStringList argv;
+    if (action == QLatin1String("default"))
+        argv = {"omarchy", "audio", side, "set", "default", p.details.value("objectId").toString(), target};
+    else if (stream)
+        argv = {"pactl", "move-sink-input", target, effective};
+    else
+        argv = {"pactl", "set-" + QString(input ? "source" : "sink") + "-" + action, effective,
+                action == QLatin1String("volume") ? p.after + "%" : p.after == QLatin1String("true") ? "1" : "0"};
     ChangeCoordinator::Request request;
-    request.settingId = input ? "sound.input" : "sound.output";
-    request.label = input ? tr("Microphone") : tr("Sound output");
-    request.before = before;
-    request.after = name;
-    request.apply = [this, argv](ChangeCoordinator::Done done) {
-        CommandOptions options;
-        options.mutation = true;
-        m_runner->run(argv, options, this, [done, argv](const CommandResult &result) { done(result.ok(), result.describe(argv.value(0))); });
-    };
-    // Omarchy's setter ignores individual failures, so only the new default
-    // proves that the device actually became active.
-    request.verify = [this, query, name](ChangeCoordinator::Done done) {
-        m_runner->run(query, CommandOptions{3000}, this, [this, done, name](const CommandResult &result) {
-            done(result.outText() == name, tr("The device did not become the default."));
+    request.settingId = action == QLatin1String("default") ? (input ? "sound.input" : "sound.output") : p.operation;
+    request.label = stream ? tr("App audio output") : action == QLatin1String("default") ? (input ? tr("Microphone") : tr("Sound output"))
+        : action == QLatin1String("volume") ? (input ? tr("Microphone volume") : tr("Sound output volume"))
+        : (input ? tr("Microphone mute") : tr("Sound output mute"));
+    request.before = p.before;
+    request.after = p.after;
+    request.extra = p.details;
+    request.extra["target"] = p.target;
+    request.apply = [this, p, argv, list, effective, stream, target](ChangeCoordinator::Done done) {
+        auto run = [this, p, argv, stream, target, done] {
+            auto write = [this, argv, done] {
+                CommandOptions options;
+                options.mutation = true;
+                m_runner->run(argv, options, this, [argv, done](const CommandResult &r) { done(r.ok(), r.describe(argv.first())); });
+            };
+            if (stream) {
+                m_runner->run({"pactl", "-f", "json", "list", "sink-inputs"}, CommandOptions{4000}, this, [this, p, target, write, done](const CommandResult &r) {
+                    for (const auto &row : parseStreams(r.out))
+                        if (r.ok() && !r.truncated && row.toMap().value("index").toInt() == target.toInt()
+                            && row.toMap().value("identity").toString() == p.details.value("streamIdentity").toString()) {
+                            write();
+                            return;
+                        }
+                    done(false, tr("That audio stream changed or disappeared; refresh before moving it."));
+                });
+            } else if (p.details.value("checkRouting").toBool()) {
+                m_runner->run({"omarchy", "audio", "output", "sink"}, CommandOptions{3000}, this, [p, write, done](const CommandResult &r) {
+                    if (r.ok() && r.outText() == p.details.value("effectiveTarget").toString())
+                        write();
+                    else
+                        done(false, QStringLiteral("The effective audio output changed; refresh before changing it."));
+                });
+            } else {
+                write();
+            }
+        };
+        m_runner->run({"pactl", "-f", "json", "list", list}, CommandOptions{4000}, this, [this, p, effective, input = (list == QLatin1String("sources")), run, done](const CommandResult &r) {
+            const QVariantMap current = namedNode(parseNodes(r.out, {}, input), effective);
+            if (r.ok() && !r.truncated && !current.isEmpty() && current.value("objectId").toString() == p.details.value("objectId").toString())
+                run();
+            else
+                done(false, tr("That sound device changed or disappeared; refresh before changing it."));
         });
     };
-    m_pendingDefault = name;
-    emit changed();
-    m_coordinator->submit(std::move(request), [this, description](const Transaction &tx) {
-        m_pendingDefault.clear();
-        if (tx.phase == QLatin1String("committed"))
-            emit message(tr("Now using %1").arg(description), false);
-        else
-            emit message(tx.message, true);
-        refresh();
-    });
-}
-
-void AudioProvider::setDefaultOutput(const QString &name) { setDefault(name, false); }
-void AudioProvider::setDefaultInput(const QString &name) { setDefault(name, true); }
-
-QString AudioProvider::volumeTarget(const QString &name) const {
-    for (const auto &row : m_outputs) {
-        const auto map = row.toMap();
-        if (map.value("name").toString() == name && map.value("isDefault").toBool() && !m_defaultOutputSink.isEmpty())
-            return m_defaultOutputSink;
-    }
-    return name;
-}
-
-void AudioProvider::setVolume(const QString &name, int percent) {
-    const QStringList argv{"pactl", "set-sink-volume", volumeTarget(name), QString::number(qBound(0, percent, 150)) + "%"};
-    CommandOptions options;
-    options.mutation = true;
-    m_runner->run(argv, options, this, [this](const CommandResult &result) {
-        if (!result.ok())
-            emit message(result.describe("pactl"), true);
-        refresh();
-    });
-}
-
-void AudioProvider::setInputVolume(const QString &name, int percent) {
-    const QStringList argv{"pactl", "set-source-volume", name, QString::number(qBound(0, percent, 150)) + "%"};
-    CommandOptions options;
-    options.mutation = true;
-    m_runner->run(argv, options, this, [this](const CommandResult &result) {
-        if (!result.ok())
-            emit message(result.describe("pactl"), true);
-        refresh();
-    });
-}
-
-void AudioProvider::setMute(const QString &name, bool mute) {
-    CommandOptions options;
-    options.mutation = true;
-    m_runner->run({"pactl", "set-sink-mute", volumeTarget(name), mute ? "1" : "0"}, options, this, [this](const CommandResult &result) {
-        if (!result.ok())
-            emit message(result.describe("pactl"), true);
-        refresh();
-    });
-}
-
-void AudioProvider::setInputMute(const QString &name, bool mute) {
-    CommandOptions options;
-    options.mutation = true;
-    m_runner->run({"pactl", "set-source-mute", name, mute ? "1" : "0"}, options, this, [this](const CommandResult &result) {
-        if (!result.ok())
-            emit message(result.describe("pactl"), true);
-        refresh();
-    });
-}
-
-void AudioProvider::moveStream(int index, const QString &sink) {
-    CommandOptions options;
-    options.mutation = true;
-    m_runner->run({"pactl", "move-sink-input", QString::number(index), sink}, options, this, [this, index, sink](const CommandResult &result) {
-        if (!result.ok()) {
-            emit message(result.describe("pactl"), true);
-            refresh();
+    request.verify = [this, p, input, stream, action, target, effective, list](ChangeCoordinator::Done done) {
+        if (action == QLatin1String("default")) {
+            m_runner->run({"pactl", input ? "get-default-source" : "get-default-sink"}, CommandOptions{3000}, this, [this, target, done](const CommandResult &r) {
+                done(r.ok() && !r.truncated && r.outText() == target, tr("The device did not become the default."));
+            });
             return;
         }
-        // Where the stream really went, asked afterwards: an app can refuse a move or
-        // be closed in between.
-        m_runner->run({"pactl", "-f", "json", "list", "sink-inputs"}, CommandOptions{4000}, this, [this, index, sink](const CommandResult &check) {
-            QVariantList streams = parseStreams(check.out);
-            matchStreams(streams, m_outputs);
-            bool found = false, moved = false;
-            for (const auto &value : streams)
-                if (value.toMap().value("index").toInt() == index) {
-                    found = true;
-                    moved = value.toMap().value("output").toString() == sink;
+        m_runner->run({"pactl", "-f", "json", "list", stream ? "sink-inputs" : list}, CommandOptions{4000}, this,
+                      [this, p, input, stream, action, target, effective, done](const CommandResult &r) {
+            bool verified = false;
+            if (r.ok() && !r.truncated) {
+                if (stream) {
+                    QVariantList rows = parseStreams(r.out);
+                    matchStreams(rows, m_outputs);
+                    for (const auto &row : rows) {
+                        const auto map = row.toMap();
+                        verified |= map.value("index").toInt() == target.toInt()
+                            && map.value("identity").toString() == p.details.value("streamIdentity").toString()
+                            && map.value("output").toString() == effective;
+                    }
+                } else {
+                    const auto row = namedNode(parseNodes(r.out, {}, input), effective);
+                    verified = !row.isEmpty() && row.value("objectId").toString() == p.details.value("objectId").toString()
+                        && (action == QLatin1String("volume") ? row.value("volume").toInt() == p.after.toInt()
+                            : row.value("muteKnown").toBool() && row.value("mute").toBool() == (p.after == QLatin1String("true")));
                 }
-            if (check.ok() && found && !moved)
-                emit message(tr("The app did not move to that output."), true);
-            else if (check.ok() && !found)
-                emit message(tr("That app stopped playing before it could move."), true);
-            refresh();
+            }
+            done(verified, stream ? tr("The app did not move to that output.") : tr("The sound change could not be confirmed."));
         });
+    };
+    if (action == QLatin1String("default")) {
+        m_pendingDefault = target;
+        emit changed();
+    }
+    m_coordinator->submit(std::move(request), [this, target, action, description = p.details.value("description").toString()](const Transaction &tx) {
+        if (m_pendingDefault == target)
+            m_pendingDefault.clear();
+        if (tx.phase != QLatin1String("committed"))
+            emit message(tx.message, true);
+        else if (action == QLatin1String("default"))
+            emit message(tr("Now using %1").arg(description), false);
+        emit operationFinished(tx);
+        refresh();
     });
 }
+
+void AudioProvider::setDefaultOutput(const QString &name) { change("output", "default", name); }
+void AudioProvider::setDefaultInput(const QString &name) { change("input", "default", name); }
+void AudioProvider::setVolume(const QString &name, int percent) { change("output", "volume", name, QString::number(qBound(0, percent, 150))); }
+void AudioProvider::setInputVolume(const QString &name, int percent) { change("input", "volume", name, QString::number(qBound(0, percent, 150))); }
+void AudioProvider::setMute(const QString &name, bool mute) { change("output", "mute", name, mute ? "true" : "false"); }
+void AudioProvider::setInputMute(const QString &name, bool mute) { change("input", "mute", name, mute ? "true" : "false"); }
+void AudioProvider::moveStream(int index, const QString &sink) { change("stream", "move", QString::number(index), sink); }

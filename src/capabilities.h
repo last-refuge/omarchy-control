@@ -29,6 +29,7 @@ public:
 
     void scanFiles();                // Cheap and synchronous: /sys, config files, PATH.
     void scanServices();             // Asynchronous: shell ping, Hyprland reachability.
+    void scanServices(std::function<void()> done);
     void scanServicesBlocking();     // For the headless CLI.
     QVariantMap versions() const { return m_versions; }
 

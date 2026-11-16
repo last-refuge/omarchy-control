@@ -1313,7 +1313,7 @@ void ProfileDesktop::apply(const QString &target, const QString &desired, const 
         };
         request.verify = [this, key, app](ChangeCoordinator::Done done) {
             m_runner->run({"xdg-mime", "query", "default", key}, CommandOptions{3000}, this, [app, done](const CommandResult &result) {
-                done(result.outText() == app, tr("The association did not change."));
+                done(result.ok() && !result.truncated && result.outText() == app, tr("The association did not change."));
             });
         };
         m_coordinator->submit(std::move(request), finished);

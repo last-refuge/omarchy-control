@@ -1,4 +1,7 @@
 #include "profilerunner.h"
+#include <QFileInfo>
+#include <QLockFile>
+#include <unistd.h>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -112,6 +115,27 @@ ProfileRun ProfileRun::fromJson(const QJsonObject &o) {
 ProfileRunner::ProfileRunner(const Catalog *catalog, SettingsEngine *engine, ChangeCoordinator *coordinator, PackageProvider *packages,
                              const Env &env, QObject *parent)
     : QObject(parent), m_catalog(catalog), m_engine(engine), m_coordinator(coordinator), m_packages(packages), m_env(env) {}
+
+void ProfileRunner::cancel() {
+    m_cancelled = true;
+    if (!m_activeRunId.isEmpty()) requestCancel(m_activeRunId);
+}
+
+bool ProfileRunner::requestCancel(const QString &id, QString *error) const {
+    const QString runPath = ProfileStore::runsDir(m_env) + "/" + id + ".json";
+    if (!ProfileStore::isId(id, "run") || QFileInfo(runPath).isSymLink() || !QFileInfo(runPath).isFile() || QFileInfo(runPath).ownerId() != uint(geteuid()) || QFileInfo(runPath).size() > 8 * 1024 * 1024) {
+        if (error) *error = "The restore record is unavailable, linked or unowned."; return false;
+    }
+    const auto run = load(id, error);
+    if (run.id != id) { if (error) *error = "The restore record identity is invalid."; return false; }
+    if (run.state != "running") { if (error) *error = "That restore is not running."; return false; }
+    const QString path = ProfileStore::runsDir(m_env) + "/" + id + ".cancel";
+    QLockFile lock(path + ".lock");
+    if (!lock.tryLock(2000)) { if (error) *error = "Another cancellation request is being written."; return false; }
+    QFileInfo info(path);
+    if (info.isSymLink() || (info.exists() && (!info.isFile() || info.ownerId() != uint(geteuid())))) { if (error) *error = "The cancellation marker is unowned or linked."; return false; }
+    return ProfileStore::writeJson(path, {{"runId", id}, {"profileDigest", run.profileDigest}}, error);
+}
 
 bool ProfileRunner::persist(const ProfileRun &run, QString *error) const {
     return ProfileStore::writeJson(ProfileStore::runsDir(m_env) + "/" + run.id + ".json", run.toJson(), error);
@@ -309,6 +333,15 @@ void ProfileRunner::start(std::shared_ptr<ProfileRun> run, bool resuming, Done d
     }
     m_running = true;
     m_cancelled = false;
+    m_activeRunId = run->id;
+    // Resume is explicit: an old request must not silently cancel the new run.
+    const QString cancelPath = ProfileStore::runsDir(m_env) + "/" + run->id + ".cancel";
+    if (QFileInfo::exists(cancelPath) || QFileInfo(cancelPath).isSymLink()) {
+        QLockFile cancelLock(cancelPath + ".lock");
+        if (!cancelLock.tryLock(2000) || QFileInfo(cancelPath).isSymLink() || QFileInfo(cancelPath).ownerId() != uint(geteuid()) || !QFile::remove(cancelPath)) {
+            refuse("The old cancellation marker could not be safely cleared."); return;
+        }
+    }
     // Earlier changes the app died in the middle of are settled first, and a change
     // another window began just before the lease was taken is allowed to finish.
     for (const QString &message : m_coordinator->recoverInterrupted())
@@ -434,6 +467,18 @@ void ProfileRunner::start(std::shared_ptr<ProfileRun> run, bool resuming, Done d
 }
 
 void ProfileRunner::execute(std::shared_ptr<ProfileRun> run, int index, Done done) {
+    const QString cancellation = ProfileStore::runsDir(m_env) + "/" + run->id + ".cancel";
+    if (QFileInfo::exists(cancellation) || QFileInfo(cancellation).isSymLink()) {
+        bool ok = false;
+        QJsonObject value;
+        const QFileInfo marker(cancellation);
+        if (!marker.isSymLink() && marker.isFile() && marker.ownerId() == uint(geteuid()) && marker.size() <= 4096) value = ProfileStore::readJson(cancellation, &ok);
+        // Invalid requests also stop future writes, but never kill the operation
+        // already underway. Inspection/resume can resolve the marker later.
+        m_cancelled = true;
+        if (!ok || value.value("runId") != run->id || value.value("profileDigest") != run->profileDigest)
+            run->message = "The cancellation marker is malformed; further operations were stopped.";
+    }
     while (index < run->items.size() && run->items[index].state != QLatin1String("pending"))
         ++index;
     if (index >= run->items.size()) {
@@ -450,6 +495,10 @@ void ProfileRunner::execute(std::shared_ptr<ProfileRun> run, int index, Done don
     // theme hook, which takes the change lock for itself. The next change waits for that
     // rather than fail for being second.
     m_coordinator->waitUntilIdle(30000);
+    if (m_cancelled || QFileInfo::exists(cancellation) || QFileInfo(cancellation).isSymLink()) {
+        execute(run, index, done);
+        return;
+    }
     ProfileRunItem &item = run->items[index];
     // What this depends on has to have worked first, as a default app needs its app.
     for (const QString &need : item.needs) {

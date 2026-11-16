@@ -8,6 +8,8 @@
         <file alias="data/coverage-exclusions.json">data/coverage-exclusions.json</file>
         <file alias="data/compat.json">data/compat.json</file>
         <file alias="data/skill.md">data/skill.md</file>
+        <file alias="data/skill-bridge.md">data/skill-bridge.md</file>
+        <file alias="data/cli-operations.json">data/cli-operations.json</file>
         <file alias="i18n/en.json">i18n/en.json</file>
         <file alias="i18n/ar.json">i18n/ar.json</file>
         <file alias="i18n/bg.json">i18n/bg.json</file>

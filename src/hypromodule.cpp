@@ -184,6 +184,57 @@ bool HyprModule::load(QString *error) {
     return true;
 }
 
+QJsonObject HyprModule::inspect() const {
+    QJsonObject snapshot{{"path", path()}, {"hyprlandPath", hyprlandPath()},
+                         {"binds", QJsonValue::Null}, {"rules", QJsonValue::Null}};
+    // Missing children of an inaccessible directory cannot establish absence.
+    for (QString parent = QFileInfo(path()).absolutePath();;) {
+        const QFileInfo info(parent);
+        if ((info.exists() || info.isSymLink()) && (!info.isDir() || !info.isReadable() || !info.isExecutable())) {
+            snapshot["status"] = "unavailable";
+            snapshot["reason"] = QObject::tr("The owned module's directory could not be inspected.");
+            return snapshot;
+        }
+        const QString next = QFileInfo(parent).absolutePath();
+        if (next == parent) break;
+        parent = next;
+    }
+    const QFileInfo info(path());
+    if (!info.exists() && !info.isSymLink()) {
+        snapshot["status"] = "absent";
+        snapshot["binds"] = QJsonArray{};
+        snapshot["rules"] = QJsonArray{};
+        return snapshot;
+    }
+    QFile file(path());
+    if (!info.isFile() || !file.open(QIODevice::ReadOnly)) {
+        snapshot["status"] = "unavailable";
+        snapshot["reason"] = QObject::tr("The owned module could not be read.");
+        return snapshot;
+    }
+    const QByteArray contents = file.read(4 * 1024 * 1024 + 1);
+    if (file.error() != QFileDevice::NoError || contents.size() > 4 * 1024 * 1024) {
+        snapshot["status"] = "unavailable";
+        snapshot["reason"] = QObject::tr("The owned module could not be read completely within the size limit.");
+        return snapshot;
+    }
+    const int begin = contents.indexOf(DataPrefix);
+    const int start = begin + int(strlen(DataPrefix));
+    const auto document = begin < 0 ? QJsonDocument{} : QJsonDocument::fromJson(contents.mid(start, contents.indexOf('\n', start) - start));
+    HyprModule copy(m_env, m_slot);
+    copy.m_data = document.object();
+    if (!document.isObject() || copy.render() != contents) {
+        snapshot["status"] = "ownership_conflict";
+        snapshot["reason"] = QObject::tr("The module was edited outside Omarchy Control; its contents were left alone.");
+        return snapshot;
+    }
+    snapshot["status"] = "ok";
+    snapshot["fingerprint"] = FileOps::fingerprintBytes(contents);
+    snapshot["binds"] = copy.binds();
+    snapshot["rules"] = copy.rules();
+    return snapshot;
+}
+
 static QJsonObject withOption(QJsonObject object, const QStringList &path, int index, const QJsonValue &value, bool remove) {
     const QString &key = path[index];
     if (index == path.size() - 1) {
@@ -252,12 +303,11 @@ bool HyprModule::canInstallImport() const {
     return FileOps::readFile(hyprlandPath(), &contents) && contents.contains(anchorText());
 }
 
-bool HyprModule::installImport(QString *error) {
+bool HyprModule::plannedImport(QByteArray *planned, QString *error) const {
     QByteArray contents;
     if (!FileOps::readFile(hyprlandPath(), &contents, error))
         return false;
-    if (contents.contains(requireText()))
-        return true;
+    if (contents.contains(requireText())) { *planned = contents; return true; }
     const QByteArray anchor = anchorText();
     const int at = contents.indexOf(anchor);
     if (at < 0) {
@@ -265,12 +315,19 @@ bool HyprModule::installImport(QString *error) {
             *error = QObject::tr("hyprland.lua does not have Omarchy's stock layout, so no line was added.");
         return false;
     }
-    // Create the module first: Lua's require fails outright on a missing file,
-    // and Hyprland reloads as soon as hyprland.lua changes.
-    if (!QFileInfo::exists(path()) && !save(error))
-        return false;
     const int lineEnd = contents.indexOf('\n', at);
     contents.insert(lineEnd < 0 ? contents.size() : lineEnd, QByteArray("\n") + importLine());
+    *planned = contents;
+    return true;
+}
+
+bool HyprModule::installImport(QString *error) {
+    QByteArray contents;
+    if (!plannedImport(&contents, error)) return false;
+    // Create the module first: Lua's require fails outright on a missing file,
+    // and Hyprland reloads as soon as hyprland.lua changes.
+    if (!QFileInfo::exists(path()) && !save(error)) return false;
+    if (FileOps::fingerprint(hyprlandPath()) == FileOps::fingerprintBytes(contents)) return true;
     return FileOps::atomicWrite(hyprlandPath(), contents, error, 0644);
 }
 

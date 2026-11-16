@@ -29,7 +29,7 @@ Omarchy Control is a native app that puts your settings behind one search box. I
 curl -fsSL https://raw.githubusercontent.com/last-refuge/omarchy-control/main/install.sh | bash
 ```
 
-This downloads the prebuilt package from [GitHub Releases](https://github.com/last-refuge/omarchy-control/releases), checks it against the release's checksums, and installs it with `pacman`, which shows you the change and asks before going ahead. Nothing is compiled, and nothing in your configuration changes.
+This downloads the prebuilt package from [GitHub Releases](https://github.com/last-refuge/omarchy-control/releases), checks it against the release's checksums, and installs it with `pacman`, which shows you the change and asks before going ahead. Nothing is compiled. Packages built from the upcoming 0.6.0 source also register reversible agent skills for desktop users, preserving custom skills and opt-outs; they do not change desktop preferences. Published 0.5.0 and earlier packages predate that integration.
 
 Then find it in your app launcher, or run:
 
@@ -131,7 +131,7 @@ Every public Omarchy command and menu row in the 4.5 inventory has a destination
 - **Passwords are never collected.** Joining a secured network goes to Omarchy's panel, and installing an update leaves the password prompt to `sudo`.
 
 > [!NOTE]
-> **Version 0.5.0, built against Omarchy 4.5 and Hyprland 0.56.** 60 of 76 writable settings, display recovery, and the real window are verified against real Hyprland, the real shell, and real Omarchy scripts in an isolated nested session, and every setting reads correctly on real hardware. The checklist of changes on a real desktop session is still open. [What has and has not been verified](docs/LIVE-CHECKS.md) has the details. My Omarchy, new in this version, is tested with fake commands, real git, and real pacman in a disposable root; a restore onto a fresh installation is still to be checked ([details](docs/MY-OMARCHY.md)).
+> **Upcoming version 0.6.0, built against Omarchy 4.5 and Hyprland 0.56.** The earlier 76-writer catalog has real-hardware read evidence and 60 verified writers, plus display recovery and window checks against real Hyprland, the shell and Omarchy scripts in an isolated nested session. The new background-introduction writer and agent/CLI additions have separate local evidence, with physical acceptance still pending ([readiness](docs/CLI-AGENT-READINESS.md)). The checklist of changes on a real desktop session is still open. [What has and has not been verified](docs/LIVE-CHECKS.md) has the details. My Omarchy, introduced in 0.5.0, is tested with fake commands, real git, and real pacman in a disposable root; a restore onto a fresh installation is still to be checked ([details](docs/MY-OMARCHY.md)).
 
 ## Keyboard shortcuts
 
@@ -151,7 +151,48 @@ Single-letter keys switch off while you are typing.
 
 ## Command line
 
+API v1 and managed agent skills are part of the upcoming 0.6.0 release. Published
+0.5.0 provides the earlier CLI.
+
 Agents and scripts get the same validation and journal as the window. Each command takes `--json` and exits 0 or 1.
+
+For machine-readable discovery, run `omarchy-control commands --json --api-version 1`.
+The [automation API](docs/CLI-API.md) describes settings, valid values, and remaining CLI gaps,
+with structured results for discovery, typed settings, devices, services/startup, MIME defaults,
+system facts, private diagnostics export, shortcuts/window rules, plugin/bar/dock operations,
+icon-pack discovery, NetworkManager snapshots, scans, radio controls and protected connection previews.
+Use device status, `services <user|system> status`, or `startup list` to discover targets,
+or `apps list` / `mime get <type>` to discover app and file-type targets.
+Use `--dry-run` to plan a provider change.
+Existing commands keep their output.
+
+Use `network status` for reported network state, saved profiles and cached Wi-Fi
+access points, or `network general|devices|saved|wifi` for one section. Failed
+reads remain explicit; these commands do not scan, test connectivity or change connections.
+Use `network rescan [interface] --dry-run` to plan an explicit scan, then omit
+`--dry-run` to request it. `scan_requested` confirms request acceptance only;
+scan completion and cache freshness remain unverified. Read `network wifi` later.
+Use `network radio true|false --dry-run` to plan the global Wi-Fi switch, then
+omit `--dry-run` to apply. Turning Wi-Fi off requires `--yes` and may disconnect
+the session. Success verifies NetworkManager's switch state; connection usability
+and internet access remain unverified.
+For ordinary Ethernet and open Wi-Fi profiles, use
+`network activate <uuid> <interface> --dry-run` or `network disconnect <interface> --dry-run`.
+Execution requires `--yes` and returns a protected preview token. Inspect it with
+`network preview status`; revert it or explicitly keep it after confirming usability.
+Secured/802.1X activation remains a panel handoff. See the API reference for token and expiry limits.
+
+Use `system status` for section-level machine/battery/storage/hook readings and
+`diagnostics export` to await a private local report. Incomplete collection is reported explicitly.
+Use `shortcut list` / `shortcut check "SUPER + F"` to inspect bindings and reported
+collisions, and `rule types` / `rule validate <match> <action> [value]` to validate
+rule input without changing the desktop. Versioned shortcut/rule mutations support
+`--dry-run` and fingerprinted removal selectors; unversioned calls keep their legacy output.
+Use `plugin list`, `bar status`, and `dock status` for shell discovery. Versioned
+plugin toggles and widget moves share the GUI's plans; dock pins verify persisted preferences.
+Use `icons list --api-version 1`, `icons samples <pack-id>`, and
+`icons search <pack-id> [query] --limit 30` to inspect packs and icon names.
+These reads report inherited files and incomplete sources; they do not verify rendering.
 
 ```sh
 omarchy-control search "stop sleeping"
@@ -173,7 +214,8 @@ omarchy-control coverage --live
 omarchy-control compat
 omarchy-control shortcut add "SUPER + ALT + Y" "My tool" my-tool
 omarchy-control rule add firefox float
-omarchy-control display preview DP-1 1920 0 --keep
+omarchy-control display status
+omarchy-control display layout ~/layout.json --dry-run
 omarchy-control launch panel.network
 omarchy-control icons list
 omarchy-control icons import ~/Downloads/SomePack.tar.gz
@@ -189,6 +231,23 @@ omarchy-control profile plan --revision published
 
 </details>
 
+Packages built from the upcoming 0.6.0 source include automatic per-user agent integration.
+Install and upgrade notify running user managers; later manager and graphical
+session starts reconcile owned registrations. It adds a companion skill and
+forwards the stock-named `omarchy` skill while preserving custom files, opt-out
+and current upstream guides. Removal restores owned registrations; a prepared
+private runtime handles inactive users at their next manager start. Older
+0.5.0 and earlier packages predate this feature.
+
+Use `skill status`, `skill plan`, `skill reconcile` and `skill remove` to inspect
+or manage it explicitly. Fresh harness sessions are still required to load changed
+instructions. Real Arch ARM package/user-manager checks and five stock-only Codex
+fixture tasks pass. Physical desktop acceptance remains open; the
+[readiness report](docs/CLI-AGENT-READINESS.md) records the evidence and remaining
+gates. See
+[agent registration](docs/AGENT-SKILLS.md) and the
+[installation lifecycle](docs/AGENT-LIFECYCLE.md) for paths, limits and evidence.
+
 ## Development
 
 Building from source needs `qt6-base`, `qt6-declarative`, `qt6-svg`, and `qt6-wayland`.
@@ -196,7 +255,7 @@ Building from source needs `qt6-base`, `qt6-declarative`, `qt6-svg`, and `qt6-wa
 ```sh
 bin/build                  # build/omarchy-control
 bin/install                # Build the Arch package from this checkout and install it
-bin/test                   # 522 tests; never touches the real desktop
+bin/test                   # Sandboxed tests; never touches the real desktop
 tools/nested-check.py      # Real Hyprland and Omarchy scripts in an isolated session
 tools/package-check.sh     # Install, upgrade, and remove in a disposable pacman root
 tools/profile-package-check.sh  # Restore apps from a profile with real pacman, in a disposable root
@@ -214,10 +273,10 @@ To check a layout for translation, write `en-XA` to the sandbox's `~/.config/oma
 **Releasing:** pushing a version tag tests the code, builds the package, and publishes it.
 
 ```sh
-tools/set-version.sh 0.5.0
-git commit -am "Release 0.5.0"
-git tag v0.5.0
-git push origin main v0.5.0
+tools/set-version.sh 0.6.0
+git commit -am "Release 0.6.0"
+git tag v0.6.0
+git push origin main v0.6.0
 ```
 
 Project documents: [plan](docs/PLAN.md), [coverage](docs/COVERAGE.md), [P0 findings](docs/P0-FINDINGS.md), [live checks](docs/LIVE-CHECKS.md).

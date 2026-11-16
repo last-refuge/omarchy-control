@@ -7,6 +7,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 DIST="$(cd "${1:?Usage: tools/installer-check.sh <dist directory>}" && pwd)"
 WORK="$(mktemp -d)"
+INSTALLER="$ROOT/install.sh"
 trap 'rm -rf "$WORK"' EXIT
 
 fail() { echo "FAIL: $*"; exit 1; }
@@ -46,7 +47,7 @@ SUDO
 
 run_installer() {
   # A new session has no terminal, the same as an agent or a script.
-  PATH="$WORK/bin:$PATH" OMARCHY_CONTROL_RELEASES="file://$WORK/mirror" setsid bash -c 'cat "$0" | bash -s -- "$@"' "$ROOT/install.sh" "$@" </dev/null
+  PATH="$WORK/bin:$PATH" OMARCHY_CONTROL_RELEASES="file://$WORK/mirror" setsid bash -c 'cat "$0" | bash -s -- "$@"' "$INSTALLER" "$@" </dev/null
 }
 
 mirror
@@ -94,3 +95,50 @@ fresh_root
 PATH="$WORK/bin:$PATH" OMARCHY_CONTROL_RELEASES="file://$WORK/mirror" bash "$WORK/cut.sh" --yes >"$WORK/log" 2>&1 || true
 [ ! -s "$WORK/sudo.log" ] || fail "a truncated script ran pacman"
 pass "a truncated download runs nothing"
+
+# Keep the real installer control flow and substitute only its absolute helper
+# path in a private copy. Nothing is staged in /usr or in the invoking user's
+# actual agent configuration. Package/session behavior has its own systemd lab.
+cat >"$WORK/agent-helper" <<'PY'
+import json, os, sys
+assert sys.argv[1:] == ["activate"]
+with open(os.environ["OC_INSTALLER_ACTIVATION_LOG"], "a") as log:
+    log.write(str(os.getuid()) + "\n")
+case = os.environ["OC_INSTALLER_ACTIVATION_CASE"]
+if case == "failure":
+    raise SystemExit(1)
+if case == "malformed":
+    print("[]")
+else:
+    print(json.dumps({"ok": True, "verified": case in ("activated", "deferred"),
+                      "outcome": "activated" if case == "deferred" else case,
+                      "userManagerActivation": "deferred" if case == "deferred" else "confirmed"}))
+PY
+python3 - "$ROOT/install.sh" "$WORK/integration-installer.sh" "$WORK/agent-helper" <<'PY'
+from pathlib import Path
+import shlex, sys
+source = Path(sys.argv[1]).read_text()
+key = "local integration=/usr/lib/omarchy-control/agent-integration/user-recovery"
+assert source.count(key) == 1
+Path(sys.argv[2]).write_text(source.replace(key, "local integration=" + shlex.quote(sys.argv[3])))
+PY
+INSTALLER="$WORK/integration-installer.sh"
+mirror
+fresh_root
+for selected in activated deferred opted_out failure malformed; do
+  OC_INSTALLER_ACTIVATION_CASE="$selected" OC_INSTALLER_ACTIVATION_LOG="$WORK/activation.log" run_installer --yes >"$WORK/log" 2>&1 || fail "activation outcome made the installed app look uninstalled"
+  if ((EUID == 0)); then
+    grep -q 'root was not registered' "$WORK/log" || fail "root was offered user registration"
+    [ ! -e "$WORK/activation.log" ] || fail "root invoked the activation helper"
+  else
+    case "$selected" in
+      activated) grep -q 'Agent skills registered for this user' "$WORK/log" || fail "missing verified registration result" ;;
+      deferred) grep -q 'scheduling is prepared for the next session' "$WORK/log" || fail "deferred manager activation was misreported" ;;
+      opted_out) grep -q 'remains opted out' "$WORK/log" || fail "opt-out was misreported" ;;
+      failure) grep -q 'registration needs review' "$WORK/log" || fail "failed registration was misreported" ;;
+      malformed) grep -q 'registration was not confirmed' "$WORK/log" || fail "unconfirmed registration was misreported" ;;
+    esac
+    [ "$(tail -n 1 "$WORK/activation.log")" = "$EUID" ] || fail "activation used a different user"
+  fi
+done
+pass "invoking-user activation reports verified, opted-out and unconfirmed outcomes without registering root"

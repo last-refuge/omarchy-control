@@ -1,10 +1,13 @@
 #pragma once
 
 #include <QObject>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QVariantList>
 
 #include "changecoordinator.h"
 #include "commandrunner.h"
+#include "provideroperation.h"
 
 // Keyboard shortcuts as Hyprland reports them, plus editing of the bindings this
 // app owns. A collision is reported, never silently replaced, and the shortcut
@@ -23,6 +26,11 @@ public:
     QString status() const { return m_status; }
 
     Q_INVOKABLE void refresh();
+    void refresh(std::function<void()> done);
+    QJsonObject snapshot() const;
+    void planAdd(const QString &keys, const QString &description, const QString &command, bool replace, std::function<void(ProviderPlan)> done);
+    void planRemove(const QString &selector, std::function<void(ProviderPlan)> done);
+    void applyPlan(const ProviderPlan &plan);
     Q_INVOKABLE QVariantMap checkKeys(const QString &keys) const;
     Q_INVOKABLE void addBinding(const QString &keys, const QString &description, const QString &command, bool replaceExisting);
     Q_INVOKABLE void removeBinding(const QString &keys);
@@ -35,13 +43,15 @@ public:
 signals:
     void changed();
     void message(const QString &text, bool isError);
+    void operationFinished(const Transaction &transaction);
 
 private:
-    void submit(const QString &label, const QString &after, std::function<bool(class HyprModule &, QString *)> edit,
-                std::function<bool(const QVariantList &)> verified, const QString &successText);
+    void reject(const ProviderPlan &plan);
 
     CommandRunner *m_runner;
     ChangeCoordinator *m_coordinator;
     QVariantList m_binds;
+    QJsonArray m_reportedBinds;
+    QString m_reason;
     QString m_status = "loading";
 };

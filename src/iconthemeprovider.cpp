@@ -1104,16 +1104,20 @@ QVariantMap IconThemeProvider::samples(const QString &id) const {
     const Env &env = m_runner->env();
     QVariantList rows;
     QString borrowedFrom;
+    QStringList diagnostics;
     bool anyOwn = false;
     for (const QString &key : IconThemes::sampleKeys()) {
         QString from;
-        const QString path = IconThemes::findIcon(env, id, IconThemes::sampleNames(key), SamplePixels, &from);
+        const QString path = IconThemes::findIcon(env, id, IconThemes::sampleNames(key), SamplePixels, &from, &diagnostics);
         QVariantMap row{{"key", key}, {"found", !path.isEmpty()}};
         if (!path.isEmpty()) {
             // The file's age is in the address, so a changed pack draws fresh, not from cache.
             const QString version = QString::number(QFileInfo(path).lastModified().toMSecsSinceEpoch());
             row["url"] = "image://iconpacks/" + QString::fromUtf8(QUrl::toPercentEncoding(id)) + "/" + key + "/" + version;
             row["from"] = from;
+            row["path"] = path;
+            row["fileUrl"] = QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded);
+            row["inherited"] = from != id;
             if (from == id)
                 anyOwn = true;
             else if (borrowedFrom.isEmpty())
@@ -1121,7 +1125,10 @@ QVariantMap IconThemeProvider::samples(const QString &id) const {
         }
         rows << row;
     }
-    return {{"samples", rows}, {"borrowedFrom", anyOwn ? QString() : borrowedFrom}};
+    diagnostics.removeDuplicates();
+    return {{"pack", id}, {"samples", rows}, {"borrowedFrom", anyOwn ? QString() : borrowedFrom},
+            {"complete", diagnostics.isEmpty()}, {"diagnostics", diagnostics.mid(0, 100)},
+            {"scope", "four sample file lookups; image decoding and desktop rendering are not verified"}};
 }
 
 QVariantList IconThemeProvider::listJson(QStringList *diagnostics) const {

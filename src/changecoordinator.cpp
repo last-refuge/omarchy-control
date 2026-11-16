@@ -1,4 +1,6 @@
 #include "changecoordinator.h"
+#include "networkpreview.h"
+#include "displaypreview.h"
 
 #include <QDir>
 #include <QFile>
@@ -108,6 +110,10 @@ QString ChangeCoordinator::leasePath() const {
 }
 
 bool ChangeCoordinator::acquireLease(const QString &runId, QString *error) {
+    const QString display = DisplayPreview::pendingReason(m_env);
+    if (!display.isEmpty()) { if (error) *error = display; return false; }
+    const QString preview = NetworkPreview::pendingReason(m_env);
+    if (!preview.isEmpty()) { if (error) *error = preview; return false; }
     if (m_lease) {
         if (m_leaseRun == runId)
             return true;
@@ -165,9 +171,15 @@ bool ChangeCoordinator::waitUntilIdle(int timeoutMs) {
 
 QString ChangeCoordinator::redact(const QString &text) {
     QString out = text;
+    // Quoted values can contain spaces; match them before the single-token fallback.
+    const QString secret = R"((?:password|passwd|psk|secret|token|api[_-]?key|authorization|wifi-sec\.psk))";
+    out.replace(QRegularExpression("(?i)([\"']?" + secret + R"MASK(["']?\s*(?:[:=]\s*|\s+))"(?:\\.|[^"\\])*")MASK"), "\\1\"[redacted]\"");
+    out.replace(QRegularExpression("(?i)([\"']?" + secret + R"(["']?\s*(?:[:=]\s*|\s+))'(?:\\.|[^'\\])*')"), "\\1'[redacted]'");
+    out.replace(QRegularExpression(R"((?i)(authorization\s*[:=]\s*)(?:Bearer|Basic)\s+\S+)"), "\\1[redacted]");
+    out.replace(QRegularExpression(R"(-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z]+ )?PRIVATE KEY-----)"), "[redacted private key]");
     static const QList<QRegularExpression> patterns{
-        QRegularExpression(R"((?i)(password|passwd|psk|secret|token|api[_-]?key|authorization)(\s*[:=]\s*|\s+)(\S+))"),
-        QRegularExpression(R"((?i)(wifi-sec\.psk)\s+(\S+))"),
+        QRegularExpression(R"((?i)(password|passwd|psk|secret|token|api[_-]?key|authorization)(\s*[:=]\s*|\s+)([^\s"']+))"),
+        QRegularExpression(R"((?i)(wifi-sec\.psk)(\s+)([^\s"']+))"),
     };
     for (const auto &pattern : patterns)
         out.replace(pattern, "\\1\\2[redacted]");
@@ -237,10 +249,10 @@ bool ChangeCoordinator::captureFiles(Transaction &tx, const QStringList &files, 
     return true;
 }
 
-void ChangeCoordinator::recordAfter(Transaction &tx) {
+void ChangeCoordinator::recordAfter(Transaction &tx, const QHash<QString, QString> *written) {
     for (auto it = tx.files.begin(); it != tx.files.end(); ++it) {
         QJsonObject entry = it.value().toObject();
-        entry["after"] = FileOps::fingerprint(it.key());
+        entry["after"] = written ? written->value(it.key(), entry.value("before").toString()) : FileOps::fingerprint(it.key());
         it.value() = entry;
     }
 }
@@ -344,8 +356,26 @@ void ChangeCoordinator::run(Queued item) {
                                       : tr("A restore is running. Changes can be made again when it finishes."));
         return;
     }
+    const QString display = DisplayPreview::pendingReason(m_env, item.request.extra.value("displayToken").toString());
+    if (!display.isEmpty()) { fail(std::move(item), tx, display); return; }
+    if (item.request.settingId.startsWith("network.")) {
+        const QString preview = NetworkPreview::pendingReason(m_env);
+        if (!preview.isEmpty()) { fail(std::move(item), tx, preview); return; }
+    }
 
-    // Reconcile: someone else changed the file since this was planned.
+    if (item.request.preflight) {
+        auto pending = std::make_shared<Queued>(std::move(item));
+        pending->request.preflight([this, pending, tx](bool ok, const QString &error) {
+            if (!ok) fail(std::move(*pending), tx, error);
+            else captureAndRun(std::move(*pending), tx);
+        });
+    } else {
+        captureAndRun(std::move(item), tx);
+    }
+}
+
+void ChangeCoordinator::captureAndRun(Queued item, Transaction tx) {
+    // Reconcile after asynchronous preflight, before capturing any files.
     for (auto it = item.request.expectedFingerprints.constBegin(); it != item.request.expectedFingerprints.constEnd(); ++it) {
         if (FileOps::fingerprint(it.key()) != it.value()) {
             fail(std::move(item), tx, tr("%1 changed outside this window. Review the current value, then try again.").arg(QFileInfo(it.key()).fileName()));
@@ -368,11 +398,22 @@ void ChangeCoordinator::run(Queued item) {
     auto state = std::make_shared<Transaction>(tx);
 
     auto concludeFailure = [this, shared, state](const QString &error) {
+        if (!shared->request.restoreFilesOnFailure) {
+            state->phase = "partial";
+            state->message = tr("%1 The writer may have changed state. Inspect current state and the captured backups before retrying.").arg(error);
+            recordAfter(*state);
+            finish(*shared, *state);
+            return;
+        }
         if (shared->request.nothingToRestore) {
             state->phase = "failed";
             state->message = error;
             finish(*shared, *state);
             return;
+        }
+        if (shared->request.writtenFingerprints) {
+            const auto written = shared->request.writtenFingerprints();
+            recordAfter(*state, &written);
         }
         // Restore what can be restored, then say exactly what happened.
         QString restoreError;
@@ -405,7 +446,8 @@ void ChangeCoordinator::run(Queued item) {
             return;
         }
         state->phase = "applied";
-        recordAfter(*state);
+        const auto written = shared->request.writtenFingerprints ? shared->request.writtenFingerprints() : QHash<QString, QString>{};
+        recordAfter(*state, shared->request.writtenFingerprints ? &written : nullptr);
         append(*state);
         auto verified = [this, shared, state, concludeFailure](bool good, const QString &verifyError) {
             if (!good) {
@@ -413,7 +455,8 @@ void ChangeCoordinator::run(Queued item) {
                 return;
             }
             state->phase = "committed";
-            recordAfter(*state);
+            const auto written = shared->request.writtenFingerprints ? shared->request.writtenFingerprints() : QHash<QString, QString>{};
+            recordAfter(*state, shared->request.writtenFingerprints ? &written : nullptr);
             // Some results are only known now, such as the scale Hyprland settled on.
             if (shared->request.settled)
                 state->after = shared->request.settled();

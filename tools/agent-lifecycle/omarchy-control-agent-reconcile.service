@@ -1,0 +1,14 @@
+[Unit]
+Description=Reconcile Omarchy Control agent skills
+ConditionUser=!root
+ConditionPathIsExecutable=/usr/bin/omarchy-control
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/omarchy-control/agent-integration/user-recovery activate
+TimeoutStartSec=60
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target graphical-session.target

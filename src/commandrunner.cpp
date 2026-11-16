@@ -125,6 +125,8 @@ void CommandRunner::start(Pending pending) {
         const qint64 room = limit - active->result.err.size();
         if (room > 0)
             active->result.err.append(chunk.left(room));
+        if (chunk.size() > room)
+            active->result.truncated = true;
     });
     connect(process, &QProcess::errorOccurred, process, [this, active](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) {
@@ -133,10 +135,11 @@ void CommandRunner::start(Pending pending) {
         }
     });
     connect(process, &QProcess::finished, process, [this, active](int code, QProcess::ExitStatus status) {
-        active->result.out.append(active->process->readAllStandardOutput().left(
-            qMax<qint64>(0, active->pending.options.maxOutputBytes - active->result.out.size())));
-        active->result.err.append(active->process->readAllStandardError().left(
-            qMax<qint64>(0, active->pending.options.maxOutputBytes - active->result.err.size())));
+        for (auto pair : {qMakePair(&active->result.out, active->process->readAllStandardOutput()), qMakePair(&active->result.err, active->process->readAllStandardError())}) {
+            const auto room = qMax<qint64>(0, active->pending.options.maxOutputBytes - pair.first->size());
+            active->result.truncated |= pair.second.size() > room;
+            pair.first->append(pair.second.left(room));
+        }
         active->result.exitCode = code;
         if (status != QProcess::NormalExit && active->result.failure == CommandResult::None)
             active->result.failure = active->killedForCancel ? CommandResult::Cancelled : CommandResult::Crashed;

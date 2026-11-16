@@ -1,4 +1,5 @@
 #include "cli.h"
+#include "cliapi.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -7,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QTextStream>
 #include <QTimer>
 
@@ -47,6 +49,29 @@ QJsonObject txJson(const Transaction &tx) {
 
 const char Usage[] =
     "Usage: omarchy-control <command> [options]\n\n"
+    "  audio|bluetooth ... [--dry-run]       Device operations; see commands for API grammar\n"
+    "  services <user|system> ...            Scoped service discovery and verified changes\n"
+    "  startup list|enable|disable ...       Discover and change login app preferences\n"
+    "  apps list|launch ...                  Discover installed apps or request a launch\n"
+    "  mime list|get|set ...                 Read and change MIME default handlers\n"
+    "  network status|general|devices|saved|wifi  Read NetworkManager state and cached access points (API v1)\n"
+    "  network rescan [interface] [--dry-run] Request scans on selected eligible Wi-Fi adapters (API v1)\n"
+    "  network radio <true|false> [--dry-run] [--yes] Plan/change NetworkManager's Wi-Fi switch (API v1)\n"
+    "  network activate <uuid> <interface> [--dry-run] [--yes] Begin a protected connection preview\n"
+    "  network disconnect <interface> [--dry-run] [--yes] Begin a protected disconnect preview\n"
+    "  network preview status [token] | keep <token> --yes | revert <token> Inspect or settle an owned preview\n"
+    "  display status                       Read outputs, modes, geometry and recovery-check state (API v1)\n"
+    "  display layout <json-file> [--dry-run] [--yes]  Preview a full output arrangement\n"
+    "  display check [--dry-run] [--yes]     Test independent display recovery\n"
+    "  display preview status [token] | keep <token> --yes | revert <token>\n"
+    "  preferences pins|pin|unpin ...        Read and change Control search pins (API v1)\n"
+    "  preferences crash-mutes|crash-mute ... Read and set per-program crash muting (API v1)\n"
+    "  profile cancel <run-id> [--dry-run]   Request a stop after the current restore operation\n"
+    "  system status|machine|battery|storage|hooks   Read system facts\n"
+    "  diagnostics export [--dry-run]        Save an awaited private local report\n"
+    "  commands [--json]                     Discover the versioned automation API\n"
+    "  describe <id> [--live] [--json]       Describe a setting or provider operation\n"
+    "  --api-version 1 [--json]              Opt into structured API v1; see commands\n"
     "  open [--page <id>] [--setting <id>]   Open the window\n"
     "  catalog [--json]                      List every setting and workflow\n"
     "  search <text> [--json]                Search the catalog; never runs anything\n"
@@ -60,15 +85,24 @@ const char Usage[] =
     "  coverage [--json] [--inventory <f>]   Report coverage; --live re-reads Omarchy's commands\n"
     "  compat [accept]                       Show commands changed since testing; resume them\n"
     "  launch <id> [--yes]                   Open a helper route from the catalog\n"
+    "  plugin list|status                   Inspect plugins, bar layout and dock pins\n"
+    "  plugin clone|remove <id> --api-version 1 [--dry-run] [--yes]\n"
+    "  plugin recover <token> [--dry-run] [--yes]  Restore a guarded lifecycle snapshot\n"
     "  plugin enable|disable <id>            Turn a shell plugin on or off\n"
+    "  bar status                           Inspect live/persisted layout and widget selectors\n"
+    "  dock status|pin|unpin ...             Read and change ordered dock preferences\n"
     "  widget move <id> <sec> <i> <from> <i> Move a bar widget\n"
+    "  shortcut list|check <keys>            Inspect shortcuts and reported collisions (API v1)\n"
     "  shortcut add|remove ...               Manage shortcuts owned by this app\n"
+    "  rule types|validate ...               Inspect supported rules and validate input (API v1)\n"
     "  rule add|remove|list ...              Manage window rules owned by this app\n"
     "  display preview <out> <x> <y> [--keep|--revert]   Move a display under the safety timer\n"
     "  integrate menu [--remove]             Add this app to the Omarchy menu\n"
     "  selftest display                      Prove display recovery on this machine\n"
-    "  skill install                         Install the agent skill\n"
+    "  skill status|plan|install|reconcile|remove  Manage per-user agent skills\n"
     "  icons list [--json]                   List installed icon packs, and any problems reading them\n"
+    "  icons samples <id>                   Read four sample paths and their originating packs (API v1)\n"
+    "  icons search <id> [query] [--limit N] Search app/device icon names in a pack and its fallbacks (API v1)\n"
     "  icons import <folder|archive> [--yes] [--json]  Install an icon pack from a folder or a .zip, .tar, or .7z\n"
     "  icons reapply [theme]                 Reapply your icon pack choice; the theme hook runs this\n"
     "  icons remove-integration              Remove the hooks, saved choice, and launcher icons, leaving the icons\n"
@@ -575,16 +609,10 @@ int providerResult(Provider &provider, Start start, bool json) {
 int cmdShortcut(AppCore &core, const QStringList &args, bool json, bool yes) {
     ShortcutsProvider provider(&core.runner, &core.coordinator);
     const QString verb = args.value(1);
-    if (verb == QLatin1String("add") && args.size() >= 5) {
-        // Collisions need the current binds, so read them before deciding.
-        QEventLoop loop;
-        QObject::connect(&provider, &ShortcutsProvider::changed, &loop, &QEventLoop::quit);
-        QTimer::singleShot(5000, &loop, &QEventLoop::quit);
-        provider.refresh();
-        loop.exec();
+    if (verb == QLatin1String("add") && args.size() == 5) {
         return providerResult(provider, [&] { provider.addBinding(args[2], args[3], args[4], yes); }, json);
     }
-    if (verb == QLatin1String("remove") && args.size() >= 3)
+    if (verb == QLatin1String("remove") && args.size() == 3)
         return providerResult(provider, [&] { provider.removeBinding(args[2]); }, json);
     err() << "Usage: omarchy-control shortcut add <keys> <description> <command> [--yes] | remove <keys>\n";
     return 1;
@@ -593,11 +621,19 @@ int cmdShortcut(AppCore &core, const QStringList &args, bool json, bool yes) {
 int cmdRule(AppCore &core, const QStringList &args, bool json) {
     WindowRulesProvider provider(&core.runner, &core.coordinator);
     const QString verb = args.value(1);
-    if (verb == QLatin1String("add") && args.size() >= 4)
+    if (verb == QLatin1String("add") && (args.size() == 4 || args.size() == 5))
         return providerResult(provider, [&] { provider.addRule(args[2], args[3], args.value(4)); }, json);
-    if (verb == QLatin1String("remove") && args.size() >= 3)
-        return providerResult(provider, [&] { provider.removeRule(args[2].toInt()); }, json);
-    if (verb == QLatin1String("list")) {
+    if (verb == QLatin1String("remove") && args.size() == 3) {
+        bool ok = false;
+        const int index = args[2].toInt(&ok);
+        static const QRegularExpression digits("\\A[0-9]+\\z");
+        if (ok && digits.match(args[2]).hasMatch())
+            return providerResult(provider, [&] { provider.removeRule(index); }, json);
+        if (json) printJson(QJsonObject{{"ok", false}, {"message", "A rule index must be a nonnegative integer from rule list."}});
+        else err() << "A rule index must be a nonnegative integer from rule list.\n";
+        return 1;
+    }
+    if (verb == QLatin1String("list") && args.size() == 2) {
         printJson(QJsonArray::fromVariantList(provider.rules()));
         return 0;
     }
@@ -673,19 +709,27 @@ int cmdDisplayPreview(AppCore &core, const QStringList &args, bool json) {
 int cmdPlugin(AppCore &core, const QStringList &args, bool json) {
     PluginsProvider provider(&core.runner, &core.coordinator);
     const QString verb = args.value(1);
-    if ((verb == QLatin1String("enable") || verb == QLatin1String("disable")) && args.size() >= 3)
+    if ((verb == QLatin1String("enable") || verb == QLatin1String("disable")) && args.size() == 3)
         return providerResult(provider, [&] { provider.setEnabled(args[2], verb == QLatin1String("enable")); }, json);
     err() << "Usage: omarchy-control plugin enable|disable <id>\n";
     return 1;
 }
 
 int cmdWidget(AppCore &core, const QStringList &args, bool json) {
-    if (args.value(1) != QLatin1String("move") || args.size() < 7) {
+    if (args.value(1) != QLatin1String("move") || args.size() != 7) {
         err() << "Usage: omarchy-control widget move <id> <section> <index> <from-section> <from-index>\n";
         return 1;
     }
     PluginsProvider provider(&core.runner, &core.coordinator);
-    return providerResult(provider, [&] { provider.moveWidget(args[2], args[3], args[4].toInt(), args[5], args[6].toInt()); }, json);
+    bool indexOk = false, sourceOk = false;
+    const int index = args[4].toInt(&indexOk), source = args[6].toInt(&sourceOk);
+    static const QRegularExpression integer("\\A[0-9]+\\z");
+    if (!indexOk || !sourceOk || !integer.match(args[4]).hasMatch() || !integer.match(args[6]).hasMatch()) {
+        if (json) printJson(QJsonObject{{"ok", false}, {"message", "Widget indices must be nonnegative integers."}});
+        else err() << "Widget indices must be nonnegative integers.\n";
+        return 1;
+    }
+    return providerResult(provider, [&] { provider.moveWidget(args[2], args[3], index, args[5], source); }, json);
 }
 
 // Opens a catalog route. Reports only that it opened; what happens next is the
@@ -982,22 +1026,6 @@ int cmdApps(AppCore &core, QStringList args, bool json) {
         return finishChange(core, [&](ChangeCoordinator::Finished done) { core.launchers.update(id, done); }, json);
     err() << Usage;
     return 1;
-}
-
-int cmdSkillInstall(AppCore &core) {
-    QByteArray skill;
-    if (!FileOps::readFile(":/data/skill.md", &skill)) {
-        err() << "The bundled skill is missing.\n";
-        return 1;
-    }
-    const QString path = core.env.home + "/.claude/skills/omarchy-control/SKILL.md";
-    QString error;
-    if (!FileOps::atomicWrite(path, skill, &error, 0644)) {
-        err() << error << "\n";
-        return 1;
-    }
-    out() << "Installed " << path << "\n";
-    return 0;
 }
 
 // ---- My Omarchy profiles ----------------------------------------------------------
@@ -1754,11 +1782,33 @@ int cmdProfile(AppCore &core, const QStringList &args, bool yes, bool json) {
 namespace Cli {
 
 bool isCliCommand(const QString &command) {
-    static const QStringList commands{"catalog", "search", "get", "plan", "apply", "reset", "history", "undo", "doctor", "coverage", "compat", "shortcut", "rule", "display", "plugin", "widget", "launch", "integrate", "selftest", "skill", "display-watchdog", "icons", "apps", "profile", "help", "--help", "-h", "--version"};
+    static const QStringList commands{"open", "commands", "describe", "audio", "bluetooth", "network", "preferences", "services", "startup", "mime", "system", "diagnostics", "catalog", "search", "get", "plan", "apply", "reset", "history", "undo", "doctor", "coverage", "compat", "shortcut", "rule", "display", "plugin", "bar", "dock", "widget", "launch", "integrate", "selftest", "skill", "display-watchdog", "icons", "apps", "profile", "update", "help", "--help", "-h", "--version"};
     return commands.contains(command);
 }
 
 int run(const Env &env, const QStringList &arguments) {
+    if (CliApi::requested(arguments)) {
+        const auto response = CliApi::execute(env, arguments);
+        printJson(response.body);
+        return response.exitCode;
+    }
+    if (arguments == QStringList{"skill", "install"}) {
+        const auto response = CliApi::execute(env, arguments);
+        if (response.exitCode) {
+            err() << response.body.value("error").toObject().value("message").toString() << '\n';
+        } else if (response.body.value("outcome") == QLatin1String("opted_out")) {
+            out() << "Skill integration is opted out. Use skill opt-in to enable it.\n";
+        } else {
+            for (const auto &value : response.body.value("data").toObject().value("registrations").toArray()) {
+                const auto registration = value.toObject();
+                if (registration.value("name") == QLatin1String("omarchy-control") && registration.value("state") == QLatin1String("registered"))
+                    out() << "Installed " << registration.value("path").toString() << "/SKILL.md\n";
+            }
+        }
+        for (const auto &warning : response.body.value("data").toObject().value("warnings").toArray())
+            err() << warning.toString() << '\n';
+        return response.exitCode;
+    }
     QStringList args = arguments;
     const bool json = popFlag(args, "--json");
     const bool yes = popFlag(args, "--yes");
@@ -1788,8 +1838,6 @@ int run(const Env &env, const QStringList &arguments) {
         return cmdCoverage(core, args.mid(1), json);
     if (command == QLatin1String("history"))
         return cmdHistory(core, json);
-    if (command == QLatin1String("skill") && args.value(1) == QLatin1String("install"))
-        return cmdSkillInstall(core);
     if (command == QLatin1String("integrate") && args.value(1) == QLatin1String("menu"))
         return cmdIntegrateMenu(core, args.contains("--remove"));
     if (command == QLatin1String("compat"))

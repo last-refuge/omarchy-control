@@ -5,11 +5,19 @@ A native control center for Omarchy: one searchable place to understand the mach
 Version 0.5.0 is built, tested, and verified on real Hyprland in an isolated nested session, but has not yet changed anything on a real desktop session. See [what has and has not been verified](LIVE-CHECKS.md). The plan is grounded in a read-only audit of the local Omarchy 4.5 installation on November 5, 2026.
 
 - [Implementation plan](PLAN.md): product direction, native design, architecture, change handling, milestones, and acceptance criteria.
+- [CLI and agent integration plan](CLI-AGENT-PLAN.md): CLI coverage, machine-readable discovery, stock Omarchy skill routing, automatic per-user installation, and verification gates.
+- [CLI and agent readiness](CLI-AGENT-READINESS.md): current implementation scope, passing evidence and remaining desktop/publication gates.
+- [Helper workflow scope](CLI-WORKFLOWS.md): native alternatives, file locations and explicit handoff reasons for upstream workflows.
+- [Agent skill registration](AGENT-SKILLS.md): per-user registration, stock forwarding, ownership, opt-out, removal and tested harness paths.
+- [Packaged agent lifecycle](AGENT-LIFECYCLE.md): actual package/user-manager activation, deferred cleanup, migration and dependency limits.
+- [CLI automation API](CLI-API.md): API v1 settings, devices, services/startup, apps/MIME, system facts, diagnostics, shortcuts/rules, plugins/bar/dock, outcomes, and current gaps.
+- [Network previews](NETWORK-PREVIEWS.md): protected CLI activation/disconnection, durable token status/keep/revert, ownership, expiry and recovery limits.
 - [Icon theme plan](ICON-THEMES-PLAN.md): installed icon pack selection, previews, persistent overrides, local folder import, and verification gates.
 - [Blur plan](BLUR-PLAN.md): dedicated blur controls, why their values load after Omarchy's toggles, and what upstream is changing.
 - [Coverage map](COVERAGE.md): configuration domains, integration choices, helper availability, and the process for keeping coverage complete.
 - [P0 findings](P0-FINDINGS.md): what each Omarchy command actually does, the write strategy for each provider, and what was tried and rejected.
 - [Live checks](LIVE-CHECKS.md): what is verified, what is not, and the steps for a first live run.
+- [Display previews](DISPLAY-PREVIEWS.md): durable full-layout CLI input, timer ownership, Keep and recovery.
 - [My Omarchy](MY-OMARCHY.md): saving a machine's choices to a profile and restoring them elsewhere. The profile contract, which settings travel and why, the command audit behind them, and progress by milestone. The [profile schema](profile.schema.json) defines `profile.json`.
 - [Coverage ledger](coverage-ledger.json): one generated row per setting and workflow, from `bin/coverage`.
 - [Discovery inventory](inventory-2026-11-05.json): installed versions, command metadata, stock menu entries, plugin manifests, configuration paths, and source fingerprints.

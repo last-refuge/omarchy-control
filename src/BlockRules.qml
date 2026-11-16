@@ -75,7 +75,7 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: root.provider.rules.length > 0
             Repeater {
-                model: root.provider.rules
+            model: root.provider.selectableRules
                 delegate: Item {
                     width: parent ? parent.width : 400
                     height: theme.rowHeight
@@ -87,7 +87,7 @@ ColumnLayout {
                         spacing: 10
                         AppText { text: modelData.match; Layout.preferredWidth: 260 }
                         AppText { text: root.actionLabel(modelData); secondary: true; Layout.fillWidth: true }
-                        AppButton { style: "flat"; text: qsTr("Remove"); onClicked: root.provider.removeRule(index) }
+                AppButton { style: "flat"; text: qsTr("Remove"); onClicked: root.provider.removeRule(modelData.selector) }
                     }
                 }
             }
