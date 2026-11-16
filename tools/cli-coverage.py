@@ -62,9 +62,9 @@ def audit(root):
             problems.append(f"Duplicate catalog id: {identifier}")
         catalog_ids.add(identifier)
     for entry in settings:
-        if entry.get("read", {}).get("kind") not in {"cmd", "hypr", "exists", "blur", "filetext", "json", "symlink", "icons", "iconlayer", "toml", "blurstatus"}:
+        if entry.get("read", {}).get("kind") not in {"cmd", "hypr", "exists", "blur", "filetext", "json", "symlink", "icons", "iconlayer", "toml", "blurstatus", "automatic-timezone"}:
             problems.append(f"Unclassified setting reader: {entry['id']}")
-        if entry.get("write") and entry["write"].get("kind") not in {"cmd", "hypr", "json", "icons"}:
+        if entry.get("write") and entry["write"].get("kind") not in {"cmd", "hypr", "json", "icons", "automatic-timezone"}:
             problems.append(f"Unclassified setting writer: {entry['id']}")
     for entry in workflows:
         launch = entry.get("launch", {})

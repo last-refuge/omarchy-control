@@ -2417,6 +2417,110 @@ private slots:
                 QVERIFY2(!part.toString().contains('-'), qPrintable(e.id));
         }
     }
+    void automaticTimezoneEnablesAndUpdatesThenDisables() {
+        Sandbox s;
+        s.command("systemctl", kAutomaticTimezone);
+        AppCore core(s.env);
+        const QString id = "system.timezone.auto";
+        const auto *entry = core.catalog.find(id);
+        QVERIFY(entry);
+        QCOMPARE(entry->page, QString("system"));
+        QCOMPARE(entry->section, QString("Language and time"));
+        QCOMPARE(entry->type, QString("toggle"));
+        QCOMPARE(readSetting(core.engine, id).value, QString("false"));
+        QVERIFY(core.engine.plan(id, "true").ok);
+        QVERIFY(!core.engine.plan(id, "yes").ok);
+        const Transaction enabled = applySetting(core.engine, id, "true");
+        QCOMPARE(enabled.phase, QString("committed"));
+        QCOMPARE(readSetting(core.engine, id).value, QString("true"));
+        QVERIFY(QFile::exists(s.env.home + "/timezone-update-ran"));
+        const QString enable = "systemctl --system enable --now automatic-timezone.timer";
+        const QString update = "systemctl --system start automatic-timezone.service";
+        QVERIFY(s.calls().indexOf(enable) >= 0);
+        QVERIFY(s.calls().indexOf(update) > s.calls().indexOf(enable));
+
+        const Transaction disabled = applySetting(core.engine, id, "false");
+        QCOMPARE(disabled.phase, QString("committed"));
+        QCOMPARE(readSetting(core.engine, id).value, QString("false"));
+        QCOMPARE(readAll(s.env.home + "/timezone-active").trimmed(), QByteArray("inactive"));
+        QVERIFY(s.calls().contains("systemctl --system disable --now automatic-timezone.timer"));
+        QCOMPARE(s.calls().count(update), 1);
+        // Undo restores the scheduling preference; disabling does not revert the time zone.
+        QVERIFY(disabled.undoable());
+        QCOMPARE(undoTx(core.engine, disabled.id).phase, QString("committed"));
+        QCOMPARE(readSetting(core.engine, id).value, QString("true"));
+        QCOMPARE(s.calls().count(update), 2);
+    }
+    void automaticTimezoneDoesNotHideAFirstUpdateFailure_data() {
+        QTest::addColumn<bool>("alreadyEnabled");
+        QTest::newRow("was off") << false;
+        QTest::newRow("was already on") << true;
+    }
+    void automaticTimezoneDoesNotHideAFirstUpdateFailure() {
+        QFETCH(bool, alreadyEnabled);
+        Sandbox s;
+        s.command("systemctl", kAutomaticTimezone);
+        writeFile(s.env.home + "/timezone-enabled", alreadyEnabled ? "enabled" : "disabled");
+        writeFile(s.env.home + "/timezone-active", alreadyEnabled ? "active" : "inactive");
+        writeFile(s.env.home + "/timezone-update-fails", "");
+        AppCore core(s.env);
+        const Transaction tx = applySetting(core.engine, "system.timezone.auto", "true");
+        QCOMPARE(tx.phase, QString("rolled-back"));
+        QVERIFY(tx.message.contains("first update failed"));
+        QCOMPARE(readSetting(core.engine, "system.timezone.auto").value, alreadyEnabled ? QString("true") : QString("false"));
+        QCOMPARE(readAll(s.env.home + "/timezone-active").trimmed(), alreadyEnabled ? QByteArray("active") : QByteArray("inactive"));
+        QCOMPARE(s.calls().count("systemctl --system start automatic-timezone.service"), 1);
+        QVERIFY(!tx.undoable());
+    }
+    void automaticTimezoneRequiresReadableInstalledUnits_data() {
+        QTest::addColumn<QString>("marker");
+        QTest::addColumn<QString>("state");
+        QTest::newRow("not installed") << QString("missing") << QString("unavailable");
+        QTest::newRow("no bus") << QString("read-fails") << QString("unknown");
+        QTest::newRow("incomplete response") << QString("malformed") << QString("unknown");
+        QTest::newRow("masked") << QString("masked") << QString("unavailable");
+    }
+    void automaticTimezoneRequiresReadableInstalledUnits() {
+        QFETCH(QString, marker);
+        QFETCH(QString, state);
+        Sandbox s;
+        s.command("systemctl", kAutomaticTimezone);
+        if (marker == "masked")
+            writeFile(s.env.home + "/timezone-enabled", "masked");
+        else
+            writeFile(s.env.home + "/timezone-" + marker, "");
+        AppCore core(s.env);
+        const ReadResult read = readSetting(core.engine, "system.timezone.auto");
+        QCOMPARE(read.status, state);
+        QVERIFY(!read.reason.isEmpty());
+        QCOMPARE(applySetting(core.engine, "system.timezone.auto", "true").phase, QString("failed"));
+        for (const auto &call : s.calls())
+            QVERIFY2(call.startsWith("systemctl --system show "), qPrintable(call));
+    }
+    void automaticTimezoneVerifiesBothTimerStates_data() {
+        QTest::addColumn<QString>("marker");
+        QTest::newRow("authorization denied") << QString("denied");
+        QTest::newRow("enable did not start timer") << QString("no-start");
+        QTest::newRow("changed before write") << QString("stale");
+    }
+    void automaticTimezoneVerifiesBothTimerStates() {
+        QFETCH(QString, marker);
+        Sandbox s;
+        s.command("systemctl", kAutomaticTimezone);
+        writeFile(s.env.home + "/timezone-" + marker, "");
+        AppCore core(s.env);
+        const Transaction tx = applySetting(core.engine, "system.timezone.auto", "true");
+        QVERIFY2(tx.phase == "failed" || tx.phase == "rolled-back", qPrintable(tx.phase));
+        QVERIFY(!tx.message.isEmpty());
+        if (marker == "stale") {
+            for (const auto &call : s.calls())
+                QVERIFY2(call.startsWith("systemctl --system show "), qPrintable(call));
+        } else {
+            QCOMPARE(readSetting(core.engine, "system.timezone.auto").value, QString("false"));
+            if (marker == "denied")
+                QVERIFY(!s.calls().contains("systemctl --system start automatic-timezone.service"));
+        }
+    }
     void catalogIsStructurallySound() {
         Catalog catalog;
         QVERIFY(catalog.entries().size() > 400);
@@ -3786,8 +3890,8 @@ esac)SH");
             else
                 expected << entry->id;
         }
-        QCOMPARE(expected.size() + natives.size(), 67);
-        QCOMPARE(expected.size(), 64);
+        QCOMPARE(expected.size() + natives.size(), 68);
+        QCOMPARE(expected.size(), 65);
         QCOMPARE(placed.size(), QSet<QString>(placed.begin(), placed.end()).size());
         placed.sort();
         expected.sort();
@@ -3799,7 +3903,7 @@ esac)SH");
         QCOMPARE(library.size(), 7);
         QCOMPARE(library.value("This computer"), 6);
         QCOMPARE(library.value("Updates"), 13);
-        QCOMPARE(library.value("Language and time"), 7);
+        QCOMPARE(library.value("Language and time"), 8);
         QCOMPARE(library.value("Snapshots and recovery"), 6);
         QCOMPARE(library.value("Boot and firmware"), 6);
         QCOMPARE(library.value("Restart components"), 10);
@@ -9532,6 +9636,38 @@ exit 0)SH");
         QTRY_VERIFY(s.calls().join('\n').contains("ufw disable"));
     }
 
+    void automaticTimezoneIsEditableOnTheSystemPage() {
+        Sandbox s;
+        desktopFixture(s);
+        s.command("systemctl", kAutomaticTimezone);
+        writeFile(s.env.home + "/timezone-enabled", "enabled");
+        writeFile(s.env.home + "/timezone-active", "active");
+        DesktopPage page(s);
+        QVERIFY(page.window);
+        QVERIFY(QTest::qWaitForWindowActive(page.window, 3000));
+        const QString id = "system.timezone.auto";
+        page.open("system", id);
+        QTRY_VERIFY(page.row(id));
+        QQuickItem *row = page.row(id);
+        QTRY_COMPARE(row->property("status").toString(), QString("ok"));
+        QVERIFY(row->property("editable").toBool());
+        QQuickItem *toggle = nullptr;
+        for (QQuickItem *item : row->findChildren<QQuickItem *>())
+            if (item->property("label").toString() == "Automatic time zone updates" && item->property("on").isValid())
+                toggle = item;
+        QVERIFY(toggle);
+        QVERIFY(toggle->isEnabled());
+        QVERIFY(toggle->property("on").toBool());
+        // Exercise the real control and shared backend, not just a settings-engine call.
+        QMetaObject::invokeMethod(toggle, "clicked");
+        QTRY_VERIFY(!toggle->property("on").toBool());
+        QTRY_VERIFY(toggle->isEnabled());
+        QMetaObject::invokeMethod(toggle, "clicked");
+        QTRY_VERIFY(toggle->property("on").toBool());
+        QVERIFY(s.calls().contains("systemctl --system disable --now automatic-timezone.timer"));
+        QVERIFY(s.calls().contains("systemctl --system enable --now automatic-timezone.timer"));
+        QVERIFY(s.calls().contains("systemctl --system start automatic-timezone.service"));
+    }
     void theSystemPageManagesStorageStartupAndServices() {
         Sandbox s;
         desktopFixture(s);

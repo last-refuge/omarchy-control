@@ -1,7 +1,7 @@
 {
     "claimedCommands": 301,
     "claimedMenu": 356,
-    "entries": 515,
+    "entries": 516,
     "excludedCommands": 132,
     "excludedMenu": 0,
     "exclusions": {
@@ -2559,6 +2559,32 @@
             "supported_versions": "omarchy 4.5.x",
             "validation_evidence": "fixture-tests; live read ok 2026-11-06 (Omarchy 4.5.0-3)",
             "write_or_launch_method": "none"
+        },
+        {
+            "applicable_capability": [
+                "systemctl"
+            ],
+            "apply_restart_semantics": "",
+            "domain": "C15",
+            "id": "system.timezone.auto",
+            "implementation_status": "implemented",
+            "integration_mode": "native",
+            "known_limitation": "",
+            "read_method": "automatic-timezone",
+            "recovery_class": "best-effort",
+            "searchable_labels": [
+                "Automatic time zone updates",
+                "timezone",
+                "automatic timezone",
+                "travel",
+                "clock",
+                "automatic-timezone"
+            ],
+            "source_references": [
+            ],
+            "supported_versions": "omarchy 4.5.x",
+            "validation_evidence": "fixture-tests",
+            "write_or_launch_method": "automatic-timezone"
         },
         {
             "applicable_capability": [
@@ -12382,7 +12408,7 @@
     "modes": {
         "advanced-config": 22,
         "external-helper": 22,
-        "native": 115,
+        "native": 116,
         "omarchy-panel": 22,
         "omarchy-wizard": 334
     },

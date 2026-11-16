@@ -5,6 +5,41 @@
 
 namespace {
 
+// A system timer and its one-shot update, with independently observable state.
+const char kAutomaticTimezone[] = R"SH(
+[ "$1" = --system ] || exit 9
+shift
+case "$1" in
+  show)
+    if [ -f "$HOME/timezone-read-fails" ]; then echo 'system bus unavailable' >&2; exit 1; fi
+    if [ -f "$HOME/timezone-missing" ]; then printf 'LoadState=not-found\nUnitFileState=\nActiveState=inactive\n'; exit 4; fi
+    if [ -f "$HOME/timezone-malformed" ]; then echo LoadState=loaded; exit 0; fi
+    count=$(cat "$HOME/timezone-reads" 2>/dev/null || echo 0)
+    echo "$((count + 1))" > "$HOME/timezone-reads"
+    if [ -f "$HOME/timezone-stale" ] && [ "$count" = 1 ]; then echo enabled > "$HOME/timezone-enabled"; fi
+    printf 'LoadState=loaded\nUnitFileState=%s\nActiveState=%s\n' \
+      "$(cat "$HOME/timezone-enabled" 2>/dev/null || echo disabled)" \
+      "$(cat "$HOME/timezone-active" 2>/dev/null || echo inactive)"
+    ;;
+  enable|disable)
+    if [ -f "$HOME/timezone-denied" ]; then echo 'authorization denied' >&2; exit 1; fi
+    if [ "$1" = enable ]; then state=enabled; active=active; else state=disabled; active=inactive; fi
+    echo "$state" > "$HOME/timezone-enabled"
+    if [ "$2" = --now ] && [ ! -f "$HOME/timezone-no-start" ]; then echo "$active" > "$HOME/timezone-active"; fi
+    ;;
+  start|stop)
+    if [ "$2" = automatic-timezone.service ]; then
+      [ "$1" = start ] || exit 9
+      if [ -f "$HOME/timezone-update-fails" ]; then echo 'first update failed' >&2; exit 1; fi
+      touch "$HOME/timezone-update-ran"
+    elif [ "$2" = automatic-timezone.timer ]; then
+      if [ "$1" = start ]; then echo active; else echo inactive; fi > "$HOME/timezone-active"
+    else exit 9; fi
+    ;;
+  *) exit 9;;
+esac
+)SH";
+
 // A compositor with one display whose x position lives in a file, moved by eval.
 // If `$root/lag` exists, that many monitors reads after an eval still report the
 // old position. Hyprland 0.56 does this for one frame: eval returns, then the

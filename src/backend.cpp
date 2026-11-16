@@ -459,6 +459,8 @@ void Backend::handleResult(const QString &id, const CatalogEntry *entry, const T
 }
 
 void Backend::refreshRelated(const QString &id) {
+    if (id == QLatin1String("system.timezone.auto"))
+        refresh(QStringLiteral("system.timezone"));
     // A display setting moves what the arrangement shows.
     if (id.startsWith(QLatin1String("displays.")))
         m_displays.refresh();

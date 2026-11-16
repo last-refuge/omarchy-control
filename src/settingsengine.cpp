@@ -376,6 +376,10 @@ void SettingsEngine::read(const QString &id, ReadCallback callback) {
         return;
     }
     const QString kind = entry->read.value("kind").toString();
+    if (kind == QLatin1String("automatic-timezone")) {
+        readAutomaticTimezone(std::move(callback));
+        return;
+    }
     if (kind == QLatin1String("blur") || kind == QLatin1String("blurstatus")) {
         readBlur(entry, callback);
         return;
@@ -973,6 +977,124 @@ void SettingsEngine::applyCommand(const CatalogEntry &entry, const QJsonObject &
     });
 }
 
+void SettingsEngine::readAutomaticTimezone(ReadCallback callback) {
+    m_runner->run({"systemctl", "--system", "show", "--all", "--no-pager",
+                   "--property=LoadState,UnitFileState,ActiveState", "automatic-timezone.timer"},
+                  CommandOptions{5000}, this, [callback](const CommandResult &command) {
+        ReadResult result;
+        QHash<QString, QString> fields;
+        bool valid = !command.truncated && command.failure == CommandResult::None;
+        for (const QString &line : command.outText().split('\n', Qt::SkipEmptyParts)) {
+            const int equals = line.indexOf('=');
+            if (equals < 1 || fields.contains(line.left(equals))) {
+                valid = false;
+                continue;
+            }
+            fields.insert(line.left(equals), line.mid(equals + 1));
+        }
+        const auto tr = [](const char *text) { return QCoreApplication::translate("SettingsEngine", text); };
+        if (valid && fields.value("LoadState") == QLatin1String("not-found")) {
+            result.status = "unavailable";
+            result.reason = tr("Automatic time zone updates are not installed.");
+        } else if (!valid || !command.ok() || !fields.contains("LoadState") || !fields.contains("UnitFileState") || !fields.contains("ActiveState")) {
+            result.reason = command.describe("systemctl");
+            if (result.reason.isEmpty())
+                result.reason = tr("Automatic time zone updates could not be read.");
+        } else if (fields.value("LoadState") != QLatin1String("loaded")
+                   || !QStringList{"enabled", "disabled"}.contains(fields.value("UnitFileState"))
+                   || !QStringList{"active", "inactive", "failed"}.contains(fields.value("ActiveState"))) {
+            result.status = "unavailable";
+            result.reason = tr("The automatic time zone timer needs attention before it can be changed here.");
+        } else {
+            result.status = "ok";
+            result.value = fields.value("UnitFileState") == QLatin1String("enabled") ? "true" : "false";
+            result.extra = {{"enabled", result.value == QLatin1String("true")}, {"active", fields.value("ActiveState")}};
+            if (result.value == QLatin1String("true") && fields.value("ActiveState") != QLatin1String("active"))
+                result.reason = tr("Automatic time zone updates are enabled, but the timer is not running.");
+            else if (result.value == QLatin1String("false") && fields.value("ActiveState") == QLatin1String("active"))
+                result.reason = tr("The time zone timer is still running even though automatic updates are disabled.");
+        }
+        callback(result);
+    });
+}
+
+// systemctl uses the desktop's polkit agent for system authorization. Each
+// command must succeed: a running timer cannot stand in for a failed first update.
+static void timezoneCommand(CommandRunner *runner, QObject *context, const QStringList &arguments, ChangeCoordinator::Done done) {
+    CommandOptions options;
+    options.mutation = true;
+    options.timeoutMs = 90000;
+    runner->run(QStringList{"systemctl", "--system"} + arguments, options, context, [done](const CommandResult &command) {
+        done(command.ok(), command.describe("systemctl"));
+    });
+}
+
+void SettingsEngine::submitAutomaticTimezone(const CatalogEntry &entry, const ReadResult &before, const QString &value,
+                                            const QString &kind, ApplyCallback callback, const QString &runId) {
+    if (before.status != QLatin1String("ok")) {
+        Transaction failed;
+        failed.settingId = entry.id;
+        failed.label = entry.label;
+        failed.phase = "failed";
+        failed.message = before.reason;
+        callback(failed);
+        return;
+    }
+    const bool enabled = value == QLatin1String("true");
+    ChangeCoordinator::Request request;
+    request.settingId = entry.id;
+    request.label = entry.label;
+    request.kind = kind;
+    request.before = before.value;
+    request.after = value;
+    request.recovery = entry.recovery;
+    request.runId = runId;
+    request.extra = QJsonObject::fromVariantMap(before.extra);
+    request.preflight = [this, before](ChangeCoordinator::Done done) {
+        readAutomaticTimezone([before, done](const ReadResult &now) {
+            done(now.status == QLatin1String("ok") && now.extra == before.extra,
+                 QCoreApplication::translate("SettingsEngine", "The time zone timer changed or could not be read. Refresh before changing it."));
+        });
+    };
+    request.apply = [this, enabled](ChangeCoordinator::Done done) {
+        timezoneCommand(m_runner, this, {enabled ? "enable" : "disable", "--now", "automatic-timezone.timer"},
+                        [this, enabled, done](bool ok, const QString &error) {
+            if (!ok || !enabled) { done(ok, error); return; }
+            timezoneCommand(m_runner, this, {"start", "automatic-timezone.service"}, done);
+        });
+    };
+    request.verify = [this, enabled](ChangeCoordinator::Done done) {
+        readAutomaticTimezone([enabled, done](const ReadResult &now) {
+            done(now.status == QLatin1String("ok") && now.extra.value("enabled").toBool() == enabled
+                     && now.extra.value("active").toString() == (enabled ? QLatin1String("active") : QLatin1String("inactive")),
+                 QCoreApplication::translate("SettingsEngine", "The automatic time zone timer did not reach the requested state."));
+        });
+    };
+    request.rollback = [this, before](ChangeCoordinator::Done done) {
+        readAutomaticTimezone([this, before, done](const ReadResult &now) {
+            if (now.status != QLatin1String("ok") || now.extra == before.extra) {
+                done(now.status == QLatin1String("ok"), now.reason);
+                return;
+            }
+            // Restore startup enablement and running state independently. Starting
+            // the timer here does not explicitly run another time zone update.
+            timezoneCommand(m_runner, this, {before.extra.value("enabled").toBool() ? "enable" : "disable", "automatic-timezone.timer"},
+                            [this, before, done](bool ok, const QString &error) {
+                if (!ok) { done(false, error); return; }
+                timezoneCommand(m_runner, this, {before.extra.value("active").toString() == QLatin1String("active") ? "start" : "stop", "automatic-timezone.timer"},
+                                [this, before, done](bool restored, const QString &error) {
+                    if (!restored) { done(false, error); return; }
+                    readAutomaticTimezone([before, done](const ReadResult &now) {
+                        done(now.status == QLatin1String("ok") && now.extra == before.extra,
+                             QCoreApplication::translate("SettingsEngine", "The previous time zone timer state could not be restored."));
+                    });
+                });
+            });
+        });
+    };
+    m_coordinator->submit(std::move(request), std::move(callback));
+}
+
 void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallback callback, const QString &kind, const QString &runId) {
     const CatalogEntry *entry = m_catalog->find(id);
     if (!entry) {
@@ -999,6 +1121,10 @@ void SettingsEngine::apply(const QString &id, const QString &value, ApplyCallbac
         read(id, [this, id, entry, plan, callback, kind, runId](const ReadResult &current) {
             const bool known = current.status == QLatin1String("ok") || current.status == QLatin1String("custom");
             const QString writeKind = entry->write.value("kind").toString();
+            if (writeKind == QLatin1String("automatic-timezone")) {
+                submitAutomaticTimezone(*entry, current, plan.normalized, kind, callback, runId);
+                return;
+            }
             if (writeKind == QLatin1String("icons")) {
                 if (m_icons)
                     m_icons->submit(plan.normalized, kind, entry->label, callback);

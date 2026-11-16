@@ -4809,6 +4809,44 @@
   }
  },
  {
+  "id": "system.timezone.auto",
+  "page": "system",
+  "section": "Language and time",
+  "label": "Automatic time zone updates",
+  "type": "toggle",
+  "domain": "C15",
+  "integration": "native",
+  "description": "Keep the system time zone up to date. Turning this on also runs the first update immediately.",
+  "keywords": [
+   "timezone",
+   "automatic timezone",
+   "travel",
+   "clock",
+   "automatic-timezone"
+  ],
+  "sources": [],
+  "read": {
+   "kind": "automatic-timezone"
+  },
+  "write": {
+   "kind": "automatic-timezone"
+  },
+  "requiresCommands": [
+   "systemctl"
+  ],
+  "recovery": "best-effort",
+  "scope": "system",
+  "effects": [
+   "May ask you to authenticate to change system services.",
+   "Turning this off stops future automatic updates and keeps the current time zone."
+  ],
+  "profile": {
+   "portability": "machine",
+   "category": "language",
+   "reason": "Automatic time zone updates depend on this computer's system service."
+  }
+ },
+ {
   "id": "system.ntp",
   "page": "system",
   "section": "Language and time",

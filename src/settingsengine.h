@@ -86,6 +86,9 @@ public:
 
 private:
     void readFiles(const CatalogEntry &entry, ReadCallback callback);
+    void readAutomaticTimezone(ReadCallback callback);
+    void submitAutomaticTimezone(const CatalogEntry &entry, const ReadResult &before, const QString &value,
+                                 const QString &kind, ApplyCallback callback, const QString &runId);
     void readBlur(const CatalogEntry *entry, ReadCallback callback);
     // Reads Hyprland options one after another, stopping at the first that fails.
     void hyprOptions(const QStringList &names, std::function<void(const QHash<QString, QString> &, const QString &)> done);
