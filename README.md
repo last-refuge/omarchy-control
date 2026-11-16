@@ -29,7 +29,7 @@ Omarchy Control is a native app that puts your settings behind one search box. I
 curl -fsSL https://raw.githubusercontent.com/last-refuge/omarchy-control/main/install.sh | bash
 ```
 
-This downloads the prebuilt package from [GitHub Releases](https://github.com/last-refuge/omarchy-control/releases), checks it against the release's checksums, and installs it with `pacman`, which shows you the change and asks before going ahead. Nothing is compiled. Packages built from the upcoming 0.6.0 source also register reversible agent skills for desktop users, preserving custom skills and opt-outs; they do not change desktop preferences. Published 0.5.0 and earlier packages predate that integration.
+This downloads the prebuilt package from [GitHub Releases](https://github.com/last-refuge/omarchy-control/releases), checks it against the release's checksums, and installs it with `pacman`, which shows you the change and asks before going ahead. Nothing is compiled. Packages built from 0.6.0 onward also register reversible agent skills for desktop users, preserving custom skills and opt-outs; they do not change desktop preferences. Version 0.5.0 and earlier packages predate that integration.
 
 Then find it in your app launcher, or run:
 
@@ -133,7 +133,7 @@ Every public Omarchy command and menu row in the 4.5 inventory has a destination
 - **Passwords are never collected.** Joining a secured network goes to Omarchy's panel, and installing an update leaves the password prompt to `sudo`.
 
 > [!NOTE]
-> **Upcoming version 0.6.0, built against Omarchy 4.5 and Hyprland 0.56.** The earlier 76-writer catalog has real-hardware read evidence and 60 verified writers, plus display recovery and window checks against real Hyprland, the shell and Omarchy scripts in an isolated nested session. The new background-introduction writer and agent/CLI additions have separate local evidence, with physical acceptance still pending ([readiness](docs/CLI-AGENT-READINESS.md)). The checklist of changes on a real desktop session is still open. [What has and has not been verified](docs/LIVE-CHECKS.md) has the details. My Omarchy, introduced in 0.5.0, is tested with fake commands, real git, and real pacman in a disposable root; a restore onto a fresh installation is still to be checked ([details](docs/MY-OMARCHY.md)).
+> **Version 0.6.0, built against Omarchy 4.5 and Hyprland 0.56.** The earlier 76-writer catalog has real-hardware read evidence and 60 verified writers, plus display recovery and window checks against real Hyprland, the shell and Omarchy scripts in an isolated nested session. The new background-introduction writer and agent/CLI additions have separate local evidence, with physical acceptance still pending ([readiness](docs/CLI-AGENT-READINESS.md)). The checklist of changes on a real desktop session is still open. [What has and has not been verified](docs/LIVE-CHECKS.md) has the details. My Omarchy, introduced in 0.5.0, is tested with fake commands, real git, and real pacman in a disposable root; a restore onto a fresh installation is still to be checked ([details](docs/MY-OMARCHY.md)).
 
 ## Keyboard shortcuts
 
@@ -153,8 +153,8 @@ Single-letter keys switch off while you are typing.
 
 ## Command line
 
-API v1 and managed agent skills are part of the upcoming 0.6.0 release. Published
-0.5.0 provides the earlier CLI.
+API v1 and managed agent skills are included in 0.6.0. Version 0.5.0 provides
+the earlier CLI.
 
 Agents and scripts get the same validation and journal as the window. Each command takes `--json` and exits 0 or 1.
 
@@ -233,7 +233,7 @@ omarchy-control profile plan --revision published
 
 </details>
 
-Packages built from the upcoming 0.6.0 source include automatic per-user agent integration.
+Packages built from 0.6.0 onward include automatic per-user agent integration.
 Install and upgrade notify running user managers; later manager and graphical
 session starts reconcile owned registrations. It adds a companion skill and
 forwards the stock-named `omarchy` skill while preserving custom files, opt-out

@@ -1,15 +1,15 @@
 # CLI and agent integration readiness
 
-The unreleased 0.6.0 source implements the reviewed CLI and skill integration.
+The 0.6.0 source implements the reviewed CLI and skill integration.
 The helper audit added explicit background-introduction, Power widget percentage
-and per-program crash-mute operations, with the passing evidence below. The 0.6.0 release
-has not been published or accepted on a physical Omarchy desktop.
+and per-program crash-mute operations, with the passing evidence below. Physical
+Omarchy desktop acceptance for the CLI and skill integration remains open.
 
 ## Supported contract
 
 The independent inventory accounts for 118 GUI methods in 92 groups: 60 API v1
 groups, 24 documented legacy CLI groups, eight UI-only groups and no native CLI
-gaps. The catalog has 90 typed entries and 425 destinations. New/unclassified GUI
+gaps. The catalog has 91 typed entries and 425 destinations. New/unclassified GUI
 methods, unknown catalog backends, duplicate IDs and stale operation mappings
 fail checks.
 
