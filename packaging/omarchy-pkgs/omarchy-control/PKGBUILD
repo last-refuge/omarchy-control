@@ -1,7 +1,7 @@
 # Maintainer: Jason Alexander
 
 pkgname=omarchy-control
-pkgver=0.3.1
+pkgver=0.6.0
 pkgrel=1
 pkgdesc='One searchable place to understand this computer, change its settings, and reach the right tool'
 arch=('x86_64' 'aarch64')
@@ -32,7 +32,7 @@ optdepends=(
 )
 makedepends=('gcc' 'make')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('f3bbd628eae4da318d60b7039bb269975eea22a3ad2a5583736c4e719953e0a1')
+sha256sums=('1e5d5fb5416c3e4cc28862f02afac19b16909acffdd560160a056699867a47d9')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"

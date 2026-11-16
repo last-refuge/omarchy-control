@@ -46,6 +46,7 @@ The current source snapshot is recorded in
 | Check | Result | Practical scope |
 | --- | --- | --- |
 | Full Qt suite, Arch ARM / Qt 6.12 | 966 passed, zero failed | Clean 0.6.0 build; includes the helper audit, updater and GUI/provider fault cases in offscreen fixtures |
+| Tagged 0.6.0 release, Arch x86_64 | 977 Qt tests passed; package and installer checks passed | GitHub release workflow; downloaded package and SHA256SUMS independently verified after publication |
 | Final search-pin error follow-up | Four tests passed | Explicit blocked outcome for invalid preferences; malformed content remains untouched |
 | Real Omarchy helper integration | 39 checks passed per architecture | Actual x86_64 and ARM package binaries, eight fingerprint-matched helpers and simulated shell IPC; no rendering/playback claim |
 | Baseline full Qt suite, Arch x86_64 / Qt 6.12 | 938 passed, zero failed | Before the helper follow-up; includes GUI regressions and provider/CLI fault cases in offscreen fixtures |
@@ -63,10 +64,12 @@ The current source snapshot is recorded in
 The production 0.6.0 recipe report is
 `build/cli-release-0.6.0/package-final/report.json`.
 It exercises install, upgrade, same-API downgrade,
-reinstall and removal. A separate fixture-package run passed 36 checks. The
-external Omarchy recipe still pins its published 0.3.1 tarball/checksum; it adopts
-the common payload only when its source release contains that payload. No future
-release checksum has been invented.
+reinstall and removal. A separate fixture-package run passed 36 checks.
+
+[Release 0.6.0](https://github.com/last-refuge/omarchy-control/releases/tag/v0.6.0)
+publishes the x86_64 Arch package and SHA256SUMS. The bundled external Omarchy
+recipe pins the actual 0.6.0 tag tarball and its verified SHA256;
+`makepkg --verifysource` passed.
 
 ## Agent discovery and task execution
 
@@ -102,7 +105,7 @@ model-task claim. Pi and Claude evidence establishes metadata discovery, not mod
 Hermes/profile and Antigravity roots have filesystem support but no harness-loading
 claim. Registration cannot refresh instructions already cached in a conversation.
 
-## Remaining acceptance and publication gates
+## Remaining acceptance gates
 
 - Run the new integration on a disposable Omarchy 4.5 / Hyprland 0.56 desktop:
   install as a logged-in user, start a fresh supported harness, update/relink
@@ -117,8 +120,6 @@ claim. Registration cannot refresh instructions already cached in a conversation
 - Complete the pre-existing fresh-machine My Omarchy restore acceptance in
   [its checklist](MY-OMARCHY.md), and expand account-dependent model tasks if those
   harnesses are to be advertised beyond metadata discovery.
-- Review and publish the source/release package, then update the external recipe
-  to the actual published tarball and verified checksum.
 
 The attempted software-only desktop here reached Weston but could not start
 Hyprland: its client requested `wl_compositor` version 6 while that parent accepted
