@@ -8,16 +8,16 @@ For a standalone QML repro, use the upstream `examples/qt-vendored` host with th
 
 Each row can be reviewed independently. The palette fix comes first because it affects Control's live theme directly. The dropdown click fix comes next because it can apply a different value from the one the user chose.
 
-| Order | Fix | Regression check |
-| --- | --- | --- |
-| 1 | [Resolve partial themes from defaults](#a-partial-theme-inherits-colors-from-the-previously-loaded-theme) | A live full-to-partial switch publishes and settles on the same palette as a cold load. Cover both motion settings. |
-| 2 | [Select the clicked row in both dropdowns](#dropdown-can-activate-the-highlighted-row-in-place-of-the-clicked-row) | A stationary click selects its row. Enter still selects the keyboard's highlighted row. |
-| 3 | [Preserve caller-owned values in both dropdowns](#dropdown-selection-breaks-a-binding-to-the-model) | A selection request keeps the caller's binding and displays the confirmed value. Existing callers still get automatic selection. |
-| 4 | [Watch the first theme being created](#creating-the-first-theme-after-startup-goes-unnoticed) | Populate the directories of an initially empty home in stages. The running app picks up the first palette and override. |
-| 5 | [Refresh options after a Hyprland reconnect](#reconnecting-to-hyprland-leaves-old-appearance-options-in-use) | A later event-socket connection refreshes rounding even if Hyprland sends no configuration event. |
-| 6 | [Give body-only toasts an accessible name and layout](#a-body-only-toast-has-an-empty-accessible-name-and-reserves-space-for-a-title) | A body-only toast exposes its message to assistive technology and takes one text row. Titled toasts retain their layout. |
-| 7 | [Mirror Heading actions in RTL](#heading-elides-its-subtitle-and-fixes-trailing-content-on-the-right) | Trailing actions sit on the right in LTR and on the left in RTL. Both layouts give the labels their remaining space. |
-| 8 | [Ship the MIT notice in the Arch package](#the-standalone-omarchy-ui-recipe-omits-its-mit-notice) | Inspect the built package for `usr/share/licenses/omarchy-ui/LICENSE`. |
+| Order | Fix | Regression check | Upstream PR |
+| --- | --- | --- | --- |
+| 1 | [Resolve partial themes from defaults](#a-partial-theme-inherits-colors-from-the-previously-loaded-theme) | A live full-to-partial switch publishes and settles on the same palette as a cold load. Cover both motion settings. | [#1](https://github.com/omacom/omarchy-ui/pull/1) |
+| 2 | [Select the clicked row in both dropdowns](#dropdown-can-activate-the-highlighted-row-in-place-of-the-clicked-row) | A stationary click selects its row. Enter still selects the keyboard's highlighted row. | [#2](https://github.com/omacom/omarchy-ui/pull/2) |
+| 3 | [Preserve caller-owned values in both dropdowns](#dropdown-selection-breaks-a-binding-to-the-model) | A selection request keeps the caller's binding and displays the confirmed value. Existing callers still get automatic selection. | [#3](https://github.com/omacom/omarchy-ui/pull/3) |
+| 4 | [Watch the first theme being created](#creating-the-first-theme-after-startup-goes-unnoticed) | Populate the directories of an initially empty home in stages. The running app picks up the first palette and override. | [#4](https://github.com/omacom/omarchy-ui/pull/4) |
+| 5 | [Refresh options after a Hyprland reconnect](#reconnecting-to-hyprland-leaves-old-appearance-options-in-use) | A later event-socket connection refreshes rounding even if Hyprland sends no configuration event. | [#5](https://github.com/omacom/omarchy-ui/pull/5) |
+| 6 | [Give body-only toasts an accessible name and layout](#a-body-only-toast-has-an-empty-accessible-name-and-reserves-space-for-a-title) | A body-only toast exposes its message to assistive technology and takes one text row. Titled toasts retain their layout. | [#6](https://github.com/omacom/omarchy-ui/pull/6) |
+| 7 | [Mirror Heading actions in RTL](#heading-elides-its-subtitle-and-fixes-trailing-content-on-the-right) | Trailing actions sit on the right in LTR and on the left in RTL. Both layouts give the labels their remaining space. | [#7](https://github.com/omacom/omarchy-ui/pull/7) |
+| 8 | [Ship the MIT notice in the Arch package](#the-standalone-omarchy-ui-recipe-omits-its-mit-notice) | Inspect the built package for `usr/share/licenses/omarchy-ui/LICENSE`. | [#8](https://github.com/omacom/omarchy-ui/pull/8) |
 
 The destructive-confirmation default is a behavior proposal. Native input and accessibility, model and content slots, an attachable scrollbar, unread switches, Sidebar overflow, opt-in subtitle wrapping, and Toast tones need their own API decisions. Start Pane with a layout example. Configurable live theme roots and asynchronous compositor reads merit separate runtime changes with focused tests.
 
