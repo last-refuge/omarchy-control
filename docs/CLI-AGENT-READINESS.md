@@ -7,7 +7,7 @@ Omarchy desktop acceptance for the CLI and skill integration remains open.
 
 ## Supported contract
 
-The independent inventory accounts for 118 GUI methods in 92 groups: 60 API v1
+The independent inventory accounts for 119 GUI methods in 92 groups: 60 API v1
 groups, 24 documented legacy CLI groups, eight UI-only groups and no native CLI
 gaps. The catalog has 91 typed entries and 425 destinations. New/unclassified GUI
 methods, unknown catalog backends, duplicate IDs and stale operation mappings

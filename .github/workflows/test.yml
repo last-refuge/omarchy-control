@@ -24,6 +24,8 @@ jobs:
           qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
 
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       # Not as root: some tests check file permissions, which root ignores.
       - name: Test

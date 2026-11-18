@@ -5,8 +5,8 @@ import QtQuick.Window
 // the palette, drawn from the live theme rather than from a stored picture.
 Rectangle {
     id: root
-    readonly property var look: theme.preview(theme.themeName)
-    readonly property string picture: theme.wallpaper.length ? theme.wallpaper : (look.image || "")
+    readonly property var look: appearance.preview(appearance.themeName)
+    readonly property string picture: appearance.wallpaper || look.image || ""
     implicitHeight: Math.round(theme.fontSize * 10)
     radius: theme.controlRadius
     gradient: Gradient {
@@ -14,11 +14,11 @@ Rectangle {
         GradientStop { position: 1; color: theme.deep }
     }
     Accessible.role: Accessible.Graphic
-    Accessible.name: qsTr("Preview of the %1 theme").arg(theme.themeName)
+    Accessible.name: qsTr("Preview of the %1 theme").arg(appearance.themeName)
 
     Image {
         anchors.fill: parent
-        source: theme.thumbnail(root.picture, root.radius * Screen.devicePixelRatio)
+        source: appearance.thumbnail(root.picture, root.radius * Screen.devicePixelRatio)
         visible: status === Image.Ready
         asynchronous: true
         sourceSize.width: Math.round(root.width * Screen.devicePixelRatio)

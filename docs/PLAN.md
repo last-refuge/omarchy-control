@@ -94,7 +94,7 @@ Search indexes setting names, descriptions, synonyms, device types, helper names
 
 ## 4. Make it look and feel distributed with Omarchy
 
-Use **C++ with Qt 6 Quick/QML**, built with **qmake6 and make**, following the local Omarchy app conventions. C++ owns state, filesystem work, services, and processes; QML owns layout and interaction. Use a `QGuiApplication`, Qt Quick Controls, and the Material style configured to match the active palette.
+Use **C++ with Qt 6 Quick/QML**, built with **qmake6 and make**, following the local Omarchy app conventions. C++ owns state, filesystem work, services, and processes. QML owns layout and interaction. Use the Omarchy UI Qt Quick kit for the live palette, tokens, and shared components, with Qt Quick Controls in the Basic style for native input behavior. [Upstream integration findings](OMARCHY-UI-UPSTREAM.md)
 
 The design must follow more than the accent color:
 

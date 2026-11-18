@@ -13,6 +13,7 @@ Version 0.5.0 is built, tested, and verified on real Hyprland in an isolated nes
 - [CLI automation API](CLI-API.md): API v1 settings, devices, services/startup, apps/MIME, system facts, diagnostics, shortcuts/rules, plugins/bar/dock, outcomes, and current gaps.
 - [Network previews](NETWORK-PREVIEWS.md): protected CLI activation/disconnection, durable token status/keep/revert, ownership, expiry and recovery limits.
 - [Icon theme plan](ICON-THEMES-PLAN.md): installed icon pack selection, previews, persistent overrides, local folder import, and verification gates.
+- [Omarchy UI Qt Quick findings](OMARCHY-UI-UPSTREAM.md) records upstream bugs and component gaps with steps to reproduce them.
 - [Blur plan](BLUR-PLAN.md): dedicated blur controls, why their values load after Omarchy's toggles, and what upstream is changing.
 - [Coverage map](COVERAGE.md): configuration domains, integration choices, helper availability, and the process for keeping coverage complete.
 - [P0 findings](P0-FINDINGS.md): what each Omarchy command actually does, the write strategy for each provider, and what was tried and rejected.

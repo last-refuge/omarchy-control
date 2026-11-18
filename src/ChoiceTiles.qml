@@ -119,7 +119,7 @@ Column {
                     Image {
                         anchors.fill: parent
                         visible: status === Image.Ready
-                        source: theme.thumbnail(tile.look.image || "", frame.radius * Screen.devicePixelRatio)
+                        source: appearance.thumbnail(tile.look.image || "", frame.radius * Screen.devicePixelRatio)
                         asynchronous: true
                         cache: true
                         sourceSize.width: Math.round(frame.width * Screen.devicePixelRatio)

@@ -12,6 +12,7 @@
 #include "backend.h"
 #include "iconprovider.h"
 #include "iconthemes.h"
+#include "omarchyui.h"
 #include "theme.h"
 #include "translator.h"
 #include "trayhost.h"
@@ -51,7 +52,7 @@ int runGui(const Env &env, const QStringList &arguments, std::function<void(QQml
     // app_id) and the launcher pick up the installed icon.
     app->setDesktopFileName("omarchy-control");
     app->setWindowIcon(QIcon::fromTheme("omarchy-control"));
-    QQuickStyle::setStyle("Material");
+    QQuickStyle::setStyle("Basic");
     // The window decides when to quit: with a tray to wait in, closing only hides it.
     app->setQuitOnLastWindowClosed(false);
 
@@ -60,7 +61,7 @@ int runGui(const Env &env, const QStringList &arguments, std::function<void(QQml
     Translator translator(env.configHome + "/omarchy/language", ":/i18n", env.omarchyPath + "/default/i18n/locales.json");
     app->installTranslator(&translator);
 
-    Theme theme(env);
+    ThemePreviewSource appearance(env);
     Backend backend(env);
     TrayHost trayHost;
 
@@ -76,12 +77,13 @@ int runGui(const Env &env, const QStringList &arguments, std::function<void(QQml
         });
     });
 
+    OmarchyUi::registerTypes();
     QQmlApplicationEngine engine;
     engine.addImageProvider("icons", new IconProvider);
     engine.addImageProvider("iconpacks", new IconPackImageProvider(env));
     QObject::connect(&translator, &Translator::changed, &engine, &QQmlEngine::retranslate);
     engine.rootContext()->setContextProperty("translator", &translator);
-    engine.rootContext()->setContextProperty("theme", &theme);
+    engine.rootContext()->setContextProperty("appearance", &appearance);
     engine.rootContext()->setContextProperty("backend", &backend);
     engine.rootContext()->setContextProperty("trayHost", &trayHost);
     engine.rootContext()->setContextProperty("initialPage", page);

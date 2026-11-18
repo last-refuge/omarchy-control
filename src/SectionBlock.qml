@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // A titled group of rows. Long lists, like everything installable, start closed so
 // a page stays readable; search still reaches every row.
@@ -54,15 +56,11 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        Layout.preferredHeight: Math.round(theme.fontSize * 2)
-        spacing: 8
-        AppText {
+        Layout.preferredHeight: Math.max(implicitHeight, Math.round(theme.fontSize * 2))
+        spacing: Theme.Style.spacing.controlGap
+        O.Heading {
             text: qsTranslate("catalog", root.title)
-            font.weight: Font.DemiBold
-            scale_: 1.25
             Layout.fillWidth: true
-            Accessible.role: Accessible.Heading
-            Accessible.name: text
         }
         AppText {
             objectName: "sectionAside"

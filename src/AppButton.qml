@@ -1,9 +1,10 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
-// Flat, outlined, or filled, with a visible keyboard focus state and a label that
-// says what pressing it does.
+// Native button input and accessibility, with Omarchy chrome and Control's SVG icons.
 AbstractButton {
     id: root
     property string iconName: ""
@@ -16,8 +17,12 @@ AbstractButton {
     // A larger label for the one action a panel is about.
     property real textScale: 1
 
-    implicitHeight: Math.round(theme.fontSize * 2.2) + 2
-    implicitWidth: row.implicitWidth + (style === "link" ? 2 : 24)
+    readonly property bool primary: style === "primary"
+    readonly property bool outlined: style === "outline" || style === "danger"
+    readonly property color accent: style === "danger" && enabled ? theme.dangerText : theme.accent
+
+    implicitHeight: Math.max(Theme.Style.spacing.controlHeight, row.implicitHeight + 2 * Theme.Style.spacing.controlPaddingY)
+    implicitWidth: row.implicitWidth + 2 * (style === "link" ? Theme.Style.spacing.hairline : Theme.Style.spacing.controlPaddingX)
     focusPolicy: Qt.StrongFocus
     hoverEnabled: true
     Accessible.name: text
@@ -31,28 +36,29 @@ AbstractButton {
                                 : style === "link" ? theme.accentText
                                 : theme.foreground
 
-    background: Rectangle {
-        radius: theme.controlRadius
-        color: root.style === "primary" ? (root.down ? Qt.darker(theme.accent, 1.2) : root.hovered ? Qt.darker(theme.accent, 1.08) : theme.accent)
+    background: O.BorderSurface {
+        radius: Theme.Style.cornerRadius
+        color: root.primary ? (root.down ? Qt.darker(theme.accent, 1.2) : root.hovered ? Qt.darker(theme.accent, 1.08) : theme.accent)
              : root.style === "link" ? "transparent"
-             : root.down ? Qt.alpha(theme.foreground, 0.14)
-             : root.hovered ? Qt.alpha(theme.foreground, 0.08)
-             : root.style === "outline" ? Qt.alpha(theme.foreground, 0.03)
+             : root.down ? Theme.Style.pressedFillFor(theme.foreground, root.accent)
+             : root.visualFocus ? Theme.Style.focusFillFor(theme.foreground, theme.accent)
+             : root.hovered ? Theme.Style.hoverFillFor(theme.foreground, root.accent)
+             : root.outlined ? Theme.Style.normalFillFor(theme.foreground, root.accent)
              : "transparent"
-        border.width: root.visualFocus && root.style !== "primary" ? 2 : (root.style === "outline" || root.style === "danger" ? 1 : 0)
-        border.color: root.visualFocus ? theme.accent
-                    : root.style === "danger" && root.enabled ? theme.dangerText
-                    : theme.divider
-        Behavior on color { enabled: theme.animate; ColorAnimation { duration: 100 } }
-        // An amber button's own edge cannot show amber focus, so the ring sits just outside it.
-        Rectangle {
-            visible: root.visualFocus && root.style === "primary"
+        borderSpec: root.primary ? Theme.Border.none()
+                  : root.visualFocus ? Theme.Border.controlSpec("focus", theme.foreground, theme.accent)
+                  : root.style === "danger" && root.enabled ? Theme.Border.flat(root.accent, Theme.Style.normalBorderWidth)
+                  : root.hovered && root.style !== "link" ? Theme.Border.controlSpec("hover-cursor", theme.foreground, root.accent)
+                  : root.outlined ? Theme.Border.controlSpec("normal", theme.foreground, root.accent)
+                  : Theme.Border.none()
+        Behavior on color { enabled: theme.animate; ColorAnimation { duration: Theme.Style.duration(120) } }
+        O.BorderSurface {
+            visible: root.visualFocus && root.primary
             anchors.fill: parent
-            anchors.margins: -4
-            radius: parent.radius + 4
+            anchors.margins: -Theme.Style.spacing.sm
+            radius: parent.radius > 0 ? parent.radius + Theme.Style.spacing.sm : 0
             color: "transparent"
-            border.width: 2
-            border.color: theme.accent
+            borderSpec: Theme.Border.controlSpec("focus", theme.foreground, theme.accent)
         }
     }
     contentItem: Item {
@@ -61,7 +67,7 @@ AbstractButton {
         RowLayout {
             id: row
             anchors.centerIn: parent
-            spacing: 8
+            spacing: Theme.Style.spacing.controlGap
             AppIcon {
                 id: leading
                 visible: root.leadingIcon.length > 0
@@ -93,7 +99,7 @@ AbstractButton {
                 tint: root.tint
                 size: Math.round(theme.fontSize * 1.1)
                 rotation: root.iconRotation
-                Behavior on rotation { enabled: theme.animate; NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                Behavior on rotation { enabled: theme.animate; NumberAnimation { duration: Theme.Style.duration(160); easing.type: Easing.OutCubic } }
             }
         }
     }

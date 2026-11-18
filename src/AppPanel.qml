@@ -1,24 +1,22 @@
 import QtQuick
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
-// A grouped surface: a faint vertical light and a hairline edge, no shadow. Its corners
-// are the desktop's.
-Rectangle {
+// A flat group with positioner-based rows. Their widths and heights belong to the
+// rows themselves, including delegates and blocks that stretch beside another panel.
+O.BorderSurface {
+    id: root
     default property alias content: inner.data
-    property int padding: 0
     implicitHeight: inner.implicitHeight + padding * 2
-    radius: theme.panelRadius
-    border.width: 1
-    border.color: theme.hairline
-    gradient: Gradient {
-        GradientStop { position: 0; color: theme.surfaceTop }
-        GradientStop { position: 1; color: theme.surfaceBottom }
-    }
+    radius: Theme.Style.cornerRadius
+    color: Theme.Style.normalFill
+    borderSpec: Theme.Border.flat(theme.hairline, Theme.Style.spacing.hairline)
+
     Column {
         id: inner
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: parent.padding
-        spacing: 0
+        anchors.margins: root.padding
     }
 }

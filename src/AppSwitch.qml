@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // Shows the state that was last read back. Clicking asks for a change; the knob
 // only moves once the new value has been confirmed. State is also spelled out in
@@ -18,11 +20,11 @@ AbstractButton {
     padding: 0
     Accessible.role: Accessible.CheckBox
     Accessible.name: label
-    Accessible.checkable: true
-    Accessible.checked: on
+    Accessible.checkable: !unknown
+    Accessible.checked: !unknown && on
 
     contentItem: RowLayout {
-        spacing: 8
+        spacing: Theme.Style.spacing.controlGap
         AppText {
             text: root.unknown ? "…" : root.on ? qsTr("On") : qsTr("Off")
             secondary: true
@@ -30,26 +32,41 @@ AbstractButton {
             horizontalAlignment: Text.AlignRight
             Layout.minimumWidth: Math.round(theme.fontSize * 2)
         }
-        Rectangle {
-            id: track
+        Item {
             opacity: root.enabled ? (root.busy ? 0.6 : 1) : 0.45
-            implicitWidth: 44
-            implicitHeight: 24
-            // Round only where the desktop is.
-            radius: theme.rounded ? height / 2 : 0
-            color: root.on ? (root.hovered ? Qt.darker(theme.accent, 1.08) : theme.accent)
-                           : Qt.alpha(theme.foreground, root.hovered ? 0.26 : 0.17)
-            border.width: root.visualFocus ? 2 : 0
-            border.color: root.on ? theme.foreground : theme.accent
-            Behavior on color { enabled: theme.animate; ColorAnimation { duration: 120 } }
-            Rectangle {
-                width: 18
-                height: 18
-                radius: theme.rounded ? 9 : 0
-                y: 3
-                x: root.unknown ? 13 : root.on !== root.mirrored ? parent.width - width - 3 : 3
-                color: root.on ? theme.accentForeground : theme.foreground
-                Behavior on x { enabled: theme.animate; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+            implicitWidth: track.implicitWidth
+            implicitHeight: track.implicitHeight
+
+            O.ToggleSwitch {
+                id: track
+                anchors.fill: parent
+                visible: !root.unknown
+                interactive: false
+                checked: root.on
+                foreground: theme.foreground
+                accent: theme.accent
+            }
+            O.BorderSurface {
+                anchors.fill: parent
+                visible: root.unknown
+                radius: track.rounded ? height / 2 : 0
+                color: Theme.Style.normalFillFor(theme.foreground, theme.accent)
+                borderSpec: Theme.Border.controlSpec("normal", theme.foreground, theme.accent)
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: track.knobSize
+                    height: width
+                    radius: track.rounded ? height / 2 : 0
+                    color: theme.foreground
+                }
+            }
+            O.BorderSurface {
+                visible: root.visualFocus || root.hovered
+                anchors.fill: parent
+                anchors.margins: -Theme.Style.spacing.xxs
+                radius: track.rounded ? height / 2 : 0
+                color: "transparent"
+                borderSpec: Theme.Border.controlSpec(root.visualFocus ? "focus" : "hover-cursor", theme.foreground, theme.accent)
             }
         }
     }

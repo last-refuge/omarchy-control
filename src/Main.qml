@@ -1,8 +1,9 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
 import QtQuick.Window
+import Omarchy.Theme as Kit
+import Omarchy.Ui as O
 
 ApplicationWindow {
     id: win
@@ -12,16 +13,22 @@ ApplicationWindow {
     minimumHeight: 460
     visible: true
     title: qsTr("Omarchy Control")
+    readonly property AppTheme theme: AppTheme {}
     color: theme.canvas
     font.family: theme.uiFont
     font.pixelSize: theme.fontSize
 
-    Material.theme: theme.dark ? Material.Dark : Material.Light
-    Material.accent: theme.accent
-    Material.primary: theme.accent
-    Material.background: theme.window
-    Material.foreground: theme.foreground
-    Material.roundedScale: theme.controlRadius
+    palette.window: theme.window
+    palette.windowText: theme.foreground
+    palette.base: theme.surfaceTop
+    palette.text: theme.foreground
+    palette.placeholderText: theme.muted
+    palette.button: theme.raised
+    palette.buttonText: theme.foreground
+    palette.highlight: theme.accent
+    palette.highlightedText: theme.accentForeground
+    palette.toolTipBase: Kit.Color.tooltip.background
+    palette.toolTipText: Kit.Color.tooltip.text
 
     property string currentPage: "overview"
     property string focusRequest: ""
@@ -152,7 +159,7 @@ ApplicationWindow {
         backend.pageShown(currentPage)
         scrollPageToTop()
     }
-    onActiveChanged: if (active) { backend.windowActivated(); theme.refreshRounding() }
+    onActiveChanged: if (active) backend.windowActivated()
 
     // ---- Tray: the mark in the bar's tray brings the window back ----------------
     // With a tray to wait in, closing only hides the window, so the app stays one click
@@ -202,7 +209,6 @@ ApplicationWindow {
                 go(target.page, initialSetting)
         }
         backend.pageShown(currentPage)
-        theme.refreshRounding()
     }
 
     Connections {
@@ -397,33 +403,19 @@ ApplicationWindow {
                                     Accessible.name: qsTranslate("catalog", modelData.label)
                                     Accessible.selected: selected
                                     onClicked: win.go(modelData.id, "")
-                                    ToolTip.visible: win.narrow && hovered
-                                    ToolTip.text: qsTranslate("catalog", modelData.label)
-                                    background: Rectangle {
+                                    O.Tooltip {
+                                        visible: win.narrow && navButton.hovered
+                                        text: qsTranslate("catalog", modelData.label)
+                                    }
+                                    background: O.BorderSurface {
                                         radius: theme.controlRadius
-                                        color: navButton.selected ? "transparent" : navButton.down ? Qt.alpha(theme.foreground, 0.1) : navButton.hovered ? Qt.alpha(theme.foreground, 0.05) : "transparent"
-                                        Behavior on color { enabled: theme.animate; ColorAnimation { duration: 100 } }
-                                        // The accent, fading away from the reading edge.
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            visible: navButton.selected
-                                            radius: parent.radius
-                                            border.width: 1
-                                            border.color: Qt.alpha(theme.accent, 0.28)
-                                            gradient: Gradient {
-                                                orientation: Gradient.Horizontal
-                                                GradientStop { position: 0; color: Qt.alpha(theme.accent, navButton.mirrored ? 0.1 : 0.3) }
-                                                GradientStop { position: 1; color: Qt.alpha(theme.accent, navButton.mirrored ? 0.3 : 0.1) }
-                                            }
-                                        }
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            visible: navButton.visualFocus
-                                            radius: parent.radius
-                                            color: "transparent"
-                                            border.width: 2
-                                            border.color: theme.accent
-                                        }
+                                        color: navButton.down ? Kit.Style.pressedFill
+                                            : navButton.visualFocus ? Kit.Style.focusFillColor
+                                            : navButton.selected ? Kit.Style.selectedFill
+                                            : navButton.hovered ? Kit.Style.hoverFill : "transparent"
+                                        borderSpec: navButton.visualFocus ? Kit.Border.controlSpec("focus", theme.foreground, theme.accent, theme.danger)
+                                            : navButton.selected ? Kit.Border.controlSpec("selected", theme.foreground, theme.accent, theme.danger)
+                                            : Kit.Border.none()
                                     }
                                     contentItem: RowLayout {
                                         spacing: 12
@@ -472,8 +464,10 @@ ApplicationWindow {
                                 text: win.narrow ? "" : qsTr("Shortcuts")
                                 leadingIcon: "help"
                                 Accessible.name: qsTr("Shortcuts")
-                                ToolTip.visible: win.narrow && hovered
-                                ToolTip.text: qsTr("Shortcuts")
+                                O.Tooltip {
+                                    visible: win.narrow && footerShortcuts.hovered
+                                    text: qsTr("Shortcuts")
+                                }
                                 onClicked: win.helpVisible = true
                             }
                         }

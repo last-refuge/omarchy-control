@@ -1,19 +1,20 @@
 import QtQuick
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 RowLayout {
+    id: root
     property string title: ""
     default property alias actions: tail.data
-    spacing: 8
-    Layout.preferredHeight: Math.round(theme.fontSize * 2)
-    AppText {
-        text: parent.title
-        font.weight: Font.DemiBold
-        scale_: 1.25
+    spacing: Theme.Style.spacing.controlGap
+    Layout.preferredHeight: Math.max(implicitHeight, Math.round(theme.fontSize * 2))
+    O.Heading {
+        text: root.title
         Layout.fillWidth: true
     }
     Row {
         id: tail
-        spacing: 8
+        spacing: Theme.Style.spacing.controlGap
     }
 }

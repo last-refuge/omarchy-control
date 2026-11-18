@@ -1,9 +1,10 @@
 import QtQuick
-import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // Outcomes in words: "Opened" and "changed" are different messages, because opening
 // a helper says nothing about whether anything changed.
-Rectangle {
+O.Banner {
     id: root
     property string kind: "ok"
     property string message: ""
@@ -20,31 +21,20 @@ Rectangle {
 
     anchors.bottom: parent.bottom
     anchors.horizontalCenter: parent.horizontalCenter
-    anchors.bottomMargin: 18
-    width: Math.min(row.implicitWidth + 28, parent.width - 40)
-    height: row.implicitHeight + 18
-    radius: theme.panelRadius
-    color: theme.surfaceTop
-    border.width: 1
-    border.color: kind === "error" ? theme.danger : kind === "warning" ? theme.warning : theme.accent
+    anchors.bottomMargin: Theme.Style.spacing.panelPadding
+    width: parent ? Math.min(implicitWidth, Math.max(0, parent.width - 2 * Theme.Style.spacing.panelPadding))
+                  : implicitWidth
+    height: implicitHeight
+    // The banner floats over the page, so use a solid surface behind its text.
+    color: Theme.Color.background
+    text: message
+    tone: kind === "error" || kind === "warning" ? kind : kind === "ok" ? "success" : "info"
+    // Standard characters can fall back through Qt when the user's font lacks Nerd Font glyphs.
+    glyph: kind === "error" ? "×" : kind === "warning" ? "⚠" : kind === "ok" ? "✓" : "↗"
     opacity: 0
     visible: opacity > 0
     Behavior on opacity { enabled: theme.animate; NumberAnimation { duration: 140 } }
-    Accessible.role: Accessible.AlertMessage
-    Accessible.name: message
 
     Timer { id: hide; onTriggered: root.opacity = 0 }
     TapHandler { onTapped: root.opacity = 0 }
-
-    RowLayout {
-        id: row
-        anchors.centerIn: parent
-        width: Math.min(implicitWidth, root.parent ? root.parent.width - 68 : 500)
-        spacing: 10
-        AppIcon {
-            name: root.kind === "error" || root.kind === "warning" ? "warning" : root.kind === "opened" ? "external" : "check"
-            tint: root.kind === "error" ? theme.dangerText : root.kind === "warning" ? theme.warningText : theme.accentText
-        }
-        AppText { Layout.fillWidth: true; text: root.message; wrapMode: Text.Wrap }
-    }
 }

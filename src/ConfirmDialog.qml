@@ -1,10 +1,11 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // Consequences, in words, for the changes that warrant asking. Ordinary reversible
-// changes never come through here.
+// changes never come through here. Popup owns modality and focus restoration.
 Popup {
     id: root
     property string heading: ""
@@ -47,13 +48,13 @@ Popup {
     modal: true
     focus: true
     closePolicy: Popup.CloseOnEscape
-    padding: 20
-    Overlay.modal: Rectangle { color: Qt.alpha(theme.deep, 0.6) }
-    background: Rectangle {
-        radius: theme.panelRadius
+    padding: Theme.Style.spacing.panelPadding
+    Overlay.modal: Rectangle { color: Theme.Color.scrim }
+    background: O.BorderSurface {
+        radius: Theme.Style.cornerRadius
         color: theme.surfaceTop
-        border.width: 1
-        border.color: root.danger ? theme.dangerText : theme.divider
+        borderSpec: root.danger ? Theme.Border.flat(theme.dangerText, Theme.Style.normalBorderWidth)
+                   : Theme.Border.surfaceSpec("popups", "border", Theme.Color.popups.border, Theme.Style.normalBorderWidth)
     }
     onClosed: {
         if (onDecline)
@@ -67,7 +68,7 @@ Popup {
     contentItem: ColumnLayout {
         Accessible.role: Accessible.Dialog
         Accessible.name: root.heading
-        spacing: 10
+        spacing: Theme.Style.spacing.xl
         AppText { Layout.fillWidth: true; text: root.heading; font.weight: Font.DemiBold; scale_: 1.1; wrapMode: Text.Wrap; Accessible.role: Accessible.Heading }
         AppText { Layout.fillWidth: true; text: root.body; wrapMode: Text.Wrap; visible: text.length > 0 }
         Repeater {
@@ -76,8 +77,8 @@ Popup {
         }
         RowLayout {
             Layout.alignment: Qt.AlignRight
-            Layout.topMargin: 8
-            spacing: 8
+            Layout.topMargin: Theme.Style.spacing.lg
+            spacing: Theme.Style.spacing.controlGap
             AppButton {
                 id: cancelButton
                 text: qsTr("Cancel")

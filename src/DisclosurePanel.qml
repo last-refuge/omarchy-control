@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // Long tools folded into one quiet panel: a row each, with what is inside counted. Each
 // one's content is only built when opened, and stays where it was until it is closed.
@@ -60,13 +62,16 @@ AppPanel {
                 Accessible.expandable: true
                 Accessible.expanded: row.expanded
                 onClicked: row.expanded = !row.expanded
-                background: Rectangle {
+                background: O.BorderSurface {
                     anchors.fill: parent
                     anchors.margins: 2
                     radius: theme.controlRadius
-                    color: header.down ? Qt.alpha(theme.foreground, 0.08) : header.hovered ? Qt.alpha(theme.foreground, 0.04) : "transparent"
-                    border.width: header.visualFocus ? 2 : 0
-                    border.color: theme.accent
+                    color: header.down ? Theme.Style.pressedFill
+                         : header.visualFocus ? Theme.Style.focusFillColor
+                         : header.hovered ? Theme.Style.hoverFill : "transparent"
+                    borderSpec: header.visualFocus
+                                ? Theme.Border.controlSpec("focus", Theme.Color.foreground, Theme.Color.accent, Theme.Color.urgent)
+                                : Theme.Border.none()
                 }
                 contentItem: RowLayout {
                     id: content
@@ -130,11 +135,10 @@ AppPanel {
                     source: "qrc:/Block" + row.blockName.charAt(0).toUpperCase() + row.blockName.slice(1) + ".qml"
                 }
             }
-            Rectangle {
+            O.PanelSeparator {
                 visible: index < repeater.count - 1
                 x: 14
                 width: parent.width - 28
-                height: 1
                 color: theme.hairline
             }
         }

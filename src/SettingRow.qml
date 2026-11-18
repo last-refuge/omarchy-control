@@ -332,7 +332,7 @@ Item {
                 choices: root.st.choices || []
                 source: function (value) {
                     if (root.entryId === "appearance.theme")
-                        return theme.preview(value)
+                        return appearance.preview(value)
                     // Videos have no still to show, so they fall back to the drawn tile.
                     return /\.(png|jpe?g|webp|gif)$/i.test(value) ? ({ image: "file://" + value }) : ({})
                 }

@@ -134,6 +134,13 @@ int main(int argc, char *argv[]) {
         const QString root = QFileInfo(QString::fromLocal8Bit(qgetenv("HOME"))).path();
         return DisplayProvider::runWatchdog(Env::sandbox(root, root + "/bin"), QString::fromLocal8Bit(argv[2]));
     }
+    // The vendored theme source reads the process home and Hyprland socket.
+    // Use the same fake desktop as the backend before the first QML load.
+    if (argc > 1 && QByteArray(argv[1]) != "--real") {
+        const QDir sandbox(QString::fromLocal8Bit(argv[1]));
+        qputenv("HOME", QFile::encodeName(sandbox.absoluteFilePath("home")));
+        qputenv("XDG_RUNTIME_DIR", QFile::encodeName(sandbox.absoluteFilePath("run")));
+    }
     qputenv("QT_QPA_PLATFORM", "offscreen");
     qputenv("QT_FORCE_STDERR_LOGGING", "1");
     QGuiApplication app(argc, argv);
