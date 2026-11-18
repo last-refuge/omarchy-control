@@ -31,8 +31,21 @@ optdepends=(
   'pipewire-pulse: sound settings'
 )
 makedepends=('gcc' 'make')
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('1e5d5fb5416c3e4cc28862f02afac19b16909acffdd560160a056699867a47d9')
+_omarchy_ui_commit=2f35eaef42d333c59bbfde146e4139ad4ff034c9
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+        "omarchy-ui-$_omarchy_ui_commit.tar.gz::https://github.com/omacom/omarchy-ui/archive/$_omarchy_ui_commit.tar.gz")
+sha256sums=('1e5d5fb5416c3e4cc28862f02afac19b16909acffdd560160a056699867a47d9'
+            '306f087aa56bda23235c60a12fca9b83ff67919635bcb563e357baef3251affe')
+
+prepare() {
+  local root="$srcdir/$pkgname-$pkgver"
+  local ui="$srcdir/omarchy-ui-$_omarchy_ui_commit"
+  # The GitHub tag archive omits submodule contents. Some published tags predate the kit.
+  if [[ -f "$root/.gitmodules" ]] && grep -Fxq '[submodule "third_party/omarchy-ui"]' "$root/.gitmodules"; then
+    mkdir -p "$root/third_party/omarchy-ui"
+    cp -a "$ui/qt" "$ui/LICENSE" "$root/third_party/omarchy-ui/"
+  fi
+}
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
@@ -50,6 +63,9 @@ package() {
     install -Dm755 build/omarchy-control "$pkgdir/usr/bin/omarchy-control"
   fi
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  if [[ -f third_party/omarchy-ui/LICENSE ]]; then
+    install -Dm644 third_party/omarchy-ui/LICENSE "$pkgdir/usr/share/licenses/$pkgname/Omarchy-UI-LICENSE"
+  fi
   install -Dm644 src/fonts/Inter-LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/Inter-LICENSE.txt"
   install -Dm644 pkgbuild/omarchy-control.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-control.svg"
   install -Dm644 pkgbuild/omarchy-control-symbolic.svg "$pkgdir/usr/share/icons/hicolor/symbolic/apps/omarchy-control-symbolic.svg"

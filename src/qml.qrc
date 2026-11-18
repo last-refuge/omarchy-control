@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="AppTheme.qml">AppTheme.qml</file>
         <file alias="AppButton.qml">AppButton.qml</file>
         <file alias="BarPreview.qml">BarPreview.qml</file>
         <file alias="BarWidgetChip.qml">BarWidgetChip.qml</file>

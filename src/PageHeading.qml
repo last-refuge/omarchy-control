@@ -1,20 +1,20 @@
 import QtQuick
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 ColumnLayout {
+    id: root
     property string title: ""
     property string subtitle: ""
-    spacing: 4
-    AppText {
-        text: title
-        font.weight: Font.Bold
-        font.letterSpacing: -0.3
-        scale_: 2
+    spacing: Theme.Style.spacing.labelGap
+    O.Heading {
+        text: root.title
+        level: "display"
         Layout.fillWidth: true
-        Accessible.role: Accessible.Heading
     }
     AppText {
-        text: subtitle
+        text: root.subtitle
         secondary: true
         Layout.fillWidth: true
         wrapMode: Text.Wrap

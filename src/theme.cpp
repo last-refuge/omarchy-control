@@ -1,4 +1,3 @@
-// Theme watching follows Omacut (MIT, David Heinemeier Hansson).
 #include "theme.h"
 
 #include <QUrl>
@@ -8,64 +7,22 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QFontDatabase>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QRegularExpression>
 #include <cmath>
 
 #include "fileops.h"
 
-Theme::Theme(const Env &env, QObject *parent) : QObject(parent), m_env(env) {
+ThemePreviewSource::ThemePreviewSource(const Env &env, QObject *parent)
+    : QObject(parent), m_env(env) {
     m_debounce.setSingleShot(true);
     m_debounce.setInterval(80);
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this] { m_debounce.start(); });
     connect(&m_watcher, &QFileSystemWatcher::fileChanged, this, [this] { m_debounce.start(); });
-    connect(&m_debounce, &QTimer::timeout, this, &Theme::reload);
-
-    // Inter for the interface; numbers and values stay in the desktop's own monospace.
-    const int font = QFontDatabase::addApplicationFont(":/fonts/InterVariable.ttf");
-    const QStringList families = font >= 0 ? QFontDatabase::applicationFontFamilies(font) : QStringList();
-    m_uiFont = families.isEmpty() ? QStringLiteral("sans-serif") : families.first();
-
-    m_rounding.setProcessEnvironment(env.process);
-    m_roundingTimeout.setSingleShot(true);
-    m_roundingTimeout.setInterval(800);
-    connect(&m_roundingTimeout, &QTimer::timeout, &m_rounding, &QProcess::kill);
-    connect(&m_rounding, &QProcess::errorOccurred, this, [this] { m_roundingTimeout.stop(); });
-    connect(&m_rounding, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
-        m_roundingTimeout.stop();
-        const auto value = QJsonDocument::fromJson(m_rounding.readAllStandardOutput()).object().value("int");
-        // Without Hyprland the corners stay sharp, like Omarchy's default.
-        if (code != 0 || status != QProcess::NormalExit || !value.isDouble() || value.toInt(-1) < 0)
-            return;
-        if (value.toInt() != m_radius) {
-            m_radius = value.toInt();
-            emit changed();
-        }
-    });
+    connect(&m_debounce, &QTimer::timeout, this, &ThemePreviewSource::reload);
     reload();
 }
 
-Theme::~Theme() {
-    if (m_rounding.state() != QProcess::NotRunning) {
-        m_rounding.kill();
-        m_rounding.waitForFinished(1000);
-    }
-}
-
-void Theme::refreshRounding() {
-    if (m_rounding.state() != QProcess::NotRunning)
-        return;
-    const QStringList argv = m_env.hyprctl({"-j", "getoption", "decoration:rounding"});
-    const QString program = m_env.findExecutable(argv.first());
-    if (program.isEmpty())
-        return;
-    m_rounding.start(program, argv.mid(1));
-    m_roundingTimeout.start();
-}
-
-QHash<QString, QString> Theme::readColors(const QString &path) {
+QHash<QString, QString> ThemePreviewSource::readColors(const QString &path) {
     QHash<QString, QString> colors;
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
@@ -86,29 +43,21 @@ static double relativeLuminance(const QColor &c) {
 }
 
 // Black or white, whichever reads on the accent (WCAG relative luminance).
-QString Theme::accentForeground() const {
-    return relativeLuminance(QColor(accent())) > .179 ? "black" : "white";
+QColor ThemePreviewSource::accentForeground(const QColor &accent) const {
+    return relativeLuminance(accent) > .179 ? QColor(Qt::black) : QColor(Qt::white);
 }
 
-QString Theme::mix(const QString &from, const QString &to, double amount) {
-    const QColor a(from), b(to);
-    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * amount,
-                            a.greenF() + (b.greenF() - a.greenF()) * amount,
-                            a.blueF() + (b.blueF() - a.blueF()) * amount).name();
+QColor ThemePreviewSource::readableColor(const QColor &color, const QColor &foreground,
+                                        const QColor &canvas, const QColor &panel) const {
+    return QColor(readable(color.name(), foreground.name(), {canvas.name(), panel.name()}));
 }
 
-QString Theme::withAlpha(const QString &color, double alpha) {
-    QColor c(color);
-    c.setAlphaF(alpha);
-    return c.name(QColor::HexArgb);
-}
-
-double Theme::contrast(const QString &a, const QString &b) {
+double ThemePreviewSource::contrast(const QString &a, const QString &b) {
     const double first = relativeLuminance(QColor(a)), second = relativeLuminance(QColor(b));
     return (qMax(first, second) + .05) / (qMin(first, second) + .05);
 }
 
-QString Theme::readable(const QString &color, const QString &foreground, const QStringList &surfaces, double ratio) {
+QString ThemePreviewSource::readable(const QString &color, const QString &foreground, const QStringList &surfaces, double ratio) {
     const QColor from(color), to(foreground);
     if (!from.isValid() || !to.isValid())
         return color;
@@ -142,7 +91,7 @@ QString Theme::readable(const QString &color, const QString &foreground, const Q
     return candidate;
 }
 
-QString Theme::thumbnail(const QString &picture, int radius) const {
+QString ThemePreviewSource::thumbnail(const QString &picture, int radius) const {
     if (picture.isEmpty())
         return {};
     const QString path = picture.startsWith(QLatin1String("file:")) ? QUrl(picture).toLocalFile() : picture;
@@ -152,7 +101,7 @@ QString Theme::thumbnail(const QString &picture, int radius) const {
     return "image://icons/thumb/" + QString::number(radius) + "/" + QString::number(version) + "/" + QString::fromUtf8(QUrl::toPercentEncoding(path));
 }
 
-QVariantMap Theme::preview(const QString &themeName) const {
+QVariantMap ThemePreviewSource::preview(const QString &themeName) const {
     QString slug = themeName.trimmed().toLower();
     slug.replace(' ', '-');
     QVariantMap result;
@@ -181,61 +130,39 @@ QVariantMap Theme::preview(const QString &themeName) const {
     return result;
 }
 
-void Theme::reload() {
-    refreshRounding();
+void ThemePreviewSource::reload() {
     const auto paths = m_watcher.files() + m_watcher.directories();
     if (!paths.isEmpty())
         m_watcher.removePaths(paths);
 
-    // A theme switch replaces symlinks and files, so watch the parents too and
-    // re-arm after every change.
+    // Wallpaper and theme tiles are Control features. Follow swaps of current/,
+    // the installed theme directory and the active wallpaper symlink.
     const QString current = m_env.stateHome + "/omarchy/current";
-    const QString toggles = m_env.stateHome + "/omarchy/toggles/hypr";
-    const QString userToml = m_env.configHome + "/omarchy/shell.toml";
     QString ancestor = current;
     while (!QFileInfo::exists(ancestor) && ancestor != "/" && ancestor != ".")
         ancestor = QFileInfo(ancestor).absolutePath();
-    QStringList candidates{ancestor,  QFileInfo(ancestor).absolutePath(), current, current + "/theme",
-                           current + "/theme/colors.toml", current + "/theme.name", userToml,
-                           QFileInfo(userToml).absolutePath(), toggles};
+
+    const QString backgroundLink = current + "/background";
+    const QString backgroundFile = QFileInfo(backgroundLink).canonicalFilePath();
+    QStringList candidates{ancestor, QFileInfo(ancestor).absolutePath(), current, current + "/theme",
+                           current + "/theme.name", backgroundFile};
     candidates.removeDuplicates();
     for (const auto &path : candidates)
         if (QFileInfo::exists(path))
             m_watcher.addPath(path);
 
-    auto colors = readColors(current + "/theme/colors.toml");
-    const QString mode = colors.value("mode", "dark");
-    const bool dark = mode != "light";
-
-    QByteArray themeToml, overrideToml;
-    FileOps::readFile(current + "/theme/shell.toml", &themeToml);
-    FileOps::readFile(userToml, &overrideToml);
-    QString base = FileOps::tomlGet(overrideToml, "font", "base-size");
-    if (base.isEmpty())
-        base = FileOps::tomlGet(themeToml, "font", "base-size");
-    bool ok = false;
-    const int fontSize = qBound(9, base.toInt(&ok), 24);
-
-    const bool animate = !QFileInfo::exists(toggles + "/no-animations.lua");
     QByteArray nameBytes;
     FileOps::readFile(current + "/theme.name", &nameBytes);
     const QString name = QString::fromUtf8(nameBytes).trimmed();
 
-    const QString backgroundFile = QFileInfo(current + "/background").canonicalFilePath();
     static const QRegularExpression still("\\.(png|jpe?g|webp)$", QRegularExpression::CaseInsensitiveOption);
-    // The fragment changes with the file, so a same-named wallpaper still counts as new.
+    // Include the file version even when the new theme uses the same path.
     const QString wallpaper = still.match(backgroundFile).hasMatch()
                                   ? QUrl::fromLocalFile(backgroundFile).toString() + "#" + QString::number(QFileInfo(backgroundFile).lastModified().toMSecsSinceEpoch())
                                   : QString();
-
-    const bool different = colors != m_colors || dark != m_dark || (ok ? fontSize : 13) != m_fontSize ||
-                           animate != m_animate || name != m_name || wallpaper != m_wallpaper;
-    m_wallpaper = wallpaper;
-    m_colors = colors;
-    m_dark = dark;
-    m_fontSize = ok ? fontSize : 13;
-    m_animate = animate;
-    m_name = name;
-    if (different)
+    if (wallpaper != m_wallpaper || name != m_name) {
+        m_wallpaper = wallpaper;
+        m_name = name;
         emit changed();
+    }
 }

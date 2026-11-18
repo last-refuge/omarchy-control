@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // A section's heading above its card: a line icon, the name, a quiet count, and room at
 // the end for a control that belongs to the whole section, such as its power switch.
@@ -9,22 +11,19 @@ RowLayout {
     property string title: ""
     property string detail: ""
     default property alias trailing: tail.data
-    spacing: 12
+    spacing: Theme.Style.spacing.xxl
     AppIcon {
         visible: root.icon.length > 0
         name: root.icon
-        size: Math.round(theme.fontSize * 1.6)
+        size: Theme.Style.font.iconLarge
         tint: theme.foreground
         Layout.alignment: Qt.AlignVCenter
     }
-    AppText {
+    O.Heading {
         text: root.title
-        font.weight: Font.DemiBold
-        scale_: 1.4
+        level: "heading"
         Layout.alignment: Qt.AlignVCenter
         Layout.fillWidth: root.detail.length === 0
-        Accessible.role: Accessible.Heading
-        Accessible.name: text
     }
     AppText {
         visible: root.detail.length > 0
@@ -37,7 +36,7 @@ RowLayout {
     }
     Row {
         id: tail
-        spacing: 8
+        spacing: Theme.Style.spacing.controlGap
         Layout.alignment: Qt.AlignVCenter
     }
 }

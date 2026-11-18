@@ -1,18 +1,23 @@
 import QtQuick
 import QtQuick.Controls
+import Omarchy.Theme as Theme
 
-// Thin, in the theme's own colors, and only there while there is something to scroll.
+// Mirrors the Omarchy ScrollArea thumb on ListView and ScrollView's attached bars.
 ScrollBar {
     id: root
-    padding: 2
-    minimumSize: 0.06
+    padding: Theme.Style.spacing.hairline
+    minimumSize: Math.min(1, Theme.Style.space(24) / Math.max(1, vertical ? availableHeight : availableWidth))
+    hoverEnabled: true
     contentItem: Rectangle {
-        implicitWidth: root.hovered || root.pressed ? 8 : 5
-        implicitHeight: 100
-        radius: theme.rounded ? width / 2 : 0
-        color: Qt.alpha(theme.foreground, root.pressed ? 0.45 : root.hovered ? 0.32 : 0.2)
+        implicitWidth: Theme.Style.spacing.scrollbarThickness
+        implicitHeight: Theme.Style.spacing.scrollbarThickness
+        radius: Math.min(Theme.Style.space(4), Theme.Style.cornerRadius)
+        color: root.pressed || root.hovered ? Theme.Color.textDim : Theme.Style.normalBorderColor
         opacity: root.size < 1 ? 1 : 0
-        Behavior on implicitWidth { enabled: theme.animate; NumberAnimation { duration: 100 } }
     }
-    background: Item {}
+    background: Rectangle {
+        visible: root.size < 1
+        color: Theme.Color.track
+        radius: Math.min(Theme.Style.space(4), Theme.Style.cornerRadius)
+    }
 }

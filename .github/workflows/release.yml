@@ -22,6 +22,8 @@ jobs:
           qt6-base qt6-declarative qt6-svg qt6-wayland hicolor-icon-theme
 
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Test and build the package
         run: |

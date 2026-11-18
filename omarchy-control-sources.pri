@@ -1,5 +1,10 @@
 # Everything except main(), shared with the test binary and screenshot harness.
 INCLUDEPATH += $$PWD/src
+
+OMARCHY_UI_PRI = $$PWD/third_party/omarchy-ui/qt/omarchy-ui.pri
+!exists($$OMARCHY_UI_PRI): error("Omarchy UI is missing. Run git submodule update --init third_party/omarchy-ui in the source checkout.")
+include($$OMARCHY_UI_PRI)
+
 # The tray icon's host is found on the session bus.
 QT += dbus
 # Icon pack archives are read with libarchive, which pacman itself depends on.

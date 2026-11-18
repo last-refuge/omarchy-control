@@ -24,7 +24,7 @@ for the pull request. It follows `pkgbuilds/hype` there, another Qt 6 app built 
 ## Submit it
 
 1. Tag the release the recipe names (`pkgver`), and let the release workflow publish it.
-2. Fill the checksum from the tag's tarball:
+2. Set `_omarchy_ui_commit` to the tag's `third_party/omarchy-ui` Git revision and refresh the source checksums. The recipe builds from the tag archive and the kit's commit archive.
 
    ```sh
    cd packaging/omarchy-pkgs/omarchy-control && updpkgsums && rm -rf src *.tar.gz
@@ -52,9 +52,10 @@ Qt, it cannot use the fast ring.
 
 ## After that
 
-New versions need no pull request. The `upstream.watch` in `.omarchy/package.json` follows this
-repository's GitHub releases (`vX.Y.Z` tags), and a bot proposes each one, which merges itself
-once it builds. The binary uses no Qt private API (`objdump -T build/omarchy-control | grep
+The `upstream.watch` in `.omarchy/package.json` follows this repository's GitHub releases
+(`vX.Y.Z` tags), resolves the kit's submodule revision from each tag, and opens a pull request for
+each update. The pull request merges itself once it builds.
+The binary uses no Qt private API (`objdump -T build/omarchy-control | grep
 Qt_6_PRIVATE_API` finds nothing), so no `rebuild_on` is needed; check again if that changes.
 
 A change to the packaging itself at the same version bumps `pkgrel` there, in a pull request

@@ -1,7 +1,9 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.Material
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
+// Native model roles, keyboard search, and icon delegates with Omarchy chrome.
 ComboBox {
     id: root
     property string label: ""
@@ -15,25 +17,24 @@ ComboBox {
     // The model role holding each option's picture, for the list as well.
     property string iconRole: ""
     readonly property bool hasLeading: leadingIcon.length > 0 || leadingImage.length > 0
-    implicitHeight: Math.round(theme.fontSize * 2.2) + 2
-    implicitWidth: 220
+    implicitHeight: Theme.Style.spacing.controlHeight
+    implicitWidth: Theme.Style.spacing.dropdownWidth
     font.family: proportional || translator.cursiveScript ? theme.uiFont : "monospace"
     font.pixelSize: theme.fontSize
     Accessible.name: label
-    Material.roundedScale: theme.controlRadius
-    Material.foreground: theme.foreground
-    Material.background: theme.raised
-    Material.accent: theme.accent
     leftPadding: 0
     rightPadding: 0
     opacity: enabled ? 1 : 0.55
 
-    background: Rectangle {
-        radius: theme.controlRadius
-        color: root.down ? Qt.alpha(theme.foreground, 0.1) : root.hovered ? Qt.alpha(theme.foreground, 0.06) : "transparent"
-        border.width: root.visualFocus ? 2 : root.flush ? 0 : 1
-        border.color: root.visualFocus ? theme.accent : theme.divider
-        Behavior on color { enabled: theme.animate; ColorAnimation { duration: 100 } }
+    background: O.BorderSurface {
+        radius: Theme.Style.cornerRadius
+        color: root.down ? Theme.Style.pressedFillFor(theme.foreground, theme.accent)
+             : root.flush && !root.visualFocus && !root.hovered ? "transparent"
+             : Theme.Style.controlFill(root.visualFocus, root.hovered, theme.foreground, theme.accent)
+        borderSpec: root.visualFocus ? Theme.Border.controlSpec("focus", theme.foreground, theme.accent)
+                  : root.flush ? Theme.Border.none()
+                  : Theme.Border.controlSpec(root.hovered ? "hover-cursor" : "normal", theme.foreground, theme.accent)
+        Behavior on color { enabled: theme.animate; ColorAnimation { duration: Theme.Style.duration(100) } }
     }
     Image {
         visible: root.leadingImage.length > 0 && status === Image.Ready
@@ -74,19 +75,20 @@ ComboBox {
         anchors.verticalCenter: parent.verticalCenter
         tint: theme.muted
         rotation: root.popup.visible ? 180 : 0
-        Behavior on rotation { enabled: theme.animate; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        Behavior on rotation { enabled: theme.animate; NumberAnimation { duration: Theme.Style.duration(140); easing.type: Easing.OutCubic } }
     }
     delegate: ItemDelegate {
         id: option
         required property int index
         width: ListView.view ? ListView.view.width : root.width
-        height: Math.round(theme.fontSize * 2.5)
+        height: Theme.Style.spacing.popupRowHeight
         padding: 0
         highlighted: root.highlightedIndex === index
         hoverEnabled: true
         Accessible.name: root.textAt(index)
         background: Rectangle {
-            color: option.highlighted ? Qt.alpha(theme.accent, 0.18) : option.hovered ? Qt.alpha(theme.foreground, 0.06) : "transparent"
+            color: option.highlighted ? Theme.Style.selectedFillFor(theme.foreground, theme.accent)
+                 : option.hovered ? Theme.Style.hoverFillFor(theme.foreground, theme.accent) : "transparent"
         }
         contentItem: Item {
             Image {
@@ -125,10 +127,15 @@ ComboBox {
         }
     }
     popup: Popup {
-        y: root.height + 2
-        width: Math.max(root.width, 200)
-        implicitHeight: Math.min(contentItem.implicitHeight + 2, Math.round(theme.fontSize * 2.5) * 10 + 2)
-        padding: 1
+        id: menu
+        readonly property var surfaceBorder: Theme.Border.surfaceSpec("popups", "border", Theme.Color.popups.border, Theme.Style.normalBorderWidth)
+        y: root.height + Theme.Style.spacing.xxs
+        width: Math.max(root.width, Theme.Style.space(200))
+        implicitHeight: Math.min(contentItem.implicitHeight, Theme.Style.spacing.popupRowHeight * 10) + topPadding + bottomPadding
+        leftPadding: Theme.Border.left(surfaceBorder) + Theme.Style.spacing.hairline
+        rightPadding: Theme.Border.right(surfaceBorder) + Theme.Style.spacing.hairline
+        topPadding: Theme.Border.top(surfaceBorder) + Theme.Style.spacing.hairline
+        bottomPadding: Theme.Border.bottom(surfaceBorder) + Theme.Style.spacing.hairline
         transformOrigin: Item.Top
         contentItem: ListView {
             clip: true
@@ -138,11 +145,10 @@ ComboBox {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: AppScrollBar {}
         }
-        background: Rectangle {
-            radius: theme.controlRadius
+        background: O.BorderSurface {
+            radius: Theme.Style.cornerRadius
             color: theme.surfaceTop
-            border.width: 1
-            border.color: theme.controlBorder
+            borderSpec: menu.surfaceBorder
         }
     }
 }

@@ -65,7 +65,7 @@ if [ -n "$BASELINE" ]; then
 fi
 
 pac -U "$V1" >"$WORK/install.log" 2>&1 || fail "install failed: $(tail -4 "$WORK/install.log")"
-for f in usr/bin/omarchy-control usr/share/applications/omarchy-control.desktop usr/share/icons/hicolor/scalable/apps/omarchy-control.svg usr/share/icons/hicolor/symbolic/apps/omarchy-control-symbolic.svg usr/share/licenses/omarchy-control/LICENSE usr/lib/omarchy-control/agent-integration/user-recovery usr/lib/omarchy-control/agent-integration/session-notify usr/lib/systemd/user/omarchy-control-agent-reconcile.service usr/share/libalpm/hooks/90-omarchy-control-agent-install.hook usr/share/libalpm/hooks/90-omarchy-control-agent-remove.hook usr/share/omarchy-control/agent-skills/omarchy-control/SKILL.md; do
+for f in usr/bin/omarchy-control usr/share/applications/omarchy-control.desktop usr/share/icons/hicolor/scalable/apps/omarchy-control.svg usr/share/icons/hicolor/symbolic/apps/omarchy-control-symbolic.svg usr/share/licenses/omarchy-control/LICENSE usr/share/licenses/omarchy-control/Omarchy-UI-LICENSE usr/lib/omarchy-control/agent-integration/user-recovery usr/lib/omarchy-control/agent-integration/session-notify usr/lib/systemd/user/omarchy-control-agent-reconcile.service usr/share/libalpm/hooks/90-omarchy-control-agent-install.hook usr/share/libalpm/hooks/90-omarchy-control-agent-remove.hook usr/share/omarchy-control/agent-skills/omarchy-control/SKILL.md; do
   [ -e "$WORK/root/$f" ] || fail "missing after install: $f"
 done
 pass "install places the binary, launcher entry, icons, license, canonical skill and activation payload"

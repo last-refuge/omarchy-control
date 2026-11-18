@@ -253,6 +253,9 @@ gates. See
 ## Development
 
 Building from source needs `qt6-base`, `qt6-declarative`, `qt6-svg`, and `qt6-wayland`.
+Clone with `--recurse-submodules` or run `git submodule update --init third_party/omarchy-ui`
+from an existing checkout. Each build embeds the pinned Qt Quick kit in the binary.
+[Omarchy UI](https://github.com/omacom/omarchy-ui) · [Upstream findings](docs/OMARCHY-UI-UPSTREAM.md)
 
 ```sh
 bin/build                  # build/omarchy-control
@@ -285,6 +288,6 @@ Project documents: [plan](docs/PLAN.md), [coverage](docs/COVERAGE.md), [P0 findi
 
 ## License
 
-[MIT](LICENSE). Theme watching and the translator follow Omacut and Monologue (MIT, David Heinemeier Hansson). The interface uses [Inter](https://rsms.me/inter/) ([OFL](src/fonts/Inter-LICENSE.txt)).
+Control and its bundled Omarchy UI Qt Quick kit use the MIT license. The translator follows Omacut and Monologue (MIT, David Heinemeier Hansson). Control also bundles Inter under the SIL Open Font License. [Control license](LICENSE) · [Omarchy UI license](https://github.com/omacom/omarchy-ui/blob/main/LICENSE) · [Inter license](src/fonts/Inter-LICENSE.txt)
 
 Omarchy Control is an independent project and is not an official part of Omarchy.

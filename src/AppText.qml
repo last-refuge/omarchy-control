@@ -1,4 +1,5 @@
 import QtQuick
+import Omarchy.Theme as Theme
 
 Text {
     property bool secondary: false
@@ -7,7 +8,7 @@ Text {
     property real scale_: 1
 
     color: secondary ? theme.muted : theme.foreground
-    font.family: mono && !translator.cursiveScript ? "monospace" : theme.uiFont
+    font.family: mono && !translator.cursiveScript ? Theme.Style.font.family : theme.uiFont
     // Arabic script reads small at Latin sizes.
     font.pixelSize: Math.round(theme.fontSize * scale_ * (Qt.application.layoutDirection === Qt.RightToLeft ? 1.1 : 1))
     wrapMode: Text.NoWrap

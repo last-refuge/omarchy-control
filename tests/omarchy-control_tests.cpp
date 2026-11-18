@@ -1,6 +1,7 @@
 // Every test runs against a temporary root with fake commands first on PATH. No
 // test can reach the real desktop: the sandbox Env is the only way in.
 #include <functional>
+#include <memory>
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -14,6 +15,7 @@
 #include <QProcess>
 #include <QPointer>
 #include <QQmlApplicationEngine>
+#include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickStyle>
@@ -67,6 +69,7 @@
 #include "shortcutsprovider.h"
 #include "systemprovider.h"
 #include "theme.h"
+#include "omarchyui.h"
 #include "translator.h"
 #include "trayhost.h"
 #include "iconlayer.h"
@@ -1349,43 +1352,54 @@ private slots:
     }
 
     // ---- Theme and language ---------------------------------------------------
-    void themeReadsThePalette() {
-        Sandbox s;
-        writeFile(s.env.stateHome + "/omarchy/current/theme/colors.toml", "mode = \"light\"\naccent = \"#112233\"\nbackground = \"#fafafa\"\nforeground = \"#101010\"\n");
-        writeFile(s.env.configHome + "/omarchy/shell.toml", "[font]\nbase-size = 16\n");
-        Theme theme(s.env);
-        QCOMPARE(theme.accent(), QString("#112233"));
-        QCOMPARE(theme.window(), QString("#fafafa"));
-        QVERIFY(!theme.dark());
-        QCOMPARE(theme.accentForeground(), QString("white"));
-        QCOMPARE(theme.fontSize(), 16);
-    }
-    void themeFallsBackWithoutOmarchy() {
-        Sandbox s;
-        Theme theme(s.env);
-        QCOMPARE(theme.accent(), QString("#FFD60A"));
-        QVERIFY(theme.dark());
-        QCOMPARE(theme.fontSize(), 13);
-        QVERIFY(theme.animate());
-    }
-    void themeFollowsReplacementAndMotion() {
-        Sandbox s;
-        const QString current = s.env.stateHome + "/omarchy/current";
-        writeFile(current + "/theme/colors.toml", "accent = \"#111111\"\n");
-        Theme theme(s.env);
-        QCOMPARE(theme.accent(), QString("#111111"));
-        // A theme switch replaces the directory rather than editing the file.
-        QVERIFY(QDir(current + "/theme").removeRecursively());
-        writeFile(current + "/theme/colors.toml", "accent = \"#222222\"\n");
-        QTRY_COMPARE_WITH_TIMEOUT(theme.accent(), QString("#222222"), 3000);
-        writeFile(s.env.stateHome + "/omarchy/toggles/hypr/no-animations.lua", "x");
-        QTRY_VERIFY_WITH_TIMEOUT(!theme.animate(), 3000);
-    }
-    void themeFollowsHyprlandRounding() {
-        Sandbox s;
-        s.command("hyprctl", "echo '{\"int\":6}'");
-        Theme theme(s.env);
-        QTRY_COMPARE_WITH_TIMEOUT(theme.radius(), 6, 3000);
+    void themeUsesOmarchyUiAndFollowsLiveChanges() {
+        const Env env = Env::system();
+        const QString current = env.stateHome + "/omarchy/current";
+        const QString themeDir = current + "/theme";
+        const QString override = env.configHome + "/omarchy/shell.toml";
+        Translator translator(env.configHome + "/omarchy/language", ":/i18n",
+                              PROJECT_ROOT "/tests/fixtures/omarchy-locales.json");
+        ThemePreviewSource appearance(env);
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty("translator", &translator);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
+        QQmlComponent component(&engine, QUrl("qrc:/AppTheme.qml"));
+        const std::unique_ptr<QObject> theme(component.create());
+        QVERIFY2(theme, qPrintable(component.errorString()));
+        QCOMPARE(theme->property("fontSize").toInt(), 12);
+        QCOMPARE(theme->property("uiFont").toString(), QString("monospace"));
+        QVERIFY(theme->property("dark").toBool());
+        QVERIFY(theme->property("animate").toBool());
+        QCOMPARE(theme->property("controlRadius").toInt(), 0);
+
+        writeFile(themeDir + "/colors.toml", "accent = \"#aabbcc\"\nbackground = \"#101010\"\nforeground = \"#eeeeee\"\n");
+        QTRY_COMPARE(theme->property("accent").value<QColor>(), QColor("#aabbcc"));
+
+        // Omarchy swaps the theme directory. Its user override wins over the new theme.
+        const QString old = current + "/previous";
+        QVERIFY(QDir().rename(themeDir, old));
+        qputenv("OMARCHY_UI_ROUNDING", "8");
+        qputenv("OMARCHY_UI_REDUCE_MOTION", "1");
+        writeFile(themeDir + "/colors.toml", "mode = \"light\"\naccent = \"#112233\"\nbackground = \"#fafafa\"\nforeground = \"#101010\"\n");
+        writeFile(themeDir + "/shell.toml", "[font]\nbase-size = 15\n");
+        writeFile(override, "[font]\nbase-size = 16\n");
+        QTRY_COMPARE(theme->property("accent").value<QColor>(), QColor("#112233"));
+        QCOMPARE(theme->property("window").value<QColor>(), QColor("#fafafa"));
+        QCOMPARE(theme->property("accentForeground").value<QColor>(), QColor(Qt::white));
+        QCOMPARE(theme->property("fontSize").toInt(), 16);
+        QCOMPARE(theme->property("panelRadius").toInt(), 8);
+        QVERIFY(!theme->property("dark").toBool());
+        QVERIFY(!theme->property("animate").toBool());
+
+        // Return the process-wide SDK source to a dark fixture for the page tests.
+        qputenv("OMARCHY_UI_ROUNDING", "0");
+        qputenv("OMARCHY_UI_REDUCE_MOTION", "0");
+        QFile::remove(override);
+        QFile::remove(themeDir + "/shell.toml");
+        writeFile(themeDir + "/colors.toml", "accent = \"#aabbcc\"\nbackground = \"#101010\"\nforeground = \"#eeeeee\"\n");
+        QTRY_COMPARE(theme->property("accent").value<QColor>(), QColor("#aabbcc"));
+        QCOMPARE(theme->property("fontSize").toInt(), 12);
+        QCOMPARE(theme->property("controlRadius").toInt(), 0);
     }
     void translatorFallsBackPerString() {
         QTemporaryDir dir;
@@ -5528,15 +5542,14 @@ esac
         QAccessible::setActive(true);
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -5571,15 +5584,14 @@ esac
     void hoveringASettingRowMovesNothing() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -5666,15 +5678,14 @@ esac
     void aTabAlwaysOpensAtTheTopAndSearchStillLandsOnItsRow() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -5753,19 +5764,19 @@ esac
     void textColorsStayReadableOnAnyTheme() {
         // Catppuccin Latte's own secondary text, on its own background.
         const QStringList latte{"#eff1f5", "#dce0e8"};
-        QVERIFY(Theme::contrast("#9ca0b0", "#eff1f5") < 3);
-        const QString fixed = Theme::readable("#9ca0b0", "#4c4f69", latte);
-        QVERIFY2(Theme::contrast(fixed, "#eff1f5") >= 4.5, qPrintable(fixed));
-        QVERIFY2(Theme::contrast(fixed, "#dce0e8") >= 4.5, qPrintable(fixed));
+        QVERIFY(ThemePreviewSource::contrast("#9ca0b0", "#eff1f5") < 3);
+        const QString fixed = ThemePreviewSource::readable("#9ca0b0", "#4c4f69", latte);
+        QVERIFY2(ThemePreviewSource::contrast(fixed, "#eff1f5") >= 4.5, qPrintable(fixed));
+        QVERIFY2(ThemePreviewSource::contrast(fixed, "#dce0e8") >= 4.5, qPrintable(fixed));
         // A color that already reads is left exactly as the theme wrote it.
-        QCOMPARE(Theme::readable("#ff9f0a", "#f5f5f7", {"#1c1c1e", "#2c2c2e"}), QString("#ff9f0a"));
+        QCOMPARE(ThemePreviewSource::readable("#ff9f0a", "#f5f5f7", {"#1c1c1e", "#2c2c2e"}), QString("#ff9f0a"));
         // A warning that needs help stays a warning rather than turning gray.
-        const QColor amber(Theme::readable("#df8e1d", "#4c4f69", latte));
-        QVERIFY2(Theme::contrast(amber.name(), "#eff1f5") >= 4.5, qPrintable(amber.name()));
+        const QColor amber(ThemePreviewSource::readable("#df8e1d", "#4c4f69", latte));
+        QVERIFY2(ThemePreviewSource::contrast(amber.name(), "#eff1f5") >= 4.5, qPrintable(amber.name()));
         QVERIFY2(amber.hslSaturationF() > 0.4, qPrintable(amber.name()));
         QVERIFY2(qAbs(amber.hslHueF() - QColor("#df8e1d").hslHueF()) < 0.02, qPrintable(amber.name()));
         // Nothing can be done past the foreground itself, and it does not hang trying.
-        QCOMPARE(Theme::readable("#888888", "#888888", {"#888888"}), QString("#888888"));
+        QCOMPARE(ThemePreviewSource::readable("#888888", "#888888", {"#888888"}), QString("#888888"));
     }
     void themePreviewsComeFromTheThemesThemselves() {
         Sandbox s;
@@ -5774,21 +5785,21 @@ esac
         writeFile(s.env.omarchyPath + "/themes/tokyo-night/preview.png", "x");
         writeFile(s.env.omarchyPath + "/themes/mine/colors.toml", "accent = \"#000001\"\n");
         writeFile(s.env.configHome + "/omarchy/themes/mine/colors.toml", "accent = \"#000002\"\n");
-        Theme theme(s.env);
-        const QVariantMap tokyo = theme.preview("Tokyo Night");
+        ThemePreviewSource appearance(s.env);
+        const QVariantMap tokyo = appearance.preview("Tokyo Night");
         QCOMPARE(tokyo.value("accent").toString(), QString("#7aa2f7"));
         QVERIFY(tokyo.value("image").toString().endsWith("/themes/tokyo-night/preview.png"));
         // The user's own copy of a theme is the one that will be used.
-        QCOMPARE(theme.preview("Mine").value("accent").toString(), QString("#000002"));
-        QVERIFY(!theme.preview("Mine").contains("image"));
+        QCOMPARE(appearance.preview("Mine").value("accent").toString(), QString("#000002"));
+        QVERIFY(!appearance.preview("Mine").contains("image"));
         // No preview, but wallpapers: the first still stands in. A video cannot.
         writeFile(s.env.configHome + "/omarchy/themes/mine/backgrounds/1-motion.mp4", "x");
         writeFile(s.env.configHome + "/omarchy/themes/mine/backgrounds/2-still.webp", "x");
-        QVERIFY(theme.preview("Mine").value("image").toString().endsWith("/backgrounds/2-still.webp"));
-        QVERIFY(theme.preview("Not Installed").isEmpty());
+        QVERIFY(appearance.preview("Mine").value("image").toString().endsWith("/backgrounds/2-still.webp"));
+        QVERIFY(appearance.preview("Not Installed").isEmpty());
         // The name comes from a command's output, so it cannot walk out of the folder.
-        QVERIFY(theme.preview("../../etc").isEmpty());
-        QVERIFY(theme.preview(".hidden").isEmpty());
+        QVERIFY(appearance.preview("../../etc").isEmpty());
+        QVERIFY(appearance.preview(".hidden").isEmpty());
     }
     void picturesAreCutToTheDesktopsCorners() {
         Sandbox s;
@@ -5797,10 +5808,10 @@ esac
         QImage source(800, 200, QImage::Format_RGB32);
         source.fill(Qt::red);
         QVERIFY(source.save(path));
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         IconProvider provider;
         const auto request = [&](int radius) {
-            const QString id = theme.thumbnail(path, radius).mid(QString("image://icons/").size());
+            const QString id = appearance.thumbnail(path, radius).mid(QString("image://icons/").size());
             QSize size;
             const QImage image = provider.requestImage(id, &size, QSize(160, 100));
             return std::make_pair(image, size);
@@ -5815,8 +5826,8 @@ esac
         Q_UNUSED(squareSize);
         QCOMPARE(qAlpha(square.pixel(0, 0)), 255);
         // A file URL means the same picture, and a missing one is simply empty.
-        QCOMPARE(theme.thumbnail(QUrl::fromLocalFile(path).toString(), 0), theme.thumbnail(path, 0));
-        QVERIFY(theme.thumbnail("", 4).isEmpty());
+        QCOMPARE(appearance.thumbnail(QUrl::fromLocalFile(path).toString(), 0), appearance.thumbnail(path, 0));
+        QVERIFY(appearance.thumbnail("", 4).isEmpty());
         QSize size;
         const QImage missing = provider.requestImage("thumb/4/0/" + QString::fromUtf8(QUrl::toPercentEncoding("/no/such.png")), &size, QSize(32, 32));
         QCOMPARE(qAlpha(missing.pixel(16, 16)), 0);
@@ -5876,35 +5887,17 @@ esac
         QVERIFY(first.open(QIODevice::ReadWrite));
         QVERIFY(first.setFileTime(QDateTime::fromSecsSinceEpoch(1700000000), QFileDevice::FileModificationTime));
         first.close();
-        Theme theme(s.env);
-        const QString before = theme.thumbnail(picture, 8);
-        QTRY_VERIFY(!theme.wallpaper().isEmpty());
-        const QString wallpaperBefore = theme.wallpaper();
+        ThemePreviewSource appearance(s.env);
+        const QString before = appearance.thumbnail(picture, 8);
+        QTRY_VERIFY(!appearance.wallpaper().isEmpty());
+        const QString wallpaperBefore = appearance.wallpaper();
         // Same path, new theme: Omarchy replaces the folder outright.
         QVERIFY(QDir(current + "/theme").removeRecursively());
         writeFile(picture, "second");
-        QVERIFY(theme.thumbnail(picture, 8) != before);
-        QTRY_VERIFY_WITH_TIMEOUT(theme.wallpaper() != wallpaperBefore, 3000);
+        QVERIFY(appearance.thumbnail(picture, 8) != before);
+        QTRY_VERIFY_WITH_TIMEOUT(appearance.wallpaper() != wallpaperBefore, 3000);
         // Still the same file underneath.
-        QCOMPARE(QUrl(theme.wallpaper()).toLocalFile(), QFileInfo(picture).canonicalFilePath());
-    }
-    void cornersFollowTheDesktop() {
-        Sandbox s;
-        fakeDesktop(s);
-        Theme theme(s.env);
-        QVERIFY(theme.radius() >= 0);
-        s.command("hyprctl", "echo '{\"int\":0}'");
-        theme.refreshRounding();
-        QTRY_COMPARE(theme.radius(), 0);
-        QCOMPARE(theme.panelRadius(), 0);
-        QCOMPARE(theme.controlRadius(), 0);
-        QVERIFY(!theme.rounded());
-        s.command("hyprctl", "echo '{\"int\":10}'");
-        theme.refreshRounding();
-        QTRY_COMPARE(theme.radius(), 10);
-        QCOMPARE(theme.panelRadius(), 10);
-        QVERIFY(theme.controlRadius() > 0 && theme.controlRadius() <= 10);
-        QVERIFY(theme.rounded());
+        QCOMPARE(QUrl(appearance.wallpaper()).toLocalFile(), QFileInfo(picture).canonicalFilePath());
     }
     void overviewReadsEverySettingItShows() {
         // A row Overview draws but never reads sits on its loading state forever.
@@ -5944,15 +5937,14 @@ esac
     void aDestructiveDialogStartsOnCancel() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -5981,15 +5973,14 @@ esac
     void tabNeverLeavesTheKeyboardOffScreen() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -6021,15 +6012,14 @@ esac
         fakeDesktop(s);
         writeFile(s.env.stateHome + "/picked", "One");
         s.omarchy("state='" + s.env.stateHome.toUtf8() + "/picked'\ncase \"$*\" in\n  'theme list') printf 'One\\nTwo\\n';;\n  'theme current') cat \"$state\";;\n  'theme set '*) shift 2; printf '%s' \"$*\" > \"$state\";;\n  version) echo 4.5.0-3;;\nesac\n");
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -6242,15 +6232,14 @@ esac
         s.command("omarchy-launch-floating-terminal-with-presentation", "exit 0");
         s.command("bash", "exit 0");
         s.command("pacman", "echo 'omarchy-control 0.1.0-1'");
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -8651,15 +8640,14 @@ esac
     void theOwnershipPromptGuardsTheFirstWrite() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -8713,9 +8701,8 @@ esac
         // broken binding or a missing component fails here rather than on screen.
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
@@ -8726,7 +8713,7 @@ esac
         });
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -8750,16 +8737,15 @@ esac
     void withoutATrayClosingTheWindowQuits() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QVERIFY(!trayHost.available());
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -8776,15 +8762,14 @@ esac
     void keyboardDrivesSearchAndRespectsTyping() {
         Sandbox s;
         fakeDesktop(s);
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -9124,22 +9109,21 @@ private:
     struct DesktopPage {
         Sandbox &s;
         Translator translator;
-        Theme theme;
+        ThemePreviewSource appearance;
         Backend backend;
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         QQuickWindow *window = nullptr;
         explicit DesktopPage(Sandbox &sandbox)
-            : s(sandbox), translator(sandbox.env.configHome + "/omarchy/language", ":/i18n", sandbox.env.omarchyPath + "/default/i18n/locales.json"), theme(sandbox.env), backend(sandbox.env) {
-            QQuickStyle::setStyle("Material");
+            : s(sandbox), translator(sandbox.env.configHome + "/omarchy/language", ":/i18n", sandbox.env.omarchyPath + "/default/i18n/locales.json"), appearance(sandbox.env), backend(sandbox.env) {
             engine.addImageProvider("icons", new IconProvider);
             engine.addImageProvider("iconpacks", new IconPackImageProvider(sandbox.env));
             engine.rootContext()->setContextProperty("translator", &translator);
-            engine.rootContext()->setContextProperty("theme", &theme);
+            engine.rootContext()->setContextProperty("appearance", &appearance);
             engine.rootContext()->setContextProperty("backend", &backend);
             engine.rootContext()->setContextProperty("initialPage", QString());
             engine.rootContext()->setContextProperty("initialSetting", QString());
-        engine.rootContext()->setContextProperty("trayHost", &trayHost);
+            engine.rootContext()->setContextProperty("trayHost", &trayHost);
             engine.load(QUrl("qrc:/Main.qml"));
             window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
             window->resize(1427, 1102);
@@ -12019,16 +12003,15 @@ esac)SH");
         for (int i = 0; i < 12; ++i)
             addPack(desk.system, "Extra" + QString::number(i));
         desk.setEffective("Yaru-blue");
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
         engine.addImageProvider("icons", new IconProvider);
         engine.addImageProvider("iconpacks", new IconPackImageProvider(s.env));
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString());
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -14235,9 +14218,8 @@ esac)SH");
         Sandbox s;
         fakeDesktop(s);
         useGitHub(s, hub.path());
-        QQuickStyle::setStyle("Material");
         Translator translator(s.env.configHome + "/omarchy/language", ":/i18n", s.env.omarchyPath + "/default/i18n/locales.json");
-        Theme theme(s.env);
+        ThemePreviewSource appearance(s.env);
         Backend backend(s.env);
         TrayHost trayHost;
         QQmlApplicationEngine engine;
@@ -14248,7 +14230,7 @@ esac)SH");
         });
         engine.addImageProvider("icons", new IconProvider);
         engine.rootContext()->setContextProperty("translator", &translator);
-        engine.rootContext()->setContextProperty("theme", &theme);
+        engine.rootContext()->setContextProperty("appearance", &appearance);
         engine.rootContext()->setContextProperty("backend", &backend);
         engine.rootContext()->setContextProperty("initialPage", QString("myomarchy"));
         engine.rootContext()->setContextProperty("initialSetting", QString());
@@ -14352,8 +14334,23 @@ int main(int argc, char *argv[]) {
         const QString root = QString::fromLocal8Bit(argv[2]);
         return DisplayProvider::runWatchdog(Env::sandbox(root, root + "/bin"), QString::fromLocal8Bit(argv[3]));
     }
+    // Omarchy UI's ThemeSource is process-wide. Give it a single synthetic home
+    // separate from the per-case backend sandboxes and from the live desktop.
+    QTemporaryDir themeHome;
+    if (!themeHome.isValid() ||
+        !QDir().mkpath(themeHome.filePath(".local/state/omarchy/current/theme")) ||
+        !QDir().mkpath(themeHome.filePath(".config/omarchy")))
+        return 2;
+    qputenv("HOME", QFile::encodeName(themeHome.path()));
+    qputenv("XDG_RUNTIME_DIR", QFile::encodeName(themeHome.path()));
+    qputenv("OMARCHY_UI_FONT_FAMILY", "monospace");
+    qputenv("OMARCHY_UI_ROUNDING", "0");
+    qputenv("OMARCHY_UI_REDUCE_MOTION", "0");
+    qunsetenv("OMARCHY_UI_THEME_DIR");
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
+    QQuickStyle::setStyle("Basic");
+    OmarchyUi::registerTypes();
     OmarchyControlTests tests;
     return QTest::qExec(&tests, argc, argv);
 }

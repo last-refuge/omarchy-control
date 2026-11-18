@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Omarchy.Theme as Theme
+import Omarchy.Ui as O
 
 // One section of a composed page: a heading with a line icon, inside its card or above
 // it, or a setting standing in as the heading, then the section's rows. Settings come
@@ -285,19 +287,21 @@ Item {
                     Accessible.expandable: true
                     Accessible.expanded: root.expanded
                     onClicked: root.expanded = !root.expanded
-                    background: Rectangle {
+                    background: O.BorderSurface {
                         radius: theme.controlRadius
-                        color: disclose.hovered ? Qt.alpha(theme.foreground, 0.04) : "transparent"
-                        border.width: disclose.visualFocus ? 2 : 0
-                        border.color: theme.accent
+                        color: disclose.down ? Theme.Style.pressedFill
+                             : disclose.visualFocus ? Theme.Style.focusFillColor
+                             : disclose.hovered ? Theme.Style.hoverFill : "transparent"
+                        borderSpec: disclose.visualFocus
+                                    ? Theme.Border.controlSpec("focus", Theme.Color.foreground, Theme.Color.accent, Theme.Color.urgent)
+                                    : Theme.Border.none()
                     }
                 }
             }
-            Rectangle {
+            O.PanelSeparator {
                 visible: ((root.headed && !root.outside) || !!root.header) && root.expanded
                 x: 16
                 width: parent.width - 32
-                height: 1
                 color: theme.hairline
             }
 
@@ -307,17 +311,17 @@ Item {
                 width: parent.width
                 implicitHeight: body.implicitHeight + (root.inset ? 26 : root.headed && !root.outside ? 4 : 0)
                 height: implicitHeight
-                Rectangle {
+                O.BorderSurface {
                     id: inner
                     x: root.inset ? 14 : 0
                     y: root.inset ? 14 : 0
                     width: parent.width - (root.inset ? 28 : 0)
                     implicitHeight: body.implicitHeight
                     height: implicitHeight
-                    radius: theme.panelRadius
-                    color: root.inset ? Qt.alpha(theme.foreground, 0.025) : "transparent"
-                    border.width: root.inset ? 1 : 0
-                    border.color: theme.hairline
+                    radius: Theme.Style.cornerRadius
+                    color: root.inset ? Theme.Style.normalFill : "transparent"
+                    borderSpec: root.inset ? Theme.Border.flat(theme.hairline, Theme.Style.spacing.hairline)
+                                           : Theme.Border.none()
                     Column {
                         id: body
                         width: parent.width
@@ -325,23 +329,18 @@ Item {
                             visible: root.inset
                             width: parent.width
                             height: visible ? insetTitle.implicitHeight + 22 : 0
-                            AppText {
+                            O.Heading {
                                 id: insetTitle
                                 x: 16
                                 width: parent.width - 32
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: root.spec.inset || ""
-                                font.weight: Font.DemiBold
-                                scale_: 1.2
-                                Accessible.role: Accessible.Heading
-                                Accessible.name: text
                             }
                         }
-                        Rectangle {
+                        O.PanelSeparator {
                             visible: root.inset
                             x: 14
                             width: parent.width - 28
-                            height: 1
                             color: theme.hairline
                         }
                         Repeater {
@@ -403,11 +402,14 @@ Item {
                                 Accessible.expandable: true
                                 Accessible.expanded: root.showAll
                                 onClicked: root.showAll = !root.showAll
-                                background: Rectangle {
+                                background: O.BorderSurface {
+                                    readonly property string controlState: moreButton.visualFocus ? "focus"
+                                                           : moreButton.hovered ? "hover-cursor" : "normal"
                                     radius: theme.controlRadius
-                                    color: moreButton.hovered ? Qt.alpha(theme.foreground, 0.06) : Qt.alpha(theme.foreground, 0.025)
-                                    border.width: moreButton.visualFocus ? 2 : 1
-                                    border.color: moreButton.visualFocus ? theme.accent : theme.hairline
+                                    color: moreButton.down ? Theme.Style.pressedFill
+                                         : moreButton.visualFocus ? Theme.Style.focusFillColor
+                                         : moreButton.hovered ? Theme.Style.hoverFill : Theme.Style.normalFill
+                                    borderSpec: Theme.Border.controlSpec(controlState, Theme.Color.foreground, Theme.Color.accent, Theme.Color.urgent)
                                 }
                                 contentItem: Item {
                                     RowLayout {
@@ -478,18 +480,23 @@ Item {
                             delegate: Column {
                                 readonly property alias items: itemRepeater
                                 width: body.width
-                                AppText {
-                                    visible: text.length > 0
+                                Item {
+                                    visible: libraryHeading.text.length > 0
                                     x: 18
                                     width: parent.width - 36
-                                    height: visible ? implicitHeight + 16 : 0
-                                    verticalAlignment: Text.AlignBottom
-                                    bottomPadding: 4
-                                    text: qsTranslate("catalog", modelData.heading || "")
-                                    font.weight: Font.Medium
-                                    secondary: true
-                                    Accessible.role: Accessible.Heading
-                                    Accessible.name: text
+                                    height: libraryHeading.implicitHeight + 16
+                                    O.PanelSectionHeader {
+                                        id: libraryHeading
+                                        width: parent.width
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: 4
+                                        elide: Text.ElideRight
+                                        horizontalAlignment: Text.AlignLeft
+                                        text: qsTranslate("catalog", modelData.heading || "")
+                                        fontFamily: theme.uiFont
+                                        Accessible.role: Accessible.Heading
+                                        Accessible.name: text
+                                    }
                                 }
                                 Repeater {
                                     id: itemRepeater
@@ -519,22 +526,27 @@ Item {
                                             Accessible.expanded: group.isOpen
                                             onClicked: root.setOpen(group.item.section, !group.isOpen)
                                             background: Item {
-                                                Rectangle {
+                                                O.BorderSurface {
                                                     anchors.fill: parent
                                                     anchors.leftMargin: 6
                                                     anchors.rightMargin: 6
                                                     radius: theme.controlRadius
                                                     // A group whose actions undo your setup reads with caution.
-                                                    color: group.item.tone === "caution" ? Qt.alpha(theme.warningText, groupButton.hovered ? 0.14 : 0.09)
-                                                         : groupButton.hovered ? Qt.alpha(theme.foreground, 0.04) : "transparent"
-                                                    border.width: groupButton.visualFocus ? 2 : 0
-                                                    border.color: theme.accent
+                                                    color: group.item.tone === "caution"
+                                                         ? (groupButton.hovered || groupButton.visualFocus
+                                                            ? Theme.Style.hoverFillFor(theme.warningText, Theme.Color.accent, Theme.Color.urgent)
+                                                            : Theme.Style.normalFillFor(theme.warningText, Theme.Color.accent, Theme.Color.urgent))
+                                                         : groupButton.down ? Theme.Style.pressedFill
+                                                         : groupButton.visualFocus ? Theme.Style.focusFillColor
+                                                         : groupButton.hovered ? Theme.Style.hoverFill : "transparent"
+                                                    borderSpec: groupButton.visualFocus
+                                                                ? Theme.Border.controlSpec("focus", Theme.Color.foreground, Theme.Color.accent, Theme.Color.urgent)
+                                                                : Theme.Border.none()
                                                 }
-                                                Rectangle {
+                                                O.PanelSeparator {
                                                     anchors.bottom: parent.bottom
                                                     x: 16
                                                     width: parent.width - 32
-                                                    height: 1
                                                     color: theme.hairline
                                                 }
                                             }
@@ -590,7 +602,7 @@ Item {
                             visible: !!notice && st.value === notice.value
                             width: parent.width
                             height: visible ? noticeBox.height + 22 : 0
-                            Rectangle {
+                            O.BorderSurface {
                                 id: noticeBox
                                 objectName: "panelNotice"
                                 x: 14
@@ -598,9 +610,8 @@ Item {
                                 width: parent.width - 28
                                 height: noticeRow.implicitHeight + 18
                                 radius: theme.controlRadius
-                                color: Qt.alpha(theme.foreground, 0.03)
-                                border.width: 1
-                                border.color: theme.divider
+                                color: Theme.Style.normalFill
+                                borderSpec: Theme.Border.flat(theme.divider, Theme.Style.spacing.hairline)
                                 RowLayout {
                                     id: noticeRow
                                     x: 14
@@ -622,7 +633,7 @@ Item {
                             visible: !!root.spec.footnote
                             width: parent.width
                             height: visible ? footRow.implicitHeight + 30 : 0
-                            Rectangle { x: 16; width: parent.width - 32; height: 1; color: theme.hairline }
+                            O.PanelSeparator { x: 16; width: parent.width - 32; color: theme.hairline }
                             RowLayout {
                                 id: footRow
                                 x: 16
